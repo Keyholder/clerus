@@ -1,0 +1,17 @@
+{
+  "name": "clerus",
+  "version": "0.0.1",
+  "description": "The other half of TW5",
+  "main": "tw-clerus.js",
+  "scripts": {
+    "start": "node --env-file=.env tw-clerus.js",
+    "debug": "node inspect --env-file=.env tw-clerus.js",
+    "test": "node tw-clerus-test.js"
+  },
+  "engines": {
+    "node": ">=25.4.0"
+  },
+  "dependencies": {
+    "tiddlywiki": "^5.3.0"
+  }
+}

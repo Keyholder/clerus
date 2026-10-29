@@ -1,0 +1,5 @@
+title: $:/plugins/clerus/core/ui/openrouter-settings
+caption: Clerus — OpenRouter
+tags: $:/tags/ControlPanel/Settings
+
+<$clerus-openrouter-settings/>

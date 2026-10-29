@@ -1,0 +1,222 @@
+title: Clerus
+tags: Clerus
+
+! Clerus, представься
+
+Clerus может подготовить объяснение исходника исполнителя,
+который организует запрос к модели и публикацию ответа.
+
+<$button>
+	<$action-clerus-capture-source
+		$title="$:/plugins/clerus/core/executor-project-answer.js"
+		$prompt="Объясни этот исполнитель Clerus человеку, знакомому с TiddlyWiki, но не с внутренним устройством Clerus.
+
+Начни с краткого назначения. Затем проследи путь задачи: принятие, фиксация источника, отправка запроса, получение ответа и публикация результата.
+
+Отдельно объясни обработку изменения задачи, неизвестного исхода внешнего вызова и остановки генерации по лимиту.
+
+Различай поведение, непосредственно видимое в этом исходнике, и гарантии, которые должны обеспечиваться другими модулями. Не приписывай этому модулю реализацию WAL, транспорта или документных полномочий.
+
+В конце перечисли до пяти вопросов, на которые одного этого исходника недостаточно для ответа."
+	/>
+	Подготовить самопредставление
+</$button>
+
+<$button>
+	<$action-clerus-capture-source
+		$bundle="yes"
+		$title="$:/plugins/clerus/core/executor-project-answer.js
+$:/plugins/clerus/core/document-agent-session.js
+$:/plugins/clerus/core/agent-call-driver.js
+$:/plugins/clerus/core/openrouter-transport.js"
+		$prompt="Объясни сквозной путь одного запроса от реакции исполнителя до принятия ответа модели и публикации результата.
+
+Для каждого существенного утверждения укажи исходник и функцию. Раздели синхронную реакцию, сохранённое состояние и асинхронное внешнее действие.
+
+Особенно внимательно объясни остановку системы, неизвестный исход, таймаут и отсутствие автоматического повтора.
+
+Отдельно перечисли гарантии, которые предоставленные файлы не позволяют установить."
+	/>
+	Подготовить экскурсию по внешнему вызову
+</$button>
+
+Кнопка создаёт текстовый снимок и заполняет форму ниже.
+Запрос модели отправляется только отдельной кнопкой.
+
+! Новый проект
+
+!! Задача
+
+<$edit-text
+	tiddler="$:/temp/clerus/ui/launch"
+	field="prompt"
+	tag="textarea"
+	placeholder="Что нужно сделать?"
+/>
+
+!! Подготовить системный исходник
+
+Один системный тайтл на строку
+
+<$edit-text
+	tiddler="$:/temp/clerus/ui/launch"
+	field="system-source"
+	tag="textarea"
+	placeholder="$:/plugins/clerus/core/executor-project-answer.js"
+/>
+
+<$button>
+	<$action-clerus-capture-source/>
+	Создать и выбрать снимок
+</$button>
+
+<$button>
+	<$action-clerus-capture-source $bundle="yes"/>
+	Создать и выбрать подборку
+</$button>
+
+Создание снимка не отправляет данные модели.
+Перед отправкой проверьте его содержимое.
+
+<$list
+	filter="[[$:/temp/clerus/ui/launch]get[source]]"
+	variable="sourceTitle"
+>
+	<p>
+		Выбранный источник:
+		<$link to=<<sourceTitle>>>
+			<$text text=<<sourceTitle>>/>
+		</$link>
+	</p>
+
+	<$list
+		filter="[<sourceTitle>get[clerus-source-title]]"
+		variable="originalTitle"
+	>
+		<p>
+			Снимок исходника:
+			<$link to=<<originalTitle>>>
+				<$text text=<<originalTitle>>/>
+			</$link>
+		</p>
+	</$list>
+</$list>
+
+!! Источник — необязательно
+
+Укажите точный тайтл обычного текстового тиддлера.
+Пустое поле означает запрос без источника.
+Системные и shadow-тиддлеры пока не поддерживаются.
+
+<$edit-text
+	tiddler="$:/temp/clerus/ui/launch"
+	field="source"
+	placeholder="Тайтл исходного тиддлера"
+/>
+
+Выбранный текст будет отправлен внешнему провайдеру модели.
+Источник не изменяется.
+
+!! Модель OpenRouter
+
+Укажите идентификатор модели, доступной вашему аккаунту.
+
+<$edit-text
+	tiddler="$:/temp/clerus/ui/launch"
+	field="model"
+	placeholder="provider/model"
+/>
+
+<p>
+	<$button>
+		<$action-clerus-launch-project $mode="answer"/>
+		Отправить модели
+	</$button>
+
+	<$button>
+		<$action-clerus-launch-project $mode="probe"/>
+		Проверить без сети
+	</$button>
+</p>
+
+Каждое нажатие создаёт отдельный проект.
+Отправка модели может расходовать средства.
+
+Ключ задаётся в настройках Clerus — OpenRouter.
+
+<$let error={{$:/temp/clerus/ui/launch!!error}}>
+	<$list filter="[<error>!is[blank]]" variable="launchError">
+		<p class="tc-error">
+			<$text text=<<launchError>>/>
+		</p>
+	</$list>
+</$let>
+
+!! Лимит ответа
+
+<$edit-text
+	tiddler="$:/temp/clerus/ui/launch"
+	field="max-tokens"
+	type="number"
+	placeholder="2048"
+/>
+
+Положительное целое число. Пустое поле — 2048.
+Это параметр max_tokens, а не размер контекста:
+он не ограничивает объём отправленного источника.
+У некоторых моделей в этот бюджет входят и reasoning-токены.
+
+! Проекты
+
+<$list
+	filter="[has[clerus-root-job]sort[title]]"
+	variable="projectTitle"
+	emptyMessage="Проектов пока нет."
+>
+	<div class="clerus-project-card">
+
+		<h3>
+			<$link to=<<projectTitle>>>
+				<$text text=<<projectTitle>>/>
+			</$link>
+		</h3>
+
+		<$list
+			filter="[<projectTitle>get[clerus-root-job]]"
+			variable="jobTitle"
+		>
+			<$clerus-job-status title=<<jobTitle>>/>
+
+			<details>
+				<summary>Диагностика</summary>
+
+				<p>
+					Должность:
+					<$link to=<<jobTitle>>>
+						<$text text=<<jobTitle>>/>
+					</$link>
+				</p>
+
+				<$codeblock
+					code={{{ [<jobTitle>get[text]] }}}
+					language="json"
+				/>
+			</details>
+		</$list>
+
+	</div>
+</$list>
+
+! Опубликованные результаты
+
+<$list
+	filter="[has[clerus-source-project]has[clerus-source-job]sort[title]]"
+	variable="resultTitle"
+	emptyMessage="Опубликованных результатов пока нет."
+>
+	<p>
+		<$link to=<<resultTitle>>>
+			<$text text=<<resultTitle>>/>
+		</$link>
+	</p>
+</$list>

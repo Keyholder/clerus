@@ -1,0 +1,10 @@
+{
+  "title": "$:/plugins/clerus/core",
+  "name": "Clerus Core",
+  "description": "Persistent actor runtime for TiddlyWiki",
+  "author": "Clerus",
+  "version": "0.0.1",
+  "core-version": ">=5.3.0",
+  "plugin-type": "plugin",
+  "list": "readme"
+}
