@@ -19,3 +19,4 @@ runTests("reaction");
 runTests("observation");
 runTests("integration");
 runTests("mission-foundation");
+runTests("hierarchy");
