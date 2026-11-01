@@ -12,6 +12,7 @@ var transitions = require("$:/plugins/clerus/core2/store.js");
 var projectPerspectives = require(
 	"$:/plugins/clerus/core2/project-perspective.js"
 );
+var jobViews = require("$:/plugins/clerus/core2/job-view.js");
 
 function freezeTree(value) {
 	if (value !== null && typeof value === "object") {
@@ -162,6 +163,9 @@ function execute(options) {
 		scope = scopes.open({
 			operational: job.registry,
 			incoming: options.incoming,
+			readJob: function (title) {
+				return jobViews.read(store, title);
+			},
 			readTiddler: store.read.bind(store),
 			canWriteOperational: currentWritable,
 			commitOperational: commitOperational,

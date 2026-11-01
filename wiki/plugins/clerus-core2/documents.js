@@ -18,6 +18,9 @@ var tiddlerTitle = require(
 var mission = require(
 	"$:/plugins/clerus/core2/documents/mission.js"
 );
+var jobTitle = require(
+	"$:/plugins/clerus/core2/documents/job-title.js"
+);
 
 exports.create = function (form, access) {
 	switch (form) {
@@ -32,6 +35,9 @@ exports.create = function (form, access) {
 
 		case "mission":
 			return mission.create(access);
+
+		case "job-title":
+			return jobTitle.create(access);
 
 		default:
 			throw new Error("Unsupported instrument form: " + form);

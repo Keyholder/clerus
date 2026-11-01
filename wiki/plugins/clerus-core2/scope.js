@@ -73,6 +73,7 @@ function open(options) {
 		: schemas.registry(options.incoming, "incoming");
 
 	[
+		"readJob",
 		"readTiddler",
 		"readMission",
 		"canWriteOperational",
@@ -127,12 +128,15 @@ function open(options) {
 
 		candidate.registries.forEach(function (registry) {
 			registry.entries.forEach(function (node) {
-				if (
-					node.form === "tiddler-title" &&
-					node.value === title
-				) {
-					found = node;
-				}
+			if (
+				(
+					node.form === "tiddler-title" ||
+					node.form === "job-title"
+				) &&
+				node.value === title
+			) {
+				found = node;
+			}
 			});
 		});
 
@@ -163,7 +167,7 @@ function open(options) {
 		var form = schemas.formOf(value);
 		var existing = null;
 
-		if (form === "tiddler-title") {
+		if (form === "tiddler-title" || form === "job-title") {
 			existing = findTitle(candidate, value);
 		} else if (form === "mission") {
 			existing = findMission(candidate, value);
@@ -614,6 +618,38 @@ function open(options) {
 					return createMemo(node, data, destination, key);
 				},
 
+				inspectJob: function () {
+					assertPresent(node);
+
+					if (node.form !== "job-title") {
+						throw new Error("Document is not a job title");
+					}
+
+					if (typeof options.readJob !== "function") {
+						throw new Error("Job inspection is unavailable");
+					}
+
+					var result = schemas.copyJSON(
+						options.readJob(node.value)
+					);
+
+					if (
+						!schemas.isRecord(result) ||
+						typeof result.exists !== "boolean" ||
+						typeof result.readable !== "boolean" ||
+						!Object.prototype.hasOwnProperty.call(result, "status") ||
+						(
+							result.reason !== null &&
+							typeof result.reason !== "string"
+						) ||
+						(result.readable && !result.exists)
+					) {
+						throw new Error("Invalid job inspection result");
+					}
+
+					return result;
+				},
+
 				inspectTiddler: function () {
 					assertPresent(node);
 
@@ -702,6 +738,12 @@ function open(options) {
 			if (node.form === "charter") {
 				throw new Error(
 					"Charter cannot be copied or moved"
+				);
+			}
+
+			if (node.form === "job-title") {
+				throw new Error(
+					"Organizational title transfer is not connected yet"
 				);
 			}
 

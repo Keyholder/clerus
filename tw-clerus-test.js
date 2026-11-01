@@ -27,3 +27,4 @@ runTests("project-perspective");
 runTests("mission-reaction");
 runTests("mission-mutations");
 runTests("mission-transactions");
+runTests("job-titles");

@@ -154,6 +154,13 @@ function assertKey(key) {
 }
 
 function formOf(document) {
+	if (
+		require("$:/plugins/clerus/core2/job-titles.js")
+			.isJobTitle(document)
+	) {
+		return "job-title";
+	}
+
 	if (isOrdinaryTitle(document)) {
 		return "tiddler-title";
 	}
