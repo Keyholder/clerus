@@ -25,3 +25,4 @@ runTests("mission-issuance");
 runTests("mission-scope");
 runTests("project-perspective");
 runTests("mission-reaction");
+runTests("mission-mutations");

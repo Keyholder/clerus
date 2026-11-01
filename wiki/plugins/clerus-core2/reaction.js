@@ -76,6 +76,7 @@ function execute(options) {
 	var projectPerspective = options.readJobs
 		? projectPerspectives.create({
 			title: job.title,
+			platform: options.platform,
 			store: store,
 			readJobs: options.readJobs
 		})
@@ -166,6 +167,9 @@ function execute(options) {
 			commitOperational: commitOperational,
 			readMission: projectPerspective
 				? projectPerspective.readMission
+				: undefined,
+			authorizeMission: projectPerspective
+				? projectPerspective.authorizeMutation
 				: undefined
 		});
 

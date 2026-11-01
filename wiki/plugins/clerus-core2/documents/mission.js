@@ -22,6 +22,18 @@ exports.create = function (access) {
 			}
 
 			return view.task;
+		},
+
+		createMission: function (segment, destination, key) {
+			return access.issueMission(
+				segment,
+				destination,
+				key
+			);
+		},
+
+		revokePart: function (segment) {
+			access.revokeMission(segment);
 		}
 	});
 };

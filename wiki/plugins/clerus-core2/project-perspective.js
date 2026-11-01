@@ -15,6 +15,7 @@ var tasks = require("$:/plugins/clerus/core2/project-tasks.js");
 var jobTitles = require(
 	"$:/plugins/clerus/core2/job-titles.js"
 );
+var roles = require("$:/plugins/clerus/core2/roles.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -215,8 +216,52 @@ function create(options) {
 		return result;
 	}
 
+	function authorizeMutation(document, scope, operation, segment) {
+		if (operation !== "issue" && operation !== "revoke") {
+			throw new Error("Unsupported mission mutation");
+		}
+
+		if (!roles.isSegment(segment)) {
+			throw new Error("Invalid child role segment");
+		}
+
+		var view = readMission(document, scope);
+
+		if (!view.active) {
+			throw new Error(view.reason || "Inactive mission");
+		}
+
+		if (operation === "revoke") {
+			return;
+		}
+
+		schemas.assertPlatform(options.platform);
+
+		var project = options.store.read(document.project);
+
+		if (project.kind !== "materialized") {
+			throw new Error("Issuance requires a materialized project");
+		}
+
+		if (
+			project.fields["clerus-custody"] !== options.platform
+		) {
+			throw new Error("Project is not owned by this platform");
+		}
+
+		if (project.fields.type !== "application/json") {
+			throw new Error("Project must have type application/json");
+		}
+
+		tasks.resolve(
+			JSON.parse(project.fields.text),
+			document.role.concat([segment])
+		);
+	}
+
 	return Object.freeze({
-		readMission: readMission
+		readMission: readMission,
+		authorizeMutation: authorizeMutation
 	});
 }
 

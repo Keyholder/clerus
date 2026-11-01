@@ -12,6 +12,9 @@ var operations = require("$:/plugins/clerus/core2/operation.js");
 var missionSchema = require(
 	"$:/plugins/clerus/core2/mission-schema.js"
 );
+var missionIssuance = require(
+	"$:/plugins/clerus/core2/mission-issuance.js"
+);
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -73,7 +76,8 @@ function open(options) {
 		"readTiddler",
 		"readMission",
 		"canWriteOperational",
-		"commitOperational"
+		"commitOperational",
+		"authorizeMission"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -451,6 +455,138 @@ function open(options) {
 		};
 	}
 
+	function prepareMissionAliases(candidate, node) {
+		var identity = missionSchema.identity(node.value);
+		var registry = Object.create(null);
+		var nodesByKey = new Map();
+		var parentKey = null;
+		var sequence = 0;
+
+		candidate.registries.forEach(function (source) {
+			source.entries.forEach(function (entry) {
+				if (
+					entry.form !== "mission" ||
+					missionSchema.identity(entry.value) !== identity
+				) {
+					return;
+				}
+
+				sequence++;
+
+				var key = "parent-" + sequence;
+				var value = candidate.updates.has(entry)
+					? candidate.updates.get(entry)
+					: entry.value;
+
+				define(registry, key, schemas.copyJSON(value));
+				nodesByKey.set(key, entry);
+
+				if (entry === node && parentKey === null) {
+					parentKey = key;
+				}
+			});
+		});
+
+		if (parentKey === null) {
+			throw new Error("Mission is no longer available");
+		}
+
+		return {
+			registry: registry,
+			nodesByKey: nodesByKey,
+			parentKey: parentKey
+		};
+	}
+
+	function publishMissionAliases(candidate, prepared, result) {
+		result.parentKeys.forEach(function (key) {
+			candidate.updates.set(
+				prepared.nodesByKey.get(key),
+				missionSchema.validate(result.registry[key])
+			);
+		});
+	}
+
+	function authorizeMission(node, operation, segment) {
+		assertPresent(node);
+
+		if (node.form !== "mission") {
+			throw new Error("Document is not a mission");
+		}
+
+		if (typeof options.authorizeMission !== "function") {
+			throw new Error("Mission mutation authorization is unavailable");
+		}
+
+		options.authorizeMission(
+			missionSchema.validate(node.value),
+			registrySnapshot(),
+			operation,
+			segment
+		);
+	}
+
+	function issueMission(node, segment, destination, key) {
+		assertPresent(node);
+
+		var destinationId = resolveDestination(destination);
+
+		run(function (candidate) {
+			schemas.assertKey(key);
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error("Document key already exists: " + key);
+			}
+
+			authorizeMission(node, "issue", segment);
+
+			var prepared = prepareMissionAliases(candidate, node);
+
+			/*
+			Alias keys use the parent- prefix, so this key cannot collide.
+			*/
+			var result = missionIssuance.issue(
+				prepared.registry,
+				prepared.parentKey,
+				segment,
+				"issued-child"
+			);
+
+			publishMissionAliases(candidate, prepared, result);
+
+			target.entries.set(
+				key,
+				newNode(missionSchema.validate(result.document))
+			);
+		});
+
+		return registryView(destinationId).get(key);
+	}
+
+	function revokeMission(node, segment) {
+		run(function (candidate) {
+			authorizeMission(node, "revoke", segment);
+
+			var prepared = prepareMissionAliases(candidate, node);
+
+			var result = missionIssuance.revoke(
+				prepared.registry,
+				prepared.parentKey,
+				segment
+			);
+
+			publishMissionAliases(candidate, prepared, result);
+		});
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -534,6 +670,14 @@ function open(options) {
 					}
 
 					return result;
+				},
+
+				issueMission: function (segment, destination, key) {
+					return issueMission(node, segment, destination, key);
+				},
+
+				revokeMission: function (segment) {
+					revokeMission(node, segment);
 				}
 			})
 		);
