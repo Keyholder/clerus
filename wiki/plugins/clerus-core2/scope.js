@@ -8,6 +8,16 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var documents = require("$:/plugins/clerus/core2/documents.js");
+var operations = require("$:/plugins/clerus/core2/operation.js");
+
+function define(record, key, value) {
+	Object.defineProperty(record, key, {
+		value: value,
+		enumerable: true,
+		writable: true,
+		configurable: true
+	});
+}
 
 function validateTiddlerView(value, title) {
 	var view = schemas.copyJSON(value);
@@ -47,10 +57,6 @@ function validateTiddlerView(value, title) {
 function open(options) {
 	options = options || {};
 
-	/*
-	Validate all initial registries before constructing the scope.
-	No externally visible effects happen during construction.
-	*/
 	var operational = schemas.registry(
 		options.operational,
 		"operational"
@@ -60,17 +66,28 @@ function open(options) {
 		? null
 		: schemas.registry(options.incoming, "incoming");
 
-	if (
-		options.readTiddler !== undefined &&
-		typeof options.readTiddler !== "function"
-	) {
-		throw new Error("readTiddler must be a function");
-	}
+	[
+		"readTiddler",
+		"canWriteOperational",
+		"commitOperational"
+	].forEach(function (name) {
+		if (
+			options[name] !== undefined &&
+			typeof options[name] !== "function"
+		) {
+			throw new Error(name + " must be a function");
+		}
+	});
 
 	var active = true;
-	var registries = new Map();
-	var titleNodes = new Map();
-	var nodes = new Set();
+
+	var state = {
+		registries: new Map(),
+		nextOutgoing: 0
+	};
+
+	var views = new Map();
+	var viewIds = new WeakMap();
 
 	function assertActive() {
 		if (!active) {
@@ -78,45 +95,242 @@ function open(options) {
 		}
 	}
 
+	function close() {
+		if (!active) {
+			return;
+		}
+
+		active = false;
+		state.registries.clear();
+		views.clear();
+	}
+
+	function newNode(value) {
+		return {
+			form: schemas.formOf(value),
+			value: value,
+			instance: null
+		};
+	}
+
+	function findTitle(candidate, title) {
+		var found = null;
+
+		candidate.registries.forEach(function (registry) {
+			registry.entries.forEach(function (node) {
+				if (
+					node.form === "tiddler-title" &&
+					node.value === title
+				) {
+					found = node;
+				}
+			});
+		});
+
+		return found;
+	}
+
+	function nodeFor(candidate, value) {
+		if (typeof value === "string") {
+			var existing = findTitle(candidate, value);
+
+			if (existing) {
+				return existing;
+			}
+		}
+
+		return newNode(value);
+	}
+
+	function addInitial(id, kind, serialized) {
+		var registry = {
+			kind: kind,
+			entries: new Map()
+		};
+
+		state.registries.set(id, registry);
+
+		Object.keys(serialized).forEach(function (key) {
+			registry.entries.set(
+				key,
+				nodeFor(state, serialized[key])
+			);
+		});
+	}
+
+	addInitial("operational", "operational", operational);
+
+	if (incoming !== null) {
+		addInitial("incoming", "incoming", incoming);
+	}
+
+	function isPresent(node) {
+		var present = false;
+
+		state.registries.forEach(function (registry) {
+			registry.entries.forEach(function (candidate) {
+				if (candidate === node) {
+					present = true;
+				}
+			});
+		});
+
+		return present;
+	}
+
 	function assertPresent(node) {
 		assertActive();
 
-		if (node.references === 0) {
+		if (!isPresent(node)) {
 			throw new Error("Document is no longer available");
 		}
 	}
 
-	function newNode(form, value) {
-		var node = {
-			form: form,
-			value: value,
-			references: 0,
-			instance: null
+	function serialize(registry) {
+		var result = Object.create(null);
+
+		registry.entries.forEach(function (node, key) {
+			define(
+				result,
+				key,
+				schemas.copyJSON(node.value)
+			);
+		});
+
+		return result;
+	}
+
+	function fork() {
+		var candidate = {
+			registries: new Map(),
+			nextOutgoing: state.nextOutgoing
 		};
 
-		nodes.add(node);
+		state.registries.forEach(function (registry, id) {
+			candidate.registries.set(id, {
+				kind: registry.kind,
+				entries: new Map(registry.entries)
+			});
+		});
+
+		return candidate;
+	}
+
+	function validate(candidate) {
+		candidate.registries.forEach(function (registry) {
+			schemas.registry(
+				serialize(registry),
+				registry.kind
+			);
+		});
+	}
+
+	function materialize(candidate) {
+		var before = serialize(
+			state.registries.get("operational")
+		);
+
+		var after = serialize(
+			candidate.registries.get("operational")
+		);
+
+		if (JSON.stringify(before) === JSON.stringify(after)) {
+			return;
+		}
+
+		/*
+		Authorization failures belong to preparation, not here.
+		This function only performs the accepted material write.
+		*/
+		options.commitOperational(
+			schemas.copyJSON(before),
+			schemas.copyJSON(after)
+		);
+	}
+
+	function run(prepare) {
+		return operations.run({
+			assertActive: assertActive,
+			fork: fork,
+
+			validate: function (candidate) {
+				validate(candidate);
+
+				var before = serialize(
+					state.registries.get("operational")
+				);
+
+				var after = serialize(
+					candidate.registries.get("operational")
+				);
+
+				if (
+					JSON.stringify(before) !==
+					JSON.stringify(after)
+				) {
+					if (
+						typeof options.canWriteOperational !== "function" ||
+						options.canWriteOperational() !== true
+					) {
+						throw new Error(
+							"Operational registry is not writable"
+						);
+					}
+
+					if (
+						typeof options.commitOperational !== "function"
+					) {
+						throw new Error(
+							"Operational registry writer is unavailable"
+						);
+					}
+				}
+			},
+
+			materialize: materialize,
+
+			publish: function (candidate) {
+				state = candidate;
+			},
+
+			invalidate: close
+		}, prepare);
+	}
+
+	function getRegistry(candidate, id) {
+		var registry = candidate.registries.get(id);
+
+		if (!registry) {
+			throw new Error("Registry is no longer available");
+		}
+
+		return registry;
+	}
+
+	function getNode(candidate, id, key) {
+		schemas.assertKey(key);
+
+		var node = getRegistry(candidate, id).entries.get(key);
+
+		if (!node) {
+			throw new Error("Unknown document key: " + key);
+		}
 
 		return node;
 	}
 
-	function nodeFor(value) {
-		var form = schemas.formOf(value);
-
-		if (form === "tiddler-title") {
-			if (!titleNodes.has(value)) {
-				titleNodes.set(
-					value,
-					newNode(form, value)
-				);
-			}
-
-			return titleNodes.get(value);
+	function resolveDestination(destination) {
+		if (
+			destination === null ||
+			typeof destination !== "object" ||
+			!viewIds.has(destination)
+		) {
+			throw new Error(
+				"Destination must belong to this scope"
+			);
 		}
 
-		/*
-		Equal JSON content does not merge separate memo entries.
-		*/
-		return newNode(form, value);
+		return viewIds.get(destination);
 	}
 
 	function instanceFor(node) {
@@ -126,112 +340,223 @@ function open(options) {
 			return node.instance;
 		}
 
-		var access = Object.freeze({
-			read: function () {
-				assertPresent(node);
-				return schemas.copyJSON(node.value);
-			},
+		node.instance = documents.create(
+			node.form,
+			Object.freeze({
+				read: function () {
+					assertPresent(node);
+					return schemas.copyJSON(node.value);
+				},
 
-			inspectTiddler: function () {
-				assertPresent(node);
+				inspectTiddler: function () {
+					assertPresent(node);
 
-				if (node.form !== "tiddler-title") {
-					throw new Error("Document is not a tiddler title");
+					if (node.form !== "tiddler-title") {
+						throw new Error(
+							"Document is not a tiddler title"
+						);
+					}
+
+					if (
+						typeof options.readTiddler !== "function"
+					) {
+						throw new Error(
+							"Tiddler reading is unavailable"
+						);
+					}
+
+					return validateTiddlerView(
+						options.readTiddler(node.value),
+						node.value
+					);
 				}
-
-				if (typeof options.readTiddler !== "function") {
-					throw new Error("Tiddler reading is unavailable");
-				}
-
-				return validateTiddlerView(
-					options.readTiddler(node.value),
-					node.value
-				);
-			}
-		});
-
-		node.instance = documents.create(node.form, access);
+			})
+		);
 
 		return node.instance;
 	}
 
-	function addRegistry(id, kind, serialized) {
-		var entries = new Map();
+	function transfer(sourceId, sourceKey, destination, key, move) {
+		assertActive();
 
-		Object.keys(serialized).forEach(function (key) {
-			var node = nodeFor(serialized[key]);
+		var destinationId = resolveDestination(destination);
 
-			node.references++;
+		run(function (candidate) {
+			schemas.assertKey(key);
 
-			entries.set(key, {
-				node: node
-			});
+			var node = getNode(
+				candidate,
+				sourceId,
+				sourceKey
+			);
+
+			if (node.form === "charter") {
+				throw new Error(
+					"Charter cannot be copied or moved"
+				);
+			}
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error(
+					"Document key already exists: " + key
+				);
+			}
+
+			/*
+			Copying a memo creates a separate mutable document.
+			Moving preserves its instrument node.
+			Title copies share instrument access.
+			*/
+			var placed = move
+				? node
+				: nodeFor(
+					candidate,
+					schemas.copyJSON(node.value)
+				);
+
+			if (move) {
+				getRegistry(candidate, sourceId)
+					.entries.delete(sourceKey);
+			}
+
+			target.entries.set(key, placed);
 		});
+	}
+
+	function registryView(id) {
+		if (views.has(id)) {
+			return views.get(id);
+		}
 
 		var view = Object.freeze({
 			keys: function () {
 				assertActive();
-				return Array.from(entries.keys());
+
+				return Array.from(
+					getRegistry(state, id).entries.keys()
+				);
 			},
 
 			get: function (key) {
 				assertActive();
-				schemas.assertKey(key);
+				return instanceFor(getNode(state, id, key));
+			},
 
-				var entry = entries.get(key);
+			copy: function (sourceKey, destination, destinationKey) {
+				transfer(
+					id,
+					sourceKey,
+					destination,
+					destinationKey,
+					false
+				);
+			},
 
-				if (!entry) {
-					throw new Error("Unknown document key: " + key);
-				}
+			move: function (sourceKey, destination, destinationKey) {
+				transfer(
+					id,
+					sourceKey,
+					destination,
+					destinationKey,
+					true
+				);
+			},
 
-				return instanceFor(entry.node);
+			destroy: function (key) {
+				run(function (candidate) {
+					var node = getNode(candidate, id, key);
+
+					if (node.form === "charter") {
+						throw new Error(
+							"Charter cannot be destroyed separately"
+						);
+					}
+
+					getRegistry(candidate, id).entries.delete(key);
+				});
+			},
+
+			outgoing: function () {
+				var outgoingId = run(function (candidate) {
+					candidate.nextOutgoing++;
+
+					var nextId =
+						"outgoing-" + candidate.nextOutgoing;
+
+					candidate.registries.set(nextId, {
+						kind: "outgoing",
+						entries: new Map()
+					});
+
+					return nextId;
+				});
+
+				return registryView(outgoingId);
 			}
 		});
 
-		registries.set(id, {
-			kind: kind,
-			entries: entries,
-			view: view
-		});
+		views.set(id, view);
+		viewIds.set(view, id);
 
 		return view;
 	}
 
-	var operationalView = addRegistry(
-		"operational",
-		"operational",
-		operational
-	);
-
-	var incomingView = incoming === null
-		? null
-		: addRegistry("incoming", "incoming", incoming);
-
 	return Object.freeze({
-		operational: operationalView,
-		incoming: incomingView,
+		operational: registryView("operational"),
 
-		close: function () {
-			if (!active) {
-				return;
+		incoming: incoming === null
+			? null
+			: registryView("incoming"),
+
+		/*
+		Controller API. The executor receives registry views only.
+		*/
+		snapshot: function () {
+			assertActive();
+
+			var outgoing = [];
+
+			state.registries.forEach(function (registry) {
+				if (registry.kind === "outgoing") {
+					outgoing.push(serialize(registry));
+				}
+			});
+
+			return {
+				operational: serialize(
+					state.registries.get("operational")
+				),
+
+				incoming: incoming === null
+					? null
+					: serialize(state.registries.get("incoming")),
+
+				outgoing: outgoing
+			};
+		},
+
+		assertResolved: function () {
+			assertActive();
+
+			if (
+				incoming !== null &&
+				state.registries.get("incoming").entries.size !== 0
+			) {
+				throw new Error(
+					"Incoming registry contains unresolved documents"
+				);
 			}
+		},
 
-			active = false;
-
-			registries.forEach(function (registry) {
-				registry.entries.clear();
-			});
-
-			nodes.forEach(function (node) {
-				node.references = 0;
-				node.value = null;
-				node.instance = null;
-			});
-
-			registries.clear();
-			titleNodes.clear();
-			nodes.clear();
-		}
+		close: close
 	});
 }
 
