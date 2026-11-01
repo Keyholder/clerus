@@ -12,3 +12,4 @@ function runTests(name) {
 }
 
 runTests("foundation");
+runTests("scope");
