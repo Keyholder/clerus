@@ -16,3 +16,4 @@ runTests("scope");
 runTests("operations");
 runTests("document-updates");
 runTests("reaction");
+runTests("observation");
