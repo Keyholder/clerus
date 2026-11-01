@@ -172,4 +172,61 @@ Observer.prototype.clear = function () {
 	this.previous.clear();
 };
 
+function refresh(event, options) {
+	schemas.assertPlatform(options.platform);
+
+	var source = schemas.copyJSON(event);
+
+	if (
+		!schemas.isRecord(source) ||
+		source.type !== "document-change" ||
+		typeof source.title !== "string" ||
+		source.title.length === 0 ||
+		source.platform !== options.platform ||
+		!schemas.isOrdinaryTitle(source.target)
+	) {
+		throw new Error("Invalid observation event");
+	}
+
+	var store = options.store;
+
+	if (!store || typeof store.read !== "function") {
+		throw new Error("Observation delivery requires a store");
+	}
+
+	var stored = store.read(source.title);
+
+	if (stored.kind === "absent") {
+		return null;
+	}
+
+	if (stored.kind !== "materialized") {
+		throw new Error(
+			"Observed recipient must be materialized"
+		);
+	}
+
+	var job = schemas.ephemeralJob(
+		stored.fields,
+		options.platform
+	);
+
+	var keys = Object.keys(job.registry).filter(function (key) {
+		return job.registry[key] === source.target;
+	}).sort();
+
+	if (keys.length === 0) {
+		return null;
+	}
+
+	return Object.freeze({
+		type: "document-change",
+		title: job.title,
+		platform: options.platform,
+		target: source.target,
+		keys: Object.freeze(keys)
+	});
+}
+
 exports.Observer = Observer;
+exports.refresh = refresh;
