@@ -31,3 +31,4 @@ runTests("job-titles");
 runTests("organization");
 runTests("message-policy");
 runTests("orders");
+runTests("scheduler");

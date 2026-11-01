@@ -84,7 +84,8 @@ function open(options) {
 		"authorizeMission",
 		"authorizeOrganization",
 		"prepareOrder",
-		"acceptMessage"
+		"acceptMessage",
+		"checkMessage"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -684,6 +685,10 @@ function open(options) {
 				message.recipient !== node.value
 			) {
 				throw new Error("Invalid prepared order");
+			}
+
+			if (typeof options.checkMessage === "function") {
+				options.checkMessage(schemas.copyJSON(message));
 			}
 
 			/*

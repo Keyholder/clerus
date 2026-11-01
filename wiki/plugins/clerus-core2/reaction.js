@@ -76,6 +76,13 @@ function execute(options) {
 		throw new Error("acceptMessage must be a function");
 	}
 
+	if (
+		options.checkMessage !== undefined &&
+		typeof options.checkMessage !== "function"
+	) {
+		throw new Error("checkMessage must be a function");
+	}
+
 	var initial = store.read(options.title);
 
 	if (initial.kind !== "materialized") {
@@ -212,6 +219,7 @@ function execute(options) {
 				: undefined,
 
 			acceptMessage: options.acceptMessage,
+			checkMessage: options.checkMessage
 		});
 
 		var returned = options.handler(
