@@ -14,3 +14,4 @@ function runTests(name) {
 runTests("foundation");
 runTests("scope");
 runTests("operations");
+runTests("document-updates");

@@ -83,7 +83,8 @@ function open(options) {
 
 	var state = {
 		registries: new Map(),
-		nextOutgoing: 0
+		nextOutgoing: 0,
+		updates: new Map()
 	};
 
 	var views = new Map();
@@ -186,14 +187,18 @@ function open(options) {
 		}
 	}
 
-	function serialize(registry) {
+	function serialize(registry, candidate) {
 		var result = Object.create(null);
 
 		registry.entries.forEach(function (node, key) {
+			var value = candidate && candidate.updates.has(node)
+				? candidate.updates.get(node)
+				: node.value;
+
 			define(
 				result,
 				key,
-				schemas.copyJSON(node.value)
+				schemas.copyJSON(value)
 			);
 		});
 
@@ -203,7 +208,8 @@ function open(options) {
 	function fork() {
 		var candidate = {
 			registries: new Map(),
-			nextOutgoing: state.nextOutgoing
+			nextOutgoing: state.nextOutgoing,
+			updates: new Map()
 		};
 
 		state.registries.forEach(function (registry, id) {
@@ -219,7 +225,7 @@ function open(options) {
 	function validate(candidate) {
 		candidate.registries.forEach(function (registry) {
 			schemas.registry(
-				serialize(registry),
+				serialize(registry, candidate),
 				registry.kind
 			);
 		});
@@ -231,7 +237,8 @@ function open(options) {
 		);
 
 		var after = serialize(
-			candidate.registries.get("operational")
+			candidate.registries.get("operational"),
+			candidate
 		);
 
 		if (JSON.stringify(before) === JSON.stringify(after)) {
@@ -261,7 +268,8 @@ function open(options) {
 				);
 
 				var after = serialize(
-					candidate.registries.get("operational")
+					candidate.registries.get("operational"),
+					candidate
 				);
 
 				if (
@@ -290,6 +298,11 @@ function open(options) {
 			materialize: materialize,
 
 			publish: function (candidate) {
+				candidate.updates.forEach(function (value, node) {
+					node.value = value;
+				});
+
+				candidate.updates.clear();
 				state = candidate;
 			},
 
@@ -333,6 +346,64 @@ function open(options) {
 		return viewIds.get(destination);
 	}
 
+	function updateNode(node, field, value) {
+		run(function (candidate) {
+			assertPresent(node);
+
+			if (
+				(node.form !== "memo" || field !== "data") &&
+				(node.form !== "charter" || field !== "status")
+			) {
+				throw new Error("Unsupported document update");
+			}
+
+			var next = schemas.copyJSON(node.value);
+
+			define(next, field, schemas.copyJSON(value));
+
+			// Validate before placing the proposal in the candidate.
+			next = schemas.document(next);
+
+			candidate.updates.set(node, next);
+		});
+	}
+
+	function createMemo(node, data, destination, key) {
+		assertPresent(node);
+
+		if (node.form !== "charter") {
+			throw new Error("Only charter can create memos");
+		}
+
+		var destinationId = resolveDestination(destination);
+
+		run(function (candidate) {
+			assertPresent(node);
+			schemas.assertKey(key);
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error("Document key already exists: " + key);
+			}
+
+			var document = schemas.document({
+				form: "memo",
+				data: data
+			});
+
+			target.entries.set(key, newNode(document));
+		});
+
+		return registryView(destinationId).get(key);
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -346,6 +417,18 @@ function open(options) {
 				read: function () {
 					assertPresent(node);
 					return schemas.copyJSON(node.value);
+				},
+
+				setData: function (value) {
+					updateNode(node, "data", value);
+				},
+
+				setStatus: function (value) {
+					updateNode(node, "status", value);
+				},
+
+				createMemo: function (data, destination, key) {
+					return createMemo(node, data, destination, key);
 				},
 
 				inspectTiddler: function () {

@@ -14,6 +14,14 @@ exports.create = function (access) {
 
 		status: function () {
 			return access.read().status;
+		},
+
+		setStatus: function (value) {
+			access.setStatus(value);
+		},
+
+		createMemo: function (data, destination, key) {
+			return access.createMemo(data, destination, key);
 		}
 	});
 };

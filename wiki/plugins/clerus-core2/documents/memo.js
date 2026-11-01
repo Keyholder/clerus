@@ -10,6 +10,10 @@ exports.create = function (access) {
 	return Object.freeze({
 		data: function () {
 			return access.read().data;
+		},
+
+		setData: function (value) {
+			access.setData(value);
 		}
 	});
 };
