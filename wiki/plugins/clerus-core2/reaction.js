@@ -13,6 +13,9 @@ var projectPerspectives = require(
 	"$:/plugins/clerus/core2/project-perspective.js"
 );
 var jobViews = require("$:/plugins/clerus/core2/job-view.js");
+var organizations = require(
+	"$:/plugins/clerus/core2/organization.js"
+);
 
 function freezeTree(value) {
 	if (value !== null && typeof value === "object") {
@@ -79,6 +82,13 @@ function execute(options) {
 			title: job.title,
 			platform: options.platform,
 			store: store,
+			readJobs: options.readJobs
+		})
+		: null;
+
+	var organization = options.readJobs
+		? organizations.create({
+			title: job.title,
 			readJobs: options.readJobs
 		})
 		: null;
@@ -174,6 +184,9 @@ function execute(options) {
 				: undefined,
 			authorizeMission: projectPerspective
 				? projectPerspective.authorizeMutation
+				: undefined,
+			authorizeOrganization: organization
+				? organization.authorizeChange
 				: undefined
 		});
 

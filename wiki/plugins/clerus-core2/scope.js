@@ -15,6 +15,9 @@ var missionSchema = require(
 var missionIssuance = require(
 	"$:/plugins/clerus/core2/mission-issuance.js"
 );
+var jobTitles = require(
+	"$:/plugins/clerus/core2/job-titles.js"
+);
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -78,7 +81,8 @@ function open(options) {
 		"readMission",
 		"canWriteOperational",
 		"commitOperational",
-		"authorizeMission"
+		"authorizeMission",
+		"authorizeOrganization"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -264,6 +268,40 @@ function open(options) {
 		});
 	}
 
+	function authorizeOrganization(candidate) {
+		var before = registrySnapshot();
+		var after = registrySnapshot(candidate);
+
+		var previous = new Set();
+
+		Object.keys(before.operational).forEach(function (key) {
+			var document = before.operational[key];
+
+			if (jobTitles.isJobTitle(document)) {
+				previous.add(document);
+			}
+		});
+
+		var added = Object.keys(after.operational).some(function (key) {
+			var document = after.operational[key];
+
+			return jobTitles.isJobTitle(document) &&
+				!previous.has(document);
+		});
+
+		if (!added) {
+			return;
+		}
+
+		if (typeof options.authorizeOrganization !== "function") {
+			throw new Error(
+				"Organizational reference authorization is unavailable"
+			);
+		}
+
+		options.authorizeOrganization(before, after);
+	}
+
 	function materialize(candidate) {
 		var before = serialize(
 			state.registries.get("operational")
@@ -295,6 +333,7 @@ function open(options) {
 
 			validate: function (candidate) {
 				validate(candidate);
+				authorizeOrganization(candidate);
 
 				var before = serialize(
 					state.registries.get("operational")
@@ -437,23 +476,28 @@ function open(options) {
 		return registryView(destinationId).get(key);
 	}
 
-	function registrySnapshot() {
+	function registrySnapshot(candidate) {
+		var source = candidate || state;
 		var outgoing = [];
 
-		state.registries.forEach(function (registry) {
+		source.registries.forEach(function (registry) {
 			if (registry.kind === "outgoing") {
-				outgoing.push(serialize(registry));
+				outgoing.push(serialize(registry, source));
 			}
 		});
 
 		return {
 			operational: serialize(
-				state.registries.get("operational")
+				source.registries.get("operational"),
+				source
 			),
 
 			incoming: incoming === null
 				? null
-				: serialize(state.registries.get("incoming")),
+				: serialize(
+					source.registries.get("incoming"),
+					source
+				),
 
 			outgoing: outgoing
 		};
@@ -738,12 +782,6 @@ function open(options) {
 			if (node.form === "charter") {
 				throw new Error(
 					"Charter cannot be copied or moved"
-				);
-			}
-
-			if (node.form === "job-title") {
-				throw new Error(
-					"Organizational title transfer is not connected yet"
 				);
 			}
 

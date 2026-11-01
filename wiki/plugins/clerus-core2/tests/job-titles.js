@@ -175,17 +175,28 @@ function testTransferIsNotAccidentallyEnabled(tw) {
 
 	try {
 		var outgoing = scope.incoming.outgoing();
+		var title = scope.incoming.get("first");
 
-		throws(function () {
-			scope.incoming.copy("first", outgoing, "copy");
-		}, "not connected yet");
+		scope.incoming.copy("first", outgoing, "copy");
 
-		throws(function () {
-			scope.incoming.move("first", outgoing, "moved");
-		}, "not connected yet");
-
+		assert(outgoing.get("copy") === title);
 		assert(scope.incoming.keys().length === 2);
-		assert(outgoing.keys().length === 0);
+
+		scope.incoming.move("second", outgoing, "moved");
+
+		assert(outgoing.get("moved") === title);
+		assert(scope.incoming.keys().length === 1);
+
+		throws(function () {
+			scope.incoming.move(
+				"first",
+				scope.operational,
+				"subordinate"
+			);
+		}, "authorization is unavailable");
+
+		assert(scope.incoming.keys().length === 1);
+		assert(outgoing.keys().length === 2);
 	} finally {
 		scope.close();
 	}
@@ -208,7 +219,7 @@ exports.run = function (tw) {
 		["job titles: status lifecycle and isolated reads", testStatusLifecycle],
 		["job titles: repeated representations share access", testRepeatedRepresentations],
 		["job titles: malformed target is unreadable", testMalformedTarget],
-		["job titles: unchecked transfer remains blocked", testTransferIsNotAccidentallyEnabled],
+		["job titles: transactional transfer requires no organizational edge", testTransferIsNotAccidentallyEnabled],
 		["job titles: closed form provides no access", testClosedForm]
 	];
 
