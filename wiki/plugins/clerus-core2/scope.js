@@ -82,7 +82,9 @@ function open(options) {
 		"canWriteOperational",
 		"commitOperational",
 		"authorizeMission",
-		"authorizeOrganization"
+		"authorizeOrganization",
+		"prepareOrder",
+		"acceptMessage"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -97,7 +99,8 @@ function open(options) {
 	var state = {
 		registries: new Map(),
 		nextOutgoing: 0,
-		updates: new Map()
+		updates: new Map(),
+		messages: []
 	};
 
 	var views = new Map();
@@ -246,7 +249,8 @@ function open(options) {
 		var candidate = {
 			registries: new Map(),
 			nextOutgoing: state.nextOutgoing,
-			updates: new Map()
+			updates: new Map(),
+			messages: state.messages.slice()
 		};
 
 		state.registries.forEach(function (registry, id) {
@@ -312,18 +316,22 @@ function open(options) {
 			candidate
 		);
 
-		if (JSON.stringify(before) === JSON.stringify(after)) {
-			return;
+		if (JSON.stringify(before) !== JSON.stringify(after)) {
+			options.commitOperational(
+				schemas.copyJSON(before),
+				schemas.copyJSON(after)
+			);
 		}
 
-		/*
-		Authorization failures belong to preparation, not here.
-		This function only performs the accepted material write.
-		*/
-		options.commitOperational(
-			schemas.copyJSON(before),
-			schemas.copyJSON(after)
-		);
+		for (
+			var index = state.messages.length;
+			index < candidate.messages.length;
+			index++
+		) {
+			options.acceptMessage(
+				schemas.copyJSON(candidate.messages[index])
+			);
+		}
 	}
 
 	function run(prepare) {
@@ -499,7 +507,8 @@ function open(options) {
 					source
 				),
 
-			outgoing: outgoing
+			outgoing: outgoing,
+			messages: schemas.copyJSON(source.messages),
 		};
 	}
 
@@ -635,6 +644,57 @@ function open(options) {
 		});
 	}
 
+	function sendOrder(node, outgoing) {
+		assertPresent(node);
+
+		if (node.form !== "job-title") {
+			throw new Error("Order recipient is not a job title");
+		}
+
+		var outgoingId = resolveDestination(outgoing);
+
+		run(function (candidate) {
+			assertPresent(node);
+
+			var registry = getRegistry(candidate, outgoingId);
+
+			if (registry.kind !== "outgoing") {
+				throw new Error("Order requires an outgoing registry");
+			}
+
+			if (typeof options.prepareOrder !== "function") {
+				throw new Error("Order authorization is unavailable");
+			}
+
+			if (typeof options.acceptMessage !== "function") {
+				throw new Error("Message acceptance is unavailable");
+			}
+
+			var message = schemas.copyJSON(
+				options.prepareOrder(
+					node.value,
+					serialize(registry, candidate),
+					registrySnapshot()
+				)
+			);
+
+			if (
+				!schemas.isRecord(message) ||
+				message.type !== "order" ||
+				message.recipient !== node.value
+			) {
+				throw new Error("Invalid prepared order");
+			}
+
+			/*
+			The registry becomes message-owned. It is no longer an
+			accessible outgoing registry of this reaction.
+			*/
+			candidate.registries.delete(outgoingId);
+			candidate.messages.push(message);
+		});
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -758,6 +818,10 @@ function open(options) {
 
 				revokeMission: function (segment) {
 					revokeMission(node, segment);
+				},
+
+				sendOrder: function (outgoing) {
+					sendOrder(node, outgoing);
 				}
 			})
 		);

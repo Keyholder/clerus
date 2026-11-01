@@ -22,6 +22,10 @@ exports.create = function (access) {
 			}
 
 			return view.status;
+		},
+
+		order: function (outgoing) {
+			access.sendOrder(outgoing);
 		}
 	});
 };

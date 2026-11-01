@@ -16,6 +16,9 @@ var jobViews = require("$:/plugins/clerus/core2/job-view.js");
 var organizations = require(
 	"$:/plugins/clerus/core2/organization.js"
 );
+var messageServices = require(
+	"$:/plugins/clerus/core2/message-service.js"
+);
 
 function freezeTree(value) {
 	if (value !== null && typeof value === "object") {
@@ -66,6 +69,13 @@ function execute(options) {
 		throw new Error("readJobs must be a function");
 	}
 
+	if (
+		options.acceptMessage !== undefined &&
+		typeof options.acceptMessage !== "function"
+	) {
+		throw new Error("acceptMessage must be a function");
+	}
+
 	var initial = store.read(options.title);
 
 	if (initial.kind !== "materialized") {
@@ -89,6 +99,14 @@ function execute(options) {
 	var organization = options.readJobs
 		? organizations.create({
 			title: job.title,
+			readJobs: options.readJobs
+		})
+		: null;
+
+	var messageService = options.readJobs
+		? messageServices.create({
+			title: job.title,
+			platform: options.platform,
 			readJobs: options.readJobs
 		})
 		: null;
@@ -187,7 +205,13 @@ function execute(options) {
 				: undefined,
 			authorizeOrganization: organization
 				? organization.authorizeChange
-				: undefined
+				: undefined,
+
+			prepareOrder: messageService
+				? messageService.prepareOrder
+				: undefined,
+
+			acceptMessage: options.acceptMessage,
 		});
 
 		var returned = options.handler(
@@ -208,8 +232,11 @@ function execute(options) {
 
 		scope.assertResolved();
 
+		var snapshot = scope.snapshot();
+
 		return {
-			outgoing: scope.snapshot().outgoing
+			outgoing: snapshot.outgoing,
+			messages: snapshot.messages
 		};
 	} finally {
 		if (scope) {
