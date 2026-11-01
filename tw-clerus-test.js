@@ -21,3 +21,4 @@ runTests("integration");
 runTests("mission-foundation");
 runTests("hierarchy");
 runTests("missions");
+runTests("mission-issuance");
