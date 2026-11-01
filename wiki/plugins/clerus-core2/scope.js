@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var documents = require("$:/plugins/clerus/core2/documents.js");
 var operations = require("$:/plugins/clerus/core2/operation.js");
+var missionSchema = require(
+	"$:/plugins/clerus/core2/mission-schema.js"
+);
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -68,6 +71,7 @@ function open(options) {
 
 	[
 		"readTiddler",
+		"readMission",
 		"canWriteOperational",
 		"commitOperational"
 	].forEach(function (name) {
@@ -404,6 +408,28 @@ function open(options) {
 		return registryView(destinationId).get(key);
 	}
 
+	function registrySnapshot() {
+		var outgoing = [];
+
+		state.registries.forEach(function (registry) {
+			if (registry.kind === "outgoing") {
+				outgoing.push(serialize(registry));
+			}
+		});
+
+		return {
+			operational: serialize(
+				state.registries.get("operational")
+			),
+
+			incoming: incoming === null
+				? null
+				: serialize(state.registries.get("incoming")),
+
+			outgoing: outgoing
+		};
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -452,6 +478,41 @@ function open(options) {
 						options.readTiddler(node.value),
 						node.value
 					);
+				},
+
+				inspectMission: function () {
+					assertPresent(node);
+
+					if (node.form !== "mission") {
+						throw new Error("Document is not a mission");
+					}
+
+					if (typeof options.readMission !== "function") {
+						throw new Error("Mission inspection is unavailable");
+					}
+
+					var result = schemas.copyJSON(
+						options.readMission(
+							missionSchema.validate(node.value),
+							registrySnapshot()
+						)
+					);
+
+					if (
+						!schemas.isRecord(result) ||
+						typeof result.active !== "boolean" ||
+						typeof result.readable !== "boolean" ||
+						!Object.prototype.hasOwnProperty.call(result, "task") ||
+						(
+							result.reason !== null &&
+							typeof result.reason !== "string"
+						) ||
+						(result.readable && !result.active)
+					) {
+						throw new Error("Invalid mission inspection result");
+					}
+
+					return result;
 				}
 			})
 		);
@@ -476,6 +537,16 @@ function open(options) {
 			if (node.form === "charter") {
 				throw new Error(
 					"Charter cannot be copied or moved"
+				);
+			}
+
+			if (node.form === "mission") {
+				if (!move) {
+					throw new Error("Mission cannot be copied");
+				}
+
+				throw new Error(
+					"Mission transfer is not connected yet"
 				);
 			}
 
@@ -563,6 +634,12 @@ function open(options) {
 						);
 					}
 
+					if (node.form === "mission") {
+						throw new Error(
+							"Mission destruction is not connected yet"
+						);
+					}
+
 					getRegistry(candidate, id).entries.delete(key);
 				});
 			},
@@ -604,26 +681,7 @@ function open(options) {
 		*/
 		snapshot: function () {
 			assertActive();
-
-			var outgoing = [];
-
-			state.registries.forEach(function (registry) {
-				if (registry.kind === "outgoing") {
-					outgoing.push(serialize(registry));
-				}
-			});
-
-			return {
-				operational: serialize(
-					state.registries.get("operational")
-				),
-
-				incoming: incoming === null
-					? null
-					: serialize(state.registries.get("incoming")),
-
-				outgoing: outgoing
-			};
+			return registrySnapshot();
 		},
 
 		assertResolved: function () {

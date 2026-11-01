@@ -178,6 +178,17 @@ function formOf(document) {
 		return "memo";
 	}
 
+	if (document.form === "mission") {
+		/*
+		Lazy loading avoids an initialization cycle:
+		mission-schema uses the shared JSON utilities.
+		*/
+		require("$:/plugins/clerus/core2/mission-schema.js")
+			.validate(document);
+
+		return "mission";
+	}
+
 	throw new Error("Unsupported document form");
 }
 
