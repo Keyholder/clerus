@@ -187,12 +187,13 @@ function testMutationIsNotAccidentallyEnabled() {
 			);
 		}, "not connected yet");
 
-		throws(function () {
-			scope.incoming.destroy("assignment");
-		}, "not connected yet");
-
 		assert(scope.incoming.keys().length === 1);
 		assert(outgoing.keys().length === 0);
+
+		scope.incoming.destroy("assignment");
+
+		assert(scope.incoming.keys().length === 0);
+		scope.assertResolved();
 	} finally {
 		scope.close();
 	}

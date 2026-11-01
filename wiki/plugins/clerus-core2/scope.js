@@ -135,16 +135,37 @@ function open(options) {
 		return found;
 	}
 
-	function nodeFor(candidate, value) {
-		if (typeof value === "string") {
-			var existing = findTitle(candidate, value);
+	function findMission(candidate, value) {
+		var identity = missionSchema.identity(value);
+		var signature = missionSchema.delegationSignature(value);
+		var found = null;
 
-			if (existing) {
-				return existing;
-			}
+		candidate.registries.forEach(function (registry) {
+			registry.entries.forEach(function (node) {
+				if (
+					node.form === "mission" &&
+					missionSchema.identity(node.value) === identity &&
+					missionSchema.delegationSignature(node.value) === signature
+				) {
+					found = node;
+				}
+			});
+		});
+
+		return found;
+	}
+
+	function nodeFor(candidate, value) {
+		var form = schemas.formOf(value);
+		var existing = null;
+
+		if (form === "tiddler-title") {
+			existing = findTitle(candidate, value);
+		} else if (form === "mission") {
+			existing = findMission(candidate, value);
 		}
 
-		return newNode(value);
+		return existing || newNode(value);
 	}
 
 	function addInitial(id, kind, serialized) {
@@ -635,9 +656,26 @@ function open(options) {
 					}
 
 					if (node.form === "mission") {
-						throw new Error(
-							"Mission destruction is not connected yet"
-						);
+						var identity = missionSchema.identity(node.value);
+
+						candidate.registries.forEach(function (registry) {
+							var removed = [];
+
+							registry.entries.forEach(function (entry, entryKey) {
+								if (
+									entry.form === "mission" &&
+									missionSchema.identity(entry.value) === identity
+								) {
+									removed.push(entryKey);
+								}
+							});
+
+							removed.forEach(function (entryKey) {
+								registry.entries.delete(entryKey);
+							});
+						});
+
+						return;
 					}
 
 					getRegistry(candidate, id).entries.delete(key);

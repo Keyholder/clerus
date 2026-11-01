@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var scopes = require("$:/plugins/clerus/core2/scope.js");
 var transitions = require("$:/plugins/clerus/core2/store.js");
+var projectPerspectives = require(
+	"$:/plugins/clerus/core2/project-perspective.js"
+);
 
 function freezeTree(value) {
 	if (value !== null && typeof value === "object") {
@@ -52,6 +55,13 @@ function execute(options) {
 		throw new Error("Reaction requires a store");
 	}
 
+	if (
+		options.readJobs !== undefined &&
+		typeof options.readJobs !== "function"
+	) {
+		throw new Error("readJobs must be a function");
+	}
+
 	var initial = store.read(options.title);
 
 	if (initial.kind !== "materialized") {
@@ -62,6 +72,14 @@ function execute(options) {
 		initial.fields,
 		options.platform
 	);
+
+	var projectPerspective = options.readJobs
+		? projectPerspectives.create({
+			title: job.title,
+			store: store,
+			readJobs: options.readJobs
+		})
+		: null;
 
 	var event = schemas.copyJSON(options.event);
 
@@ -145,7 +163,10 @@ function execute(options) {
 			incoming: options.incoming,
 			readTiddler: store.read.bind(store),
 			canWriteOperational: currentWritable,
-			commitOperational: commitOperational
+			commitOperational: commitOperational,
+			readMission: projectPerspective
+				? projectPerspective.readMission
+				: undefined
 		});
 
 		var returned = options.handler(
