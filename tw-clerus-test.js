@@ -15,3 +15,4 @@ runTests("foundation");
 runTests("scope");
 runTests("operations");
 runTests("document-updates");
+runTests("reaction");
