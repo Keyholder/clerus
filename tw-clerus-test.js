@@ -23,3 +23,4 @@ runTests("hierarchy");
 runTests("missions");
 runTests("mission-issuance");
 runTests("mission-scope");
+runTests("project-perspective");
