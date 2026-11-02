@@ -12,10 +12,10 @@ var missionSchema = require(
 );
 var missions = require("$:/plugins/clerus/core2/missions.js");
 var tasks = require("$:/plugins/clerus/core2/project-tasks.js");
+var roles = require("$:/plugins/clerus/core2/roles.js");
 var jobTitles = require(
 	"$:/plugins/clerus/core2/job-titles.js"
 );
-var roles = require("$:/plugins/clerus/core2/roles.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -39,6 +39,14 @@ function unavailable(reason) {
 	};
 }
 
+function matches(entry, title, document) {
+	return entry.title === title &&
+		entry.project === document.project &&
+		entry.link === document.link &&
+		JSON.stringify(entry.role) ===
+			JSON.stringify(document.role);
+}
+
 function create(options) {
 	if (!jobTitles.isJobTitle(options.title)) {
 		throw new Error("Project perspective requires a job title");
@@ -52,9 +60,7 @@ function create(options) {
 		throw new Error("Project perspective requires state readers");
 	}
 
-	function readMission(value, scope) {
-		var document = missionSchema.validate(value);
-
+	function readScope(scope) {
 		if (
 			!schemas.isRecord(scope) ||
 			!Array.isArray(scope.outgoing)
@@ -81,11 +87,18 @@ function create(options) {
 			);
 		});
 
-		var available = [operational].concat(transactional);
+		return {
+			operational: operational,
+			transactional: transactional,
+			available: [operational].concat(transactional)
+		};
+	}
+
+	function contains(context, document) {
 		var identity = missionSchema.identity(document);
 		var signature = missionSchema.delegationSignature(document);
 
-		var held = available.some(function (registry) {
+		return context.available.some(function (registry) {
 			return Object.keys(registry).some(function (key) {
 				var candidate = registry[key];
 
@@ -95,21 +108,22 @@ function create(options) {
 					missionSchema.delegationSignature(candidate) === signature;
 			});
 		});
+	}
 
-		if (!held) {
-			return unavailable("Mission is not available in this scope");
-		}
+	function evaluateContext(context) {
+		var stored = options.store.read(options.title);
 
-		var storedOwner = options.store.read(options.title);
-
-		if (storedOwner.kind !== "materialized") {
-			return unavailable("Mission owner is not materialized");
+		if (stored.kind !== "materialized") {
+			return null;
 		}
 
 		var jobs = schemas.copyJSON(options.readJobs());
 
-		if (!Array.isArray(jobs)) {
-			throw new Error("Job reader must return an array");
+		if (
+			!Array.isArray(jobs) ||
+			!jobs.every(schemas.isRecord)
+		) {
+			throw new Error("Job reader must return job records");
 		}
 
 		var owners = jobs.filter(function (job) {
@@ -117,23 +131,26 @@ function create(options) {
 		});
 
 		if (owners.length !== 1) {
-			throw new Error("Perspective requires exactly one owner snapshot");
+			throw new Error(
+				"Perspective requires exactly one owner snapshot"
+			);
 		}
 
 		var owner = owners[0];
 
-		owner.registry = operational;
-		owner.custody = hasOwn(storedOwner.fields, "clerus-custody")
-			? storedOwner.fields["clerus-custody"]
+		/*
+		Keep the available registries intact. Synthetic entries
+		belong only to the evaluator's private owner projection.
+		*/
+		owner.registry = schemas.copyJSON(context.operational);
+
+		owner.custody = hasOwn(stored.fields, "clerus-custody")
+			? stored.fields["clerus-custody"]
 			: "user";
 
-		/*
-		Only mission objects are added from transactional registries.
-		Their title documents must not become organizational edges.
-		*/
 		var sequence = 0;
 
-		transactional.forEach(function (registry) {
+		context.transactional.forEach(function (registry) {
 			Object.keys(registry).sort().forEach(function (key) {
 				var candidate = registry[key];
 
@@ -151,34 +168,73 @@ function create(options) {
 					synthetic = "@scope-mission-" + sequence;
 				} while (hasOwn(owner.registry, synthetic));
 
-				define(owner.registry, synthetic, candidate);
+				define(
+					owner.registry,
+					synthetic,
+					missionSchema.validate(candidate)
+				);
 			});
 		});
 
-		var evaluation = missions.evaluate(jobs);
+		return missions.evaluate(jobs);
+	}
+
+	function inspectAssignment(value, scope) {
+		var document = missionSchema.validate(value);
+		var context = readScope(scope);
+
+		if (!contains(context, document)) {
+			return {
+				document: document,
+				evaluation: null,
+				active: false,
+				reason: "Mission is not available in this scope"
+			};
+		}
+
+		var evaluation = evaluateContext(context);
+
+		if (evaluation === null) {
+			return {
+				document: document,
+				evaluation: null,
+				active: false,
+				reason: "Mission owner is not materialized"
+			};
+		}
 
 		var active = evaluation.active.find(function (entry) {
-			return entry.title === options.title &&
-				entry.project === document.project &&
-				entry.link === document.link &&
-				JSON.stringify(entry.role) ===
-					JSON.stringify(document.role);
+			return matches(entry, options.title, document);
 		});
 
-		if (!active) {
-			var recorded = evaluation.entries.find(function (entry) {
-				return entry.title === options.title &&
-					entry.project === document.project &&
-					entry.link === document.link &&
-					JSON.stringify(entry.role) ===
-						JSON.stringify(document.role);
-			});
+		if (active) {
+			return {
+				document: document,
+				evaluation: evaluation,
+				active: true,
+				reason: null
+			};
+		}
 
-			return unavailable(
-				recorded && recorded.reason
-					? recorded.reason
-					: "Inactive mission"
-			);
+		var recorded = evaluation.entries.find(function (entry) {
+			return matches(entry, options.title, document);
+		});
+
+		return {
+			document: document,
+			evaluation: evaluation,
+			active: false,
+			reason: recorded && recorded.reason
+				? recorded.reason
+				: "Inactive mission"
+		};
+	}
+
+	function readMission(value, scope) {
+		var assignment = inspectAssignment(value, scope);
+
+		if (!assignment.active) {
+			return unavailable(assignment.reason);
 		}
 
 		var result = {
@@ -188,6 +244,7 @@ function create(options) {
 			reason: null
 		};
 
+		var document = assignment.document;
 		var project = options.store.read(document.project);
 
 		if (project.kind === "absent") {
@@ -200,7 +257,9 @@ function create(options) {
 				!project.fields ||
 				project.fields.type !== "application/json"
 			) {
-				throw new Error("Project must have type application/json");
+				throw new Error(
+					"Project must have type application/json"
+				);
 			}
 
 			result.task = tasks.resolve(
@@ -216,7 +275,7 @@ function create(options) {
 		return result;
 	}
 
-	function authorizeMutation(document, scope, operation, segment) {
+	function authorizeMutation(value, scope, operation, segment) {
 		if (operation !== "issue" && operation !== "revoke") {
 			throw new Error("Unsupported mission mutation");
 		}
@@ -225,10 +284,10 @@ function create(options) {
 			throw new Error("Invalid child role segment");
 		}
 
-		var view = readMission(document, scope);
+		var assignment = inspectAssignment(value, scope);
 
-		if (!view.active) {
-			throw new Error(view.reason || "Inactive mission");
+		if (!assignment.active) {
+			throw new Error(assignment.reason);
 		}
 
 		if (operation === "revoke") {
@@ -237,10 +296,13 @@ function create(options) {
 
 		schemas.assertPlatform(options.platform);
 
+		var document = assignment.document;
 		var project = options.store.read(document.project);
 
 		if (project.kind !== "materialized") {
-			throw new Error("Issuance requires a materialized project");
+			throw new Error(
+				"Issuance requires a materialized project"
+			);
 		}
 
 		if (
@@ -250,7 +312,9 @@ function create(options) {
 		}
 
 		if (project.fields.type !== "application/json") {
-			throw new Error("Project must have type application/json");
+			throw new Error(
+				"Project must have type application/json"
+			);
 		}
 
 		tasks.resolve(
@@ -266,92 +330,32 @@ function create(options) {
 			throw new Error("Root mission cannot address a report");
 		}
 
-		var view = readMission(document, scope);
+		var assignment = inspectAssignment(document, scope);
 
-		if (!view.active) {
-			throw new Error(view.reason || "Inactive mission");
+		if (!assignment.active) {
+			throw new Error(assignment.reason);
 		}
 
-		var jobs = schemas.copyJSON(options.readJobs());
+		var parentRole = document.role.slice(0, -1);
 
-		if (!Array.isArray(jobs)) {
-			throw new Error("Job reader must return an array");
-		}
+		var parent = assignment.evaluation.active.find(
+			function (entry) {
+				return entry.project === document.project &&
+					JSON.stringify(entry.role) ===
+						JSON.stringify(parentRole);
+			}
+		);
 
-		var owners = jobs.filter(function (job) {
-			return job.title === options.title;
-		});
-
-		if (owners.length !== 1) {
+		if (!parent) {
 			throw new Error(
-				"Report requires exactly one owner snapshot"
+				"Report has no active parent assignment"
 			);
 		}
 
-		var owner = owners[0];
-		var stored = options.store.read(options.title);
-
-		if (stored.kind !== "materialized") {
-			throw new Error("Report owner is not materialized");
-		}
-
-		owner.registry = schemas.registry(
-			scope.operational,
-			"operational"
-		);
-
-		owner.custody = hasOwn(stored.fields, "clerus-custody")
-			? stored.fields["clerus-custody"]
-			: "user";
-
-		var transactional = scope.outgoing.slice();
-
-		if (scope.incoming !== null) {
-			transactional.unshift(scope.incoming);
-		}
-
-		var sequence = 0;
-
-		transactional.forEach(function (registry) {
-			Object.keys(registry).forEach(function (key) {
-				var candidate = registry[key];
-
-				if (
-					!schemas.isRecord(candidate) ||
-					candidate.form !== "mission"
-				) {
-					return;
-				}
-
-				var synthetic;
-
-				do {
-					sequence++;
-					synthetic = "@report-mission-" + sequence;
-				} while (hasOwn(owner.registry, synthetic));
-
-				define(
-					owner.registry,
-					synthetic,
-					missionSchema.validate(candidate)
-				);
-			});
-		});
-
-		var evaluation = missions.evaluate(jobs);
-		var parentRole = document.role.slice(0, -1);
-
-		var parent = evaluation.active.find(function (entry) {
-			return entry.project === document.project &&
-				JSON.stringify(entry.role) === JSON.stringify(parentRole);
-		});
-
-		if (!parent) {
-			throw new Error("Report has no active parent assignment");
-		}
-
 		if (parent.title === options.title) {
-			throw new Error("Report requires a distinct parent holder");
+			throw new Error(
+				"Report requires a distinct parent holder"
+			);
 		}
 
 		return {

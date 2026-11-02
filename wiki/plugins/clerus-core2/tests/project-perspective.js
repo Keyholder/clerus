@@ -218,6 +218,87 @@ function testMissingSubordination(tw) {
 	assert(view.reason === "invalid-subordination");
 }
 
+function testReportAddressWithoutProject(tw) {
+	var f = fixture(tw);
+	var scope = f.scope();
+
+	f.wiki.deleteTiddler(f.project);
+
+	var view = f.service.readMission(f.child, scope);
+
+	assert(view.active);
+	assert(!view.readable);
+
+	var address = f.service.resolveReport(f.child, scope);
+
+	assert(address.recipient === f.jobs[0].title);
+	assert(address.project === f.project);
+	assert(address.role.join("/") === "item");
+}
+
+function testReportUsesTransactionalParent(tw) {
+	var f = fixture(tw);
+	var scope = f.scope();
+
+	/*
+	Move the root's authoritative representation from the external
+	holder into the current reaction's incoming registry.
+	*/
+	scope.incoming.root = clone(f.jobs[0].registry.mission);
+	delete f.jobs[0].registry.mission;
+
+	var beforeJobs = JSON.stringify(f.jobs);
+	var beforeScope = JSON.stringify(scope);
+
+	var view = f.service.readMission(f.child, scope);
+
+	assert(view.active);
+
+	var caught;
+
+	try {
+		f.service.resolveReport(f.child, scope);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(
+		caught.message.indexOf("distinct parent holder") !== -1
+	);
+
+	assert(JSON.stringify(f.jobs) === beforeJobs);
+	assert(JSON.stringify(scope) === beforeScope);
+}
+
+function testReadAndReportShareRevocation(tw) {
+	var f = fixture(tw);
+	var scope = f.scope();
+
+	assert(f.service.readMission(f.child, scope).active);
+	assert(
+		f.service.resolveReport(f.child, scope).recipient ===
+			f.jobs[0].title
+	);
+
+	delete f.jobs[0].registry.mission.children.item;
+
+	var view = f.service.readMission(f.child, scope);
+
+	assert(!view.active);
+
+	var caught;
+
+	try {
+		f.service.resolveReport(f.child, scope);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(caught.message === view.reason);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["project perspective: incoming mission provides authority", testIncomingAuthority],
@@ -226,7 +307,10 @@ exports.run = function (tw) {
 		["project perspective: conflicting representations are rejected", testConflictingRepresentations],
 		["project perspective: unavailable project preserves authority", testProjectUnavailable],
 		["project perspective: ephemeral custody is current", testEphemeralCustody],
-		["project perspective: immediate subordination is required", testMissingSubordination]
+		["project perspective: immediate subordination is required", testMissingSubordination],
+		["project perspective: report does not require project availability", testReportAddressWithoutProject],
+		["project perspective: report uses transactional parent authority", testReportUsesTransactionalParent],
+		["project perspective: reading and reporting share revocation", testReadAndReportShareRevocation],
 	];
 
 	var results = cases.map(function (item) {
