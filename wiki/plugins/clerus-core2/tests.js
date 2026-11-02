@@ -56,6 +56,7 @@ var SUITES = Object.freeze([
     "persistent-tick",
     "runtime-defer",
     "retention",
+    "retention-integration",
     "flow-schema",
     "flow-materialization",
     "flow-acceptance",
