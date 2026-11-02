@@ -349,6 +349,10 @@ function run(options, establishing) {
 
 		scope.assertResolved();
 
+		if (options.requireSentOutgoing === true) {
+			scope.assertOutgoingResolved();
+		}
+
 		var snapshot = scope.snapshot();
 
 		return {

@@ -386,7 +386,8 @@ Scheduler.prototype.drain = function () {
 						readJobs: this.options.readJobs,
 						newId: this.options.newId,
 						checkMessage: this.checkMessage,
-						acceptMessage: this.acceptMessage
+						acceptMessage: this.acceptMessage,
+						requireSentOutgoing: true
 					};
 
 					if (work.establishing) {

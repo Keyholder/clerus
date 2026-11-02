@@ -267,12 +267,49 @@ function testExecutorReplacementSkipsDelivery(tw) {
 	assert(result.errors.length === 0);
 }
 
+function testUnsentOutputIsAnError(tw) {
+	var f = fixture(tw, {
+		director: function (event, operational) {
+			var outgoing = operational.outgoing();
+
+			operational.copy(
+				"note",
+				outgoing,
+				"forgotten"
+			);
+
+			// Deliberately neither send nor destroy the document.
+		},
+
+		manager: function () {
+			throw new Error("No message should have been sent");
+		},
+
+		worker: function () {}
+	});
+
+	var result = f.scheduler.dispatch(
+		f.titles.director,
+		{ type: "test" }
+	);
+
+	assert(result.delivered.length === 0);
+	assert(result.errors.length === 1);
+	assert(
+		result.errors[0].error.message.indexOf(
+			"unsent documents"
+		) !== -1
+	);
+	assert(f.scheduler.queue.length === 0);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["scheduler: causal chain completes synchronously", testCausalChain],
 		["scheduler: sender failure preserves accepted work", testFailureDoesNotCancelAcceptedWork],
 		["scheduler: unresolved input is reported", testUnresolvedInputIsAnError],
-		["scheduler: executor replacement prevents delivery", testExecutorReplacementSkipsDelivery]
+		["scheduler: executor replacement prevents delivery", testExecutorReplacementSkipsDelivery],
+		["scheduler: unsent outgoing documents prevent completion", testUnsentOutputIsAnError]
 	];
 
 	var results = cases.map(function (item) {

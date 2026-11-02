@@ -1292,6 +1292,27 @@ function open(options) {
 			}
 		},
 
+		assertOutgoingResolved: function () {
+			assertActive();
+
+			var unresolved = false;
+
+			state.registries.forEach(function (registry) {
+				if (
+					registry.kind === "outgoing" &&
+					registry.entries.size !== 0
+				) {
+					unresolved = true;
+				}
+			});
+
+			if (unresolved) {
+				throw new Error(
+					"Outgoing registries contain unsent documents"
+				);
+			}
+		},
+
 		close: close
 	});
 }
