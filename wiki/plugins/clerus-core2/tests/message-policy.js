@@ -230,7 +230,7 @@ function testUnconnectedPathsAreRejected() {
 			source: f.worker,
 			recipient: f.manager
 		});
-	}, "Report assignment authorization");
+	}, "Report requires a project");
 
 	throws(function () {
 		check(f, {

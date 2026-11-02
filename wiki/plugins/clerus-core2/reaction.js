@@ -114,7 +114,8 @@ function execute(options) {
 		? messageServices.create({
 			title: job.title,
 			platform: options.platform,
-			readJobs: options.readJobs
+			readJobs: options.readJobs,
+			resolveReport: projectPerspective.resolveReport
 		})
 		: null;
 
@@ -216,6 +217,12 @@ function execute(options) {
 
 			prepareOrder: messageService
 				? messageService.prepareOrder
+				: undefined,
+
+			eventType: event.type,
+
+			prepareReport: messageService
+				? messageService.prepareReport
 				: undefined,
 
 			acceptMessage: options.acceptMessage,

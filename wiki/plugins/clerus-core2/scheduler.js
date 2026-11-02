@@ -9,6 +9,7 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
 var reactions = require("$:/plugins/clerus/core2/reaction.js");
+var roles = require("$:/plugins/clerus/core2/roles.js");
 
 function describe(error) {
 	return {
@@ -80,7 +81,7 @@ Scheduler.prototype.prepareMessage = function (value) {
 
 	if (
 		!schemas.isRecord(message) ||
-		message.type !== "order" ||
+		(message.type !== "order" && message.type !== "report") ||
 		message.platform !== this.options.platform ||
 		!jobTitles.isJobTitle(message.source) ||
 		!jobTitles.isJobTitle(message.recipient) ||
@@ -96,10 +97,26 @@ Scheduler.prototype.prepareMessage = function (value) {
 
 	var recipient = this.recipient(message.recipient);
 
+    var event = { type: message.type };
+
+    if (message.type === "report") {
+        if (
+            typeof message.project !== "string" ||
+            message.project.length === 0 ||
+            !roles.isRole(message.role) ||
+            message.role.length === 0
+        ) {
+            throw new Error("Queued report requires a role signature");
+        }
+
+        event.project = message.project;
+        event.role = message.role.slice();
+    }
+
 	return {
 		title: recipient.job.title,
 		executor: recipient.job.executor,
-		event: { type: "order" },
+		event: event,
 		incoming: message.registry
 	};
 };

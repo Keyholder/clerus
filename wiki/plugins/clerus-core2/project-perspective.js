@@ -259,9 +259,112 @@ function create(options) {
 		);
 	}
 
+	function resolveReport(value, scope) {
+		var document = missionSchema.validate(value);
+
+		if (document.role.length === 0) {
+			throw new Error("Root mission cannot address a report");
+		}
+
+		var view = readMission(document, scope);
+
+		if (!view.active) {
+			throw new Error(view.reason || "Inactive mission");
+		}
+
+		var jobs = schemas.copyJSON(options.readJobs());
+
+		if (!Array.isArray(jobs)) {
+			throw new Error("Job reader must return an array");
+		}
+
+		var owners = jobs.filter(function (job) {
+			return job.title === options.title;
+		});
+
+		if (owners.length !== 1) {
+			throw new Error(
+				"Report requires exactly one owner snapshot"
+			);
+		}
+
+		var owner = owners[0];
+		var stored = options.store.read(options.title);
+
+		if (stored.kind !== "materialized") {
+			throw new Error("Report owner is not materialized");
+		}
+
+		owner.registry = schemas.registry(
+			scope.operational,
+			"operational"
+		);
+
+		owner.custody = hasOwn(stored.fields, "clerus-custody")
+			? stored.fields["clerus-custody"]
+			: "user";
+
+		var transactional = scope.outgoing.slice();
+
+		if (scope.incoming !== null) {
+			transactional.unshift(scope.incoming);
+		}
+
+		var sequence = 0;
+
+		transactional.forEach(function (registry) {
+			Object.keys(registry).forEach(function (key) {
+				var candidate = registry[key];
+
+				if (
+					!schemas.isRecord(candidate) ||
+					candidate.form !== "mission"
+				) {
+					return;
+				}
+
+				var synthetic;
+
+				do {
+					sequence++;
+					synthetic = "@report-mission-" + sequence;
+				} while (hasOwn(owner.registry, synthetic));
+
+				define(
+					owner.registry,
+					synthetic,
+					missionSchema.validate(candidate)
+				);
+			});
+		});
+
+		var evaluation = missions.evaluate(jobs);
+		var parentRole = document.role.slice(0, -1);
+
+		var parent = evaluation.active.find(function (entry) {
+			return entry.project === document.project &&
+				JSON.stringify(entry.role) === JSON.stringify(parentRole);
+		});
+
+		if (!parent) {
+			throw new Error("Report has no active parent assignment");
+		}
+
+		if (parent.title === options.title) {
+			throw new Error("Report requires a distinct parent holder");
+		}
+
+		return {
+			recipient: parent.title,
+			project: document.project,
+			role: document.role.slice()
+		};
+	}
+
 	return Object.freeze({
 		readMission: readMission,
-		authorizeMutation: authorizeMutation
+		authorizeMutation: authorizeMutation,
+		resolveReport: resolveReport
 	});
 }
 

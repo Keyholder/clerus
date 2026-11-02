@@ -52,8 +52,48 @@ function create(options) {
 		});
 	}
 
+	function prepareReport(document, registry, scope) {
+		if (typeof options.resolveReport !== "function") {
+			throw new Error("Report assignment authorization is unavailable");
+		}
+
+		var address = options.resolveReport(document, scope);
+		var jobs = schemas.copyJSON(options.readJobs());
+
+		if (!Array.isArray(jobs)) {
+			throw new Error("Job reader must return an array");
+		}
+
+		var owners = jobs.filter(function (job) {
+			return job.title === options.title;
+		});
+
+		if (owners.length !== 1) {
+			throw new Error(
+				"Message service requires exactly one owner snapshot"
+			);
+		}
+
+		owners[0].registry = schemas.registry(
+			scope.operational,
+			"operational"
+		);
+
+		return policy.check({
+			type: "report",
+			platform: options.platform,
+			source: options.title,
+			recipient: address.recipient,
+			project: address.project,
+			role: address.role,
+			jobs: jobs,
+			registry: registry
+		});
+	}
+
 	return Object.freeze({
-		prepareOrder: prepareOrder
+		prepareOrder: prepareOrder,
+		prepareReport: prepareReport
 	});
 }
 

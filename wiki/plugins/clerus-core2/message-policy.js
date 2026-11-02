@@ -9,6 +9,7 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
 var hierarchy = require("$:/plugins/clerus/core2/hierarchy.js");
+var roles = require("$:/plugins/clerus/core2/roles.js");
 
 function reachable(children, from, to) {
 	var pending = [from];
@@ -124,10 +125,16 @@ function check(options) {
 		);
 	}
 
-	if (options.type === "report") {
-		throw new Error(
-			"Report assignment authorization is not connected yet"
-		);
+	if (
+		options.type === "report" &&
+		(
+			typeof options.project !== "string" ||
+			options.project.length === 0 ||
+			!roles.isRole(options.role) ||
+			options.role.length === 0
+		)
+	) {
+		throw new Error("Report requires a project and non-root role");
 	}
 
 	var registry = schemas.registry(
@@ -147,7 +154,7 @@ function check(options) {
 			);
 		}
 
-		if (form !== "job-title") {
+		if (form !== "job-title" || options.type !== "order") {
 			return;
 		}
 
@@ -173,13 +180,20 @@ function check(options) {
 		}
 	});
 
-	return {
+	var result = {
 		type: options.type,
 		platform: options.platform,
 		source: options.source,
 		recipient: options.recipient,
 		registry: registry
 	};
+
+	if (options.type === "report") {
+		result.project = options.project;
+		result.role = options.role.slice();
+	}
+
+	return result;
 }
 
 exports.check = check;

@@ -30,5 +30,6 @@ runTests("mission-transactions");
 runTests("job-titles");
 runTests("organization");
 runTests("message-policy");
+runTests("reports");
 runTests("orders");
 runTests("scheduler");

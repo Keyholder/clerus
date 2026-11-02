@@ -84,6 +84,7 @@ function open(options) {
 		"authorizeMission",
 		"authorizeOrganization",
 		"prepareOrder",
+		"prepareReport",
 		"acceptMessage",
 		"checkMessage"
 	].forEach(function (name) {
@@ -700,6 +701,64 @@ function open(options) {
 		});
 	}
 
+	function sendReport(node, outgoing) {
+		assertPresent(node);
+
+		if (node.form !== "mission") {
+			throw new Error("Report requires a mission");
+		}
+
+		if (options.eventType === "order") {
+			throw new Error("Cannot report while reacting to an order");
+		}
+
+		var outgoingId = resolveDestination(outgoing);
+
+		run(function (candidate) {
+			assertPresent(node);
+
+			var registry = getRegistry(candidate, outgoingId);
+
+			if (registry.kind !== "outgoing") {
+				throw new Error("Report requires an outgoing registry");
+			}
+
+			if (typeof options.prepareReport !== "function") {
+				throw new Error("Report authorization is unavailable");
+			}
+
+			if (typeof options.acceptMessage !== "function") {
+				throw new Error("Message acceptance is unavailable");
+			}
+
+			var message = schemas.copyJSON(
+				options.prepareReport(
+					missionSchema.validate(node.value),
+					serialize(registry, candidate),
+					registrySnapshot()
+				)
+			);
+
+			if (
+				!schemas.isRecord(message) ||
+				message.type !== "report" ||
+				typeof message.recipient !== "string" ||
+				message.project !== node.value.project ||
+				JSON.stringify(message.role) !==
+					JSON.stringify(node.value.role)
+			) {
+				throw new Error("Invalid prepared report");
+			}
+
+			if (typeof options.checkMessage === "function") {
+				options.checkMessage(schemas.copyJSON(message));
+			}
+
+			candidate.registries.delete(outgoingId);
+			candidate.messages.push(message);
+		});
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -827,6 +886,10 @@ function open(options) {
 
 				sendOrder: function (outgoing) {
 					sendOrder(node, outgoing);
+				},
+
+				sendReport: function (outgoing) {
+					sendReport(node, outgoing);
 				}
 			})
 		);

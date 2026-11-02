@@ -34,6 +34,10 @@ exports.create = function (access) {
 
 		revokePart: function (segment) {
 			access.revokeMission(segment);
+		},
+
+		report: function (outgoing) {
+			access.sendReport(outgoing);
 		}
 	});
 };
