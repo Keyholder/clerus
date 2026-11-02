@@ -8,6 +8,7 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var transitions = require("$:/plugins/clerus/core2/store.js");
 var Plan = require("$:/plugins/clerus/core2/plan.js").Plan;
 var plannedScopes = require(
 	"$:/plugins/clerus/core2/planned-scope.js"
@@ -34,7 +35,7 @@ function freezeTree(value) {
 	return value;
 }
 
-function execute(options) {
+function run(options, establishing) {
 	schemas.assertPlatform(options.platform);
 
 	var space = jobTitles.classify(options.title);
@@ -47,27 +48,10 @@ function execute(options) {
 
 	if (
 		!options.store ||
-		typeof options.store.snapshot !== "function" ||
-		typeof options.handler !== "function"
+		typeof options.store.snapshot !== "function"
 	) {
-		throw new Error(
-			"Planned reaction requires a snapshot store and handler"
-		);
+		throw new Error("Planned reaction requires a snapshot store");
 	}
-
-	var event = schemas.copyJSON(options.event);
-
-	if (
-		!schemas.isRecord(event) ||
-		typeof event.type !== "string" ||
-		event.type.length === 0
-	) {
-		throw new Error("Planned reaction requires an event type");
-	}
-
-	define(event, "title", options.title);
-	define(event, "platform", options.platform);
-	freezeTree(event);
 
 	if (
 		options.newId !== undefined &&
@@ -76,28 +60,102 @@ function execute(options) {
 		throw new Error("newId must be a function");
 	}
 
+	var event = schemas.copyJSON(
+		establishing && options.event === undefined
+			? { type: "order" }
+			: options.event
+	);
+
+	if (
+		!schemas.isRecord(event) ||
+		typeof event.type !== "string" ||
+		event.type.length === 0 ||
+		(establishing && event.type !== "order")
+	) {
+		throw new Error("Invalid planned reaction event");
+	}
+
+	define(event, "title", options.title);
+	define(event, "platform", options.platform);
+	freezeTree(event);
+
+	var incoming = options.incoming === undefined
+		? undefined
+		: schemas.registry(options.incoming, "incoming");
+
 	var plan = new Plan(options.store.snapshot());
 	var scope = null;
 
 	try {
 		var initial = plan.read(options.title);
+		var executor;
+		var handler;
 
-		if (
-			initial.kind !== "materialized" ||
-			initial.fields.type !== "application/json" ||
-			typeof initial.fields["clerus-executor"] !== "string" ||
-			initial.fields["clerus-executor"].length === 0
-		) {
-			throw new Error(
-				"Planned reaction requires a materialized JSON job"
+		if (establishing) {
+			if (initial.kind !== "absent") {
+				throw new Error(
+					"Planned establishment target must be absent"
+				);
+			}
+
+			if (incoming === undefined) {
+				throw new Error(
+					"Planned establishment requires incoming documents"
+				);
+			}
+
+			var contracts = Object.keys(incoming).filter(
+				function (key) {
+					return schemas.formOf(incoming[key]) === "contract";
+				}
 			);
+
+			if (contracts.length !== 1) {
+				throw new Error(
+					"Planned establishment requires exactly one contract"
+				);
+			}
+
+			var contract = incoming[contracts[0]];
+
+			if (contract.temp === true) {
+				throw new Error(
+					"Contract forbids persistent establishment"
+				);
+			}
+
+			if (typeof options.resolveExecutor !== "function") {
+				throw new Error(
+					"Planned establishment requires an executor resolver"
+				);
+			}
+
+			executor = contract.executor;
+			handler = options.resolveExecutor(executor);
+		} else {
+			if (
+				initial.kind !== "materialized" ||
+				initial.fields.type !== "application/json" ||
+				typeof initial.fields["clerus-executor"] !== "string" ||
+				initial.fields["clerus-executor"].length === 0
+			) {
+				throw new Error(
+					"Planned reaction requires a materialized JSON job"
+				);
+			}
+
+			executor = initial.fields["clerus-executor"];
+			handler = options.handler;
 		}
 
-		var executor = initial.fields["clerus-executor"];
+		if (typeof handler !== "function") {
+			throw new Error("Planned reaction requires an available handler");
+		}
 
 		if (
 			options.acknowledgeResumption === true &&
 			(
+				establishing ||
 				initial.fields["clerus-suspended"] !== "yes" ||
 				initial.fields["clerus-custody"] !== options.platform ||
 				event.type !== "resumed"
@@ -111,11 +169,12 @@ function execute(options) {
 			title: options.title,
 			platform: options.platform,
 			eventType: event.type,
-			incoming: options.incoming,
-			newId: options.newId
+			incoming: incoming,
+			newId: options.newId,
+			establishing: establishing
 		});
 
-		var returned = options.handler(
+		var returned = handler(
 			event,
 			scope.operational,
 			scope.incoming
@@ -126,9 +185,7 @@ function execute(options) {
 			returned !== undefined &&
 			typeof returned.then === "function"
 		) {
-			throw new Error(
-				"Executor reactions must be synchronous"
-			);
+			throw new Error("Executor reactions must be synchronous");
 		}
 
 		scope.assertResolved();
@@ -143,29 +200,25 @@ function execute(options) {
 				current.fields["clerus-executor"] !== executor ||
 				current.fields["clerus-suspended"] !== "yes"
 			) {
-				throw new Error("Resumption state changed inside the plan");
+				throw new Error(
+					"Resumption state changed inside the plan"
+				);
 			}
 
 			var resumedFields = schemas.copyJSON(current.fields);
-
 			delete resumedFields["clerus-suspended"];
 
-			plan.apply(
-				require("$:/plugins/clerus/core2/store.js")
-					.transition(
-						options.title,
-						current.fields,
-						resumedFields
-					)
-			);
+			plan.apply(transitions.transition(
+				options.title,
+				current.fields,
+				resumedFields
+			));
 		}
 
 		var ownerState = plan.initial(options.title);
 
 		scope.close();
 		scope = null;
-
-		var compiled = plan.seal();
 
 		return schemas.copyJSON({
 			version: 1,
@@ -174,7 +227,7 @@ function execute(options) {
 				executor: executor,
 				state: ownerState
 			},
-			plan: compiled
+			plan: plan.seal()
 		});
 	} catch (error) {
 		if (scope) {
@@ -194,4 +247,10 @@ function execute(options) {
 	}
 }
 
-exports.execute = execute;
+exports.execute = function (options) {
+	return run(options, false);
+};
+
+exports.establish = function (options) {
+	return run(options, true);
+};

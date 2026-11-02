@@ -40,23 +40,62 @@ function open(options) {
 	plan.assertOpen();
 
 	var initial = plan.read(options.title);
+	var establishing = options.establishing === true;
+	var space = jobTitles.classify(options.title);
+	var executor;
+	var registry;
 
-	if (
-		!jobTitles.isJobTitle(options.title) ||
-		initial.kind !== "materialized" ||
-		initial.fields.type !== "application/json" ||
-		typeof initial.fields["clerus-executor"] !== "string" ||
-		initial.fields["clerus-executor"].length === 0
-	) {
-		throw new Error("Planned scope requires an existing JSON job");
+	if (!space) {
+		throw new Error("Planned scope requires a job title");
 	}
 
-	var executor = initial.fields["clerus-executor"];
+	if (establishing) {
+		if (!space.persistent || initial.kind !== "absent") {
+			throw new Error(
+				"Planned establishment requires an absent persistent target"
+			);
+		}
 
-	var registry = schemas.registry(
-		JSON.parse(initial.fields.text),
-		"operational"
-	);
+		var incoming = schemas.registry(
+			options.incoming,
+			"incoming"
+		);
+
+		var contracts = Object.keys(incoming).filter(function (key) {
+			return schemas.formOf(incoming[key]) === "contract";
+		});
+
+		if (contracts.length !== 1) {
+			throw new Error(
+				"Planned establishment requires exactly one contract"
+			);
+		}
+
+		var contract = incoming[contracts[0]];
+
+		if (contract.temp === true) {
+			throw new Error("Contract forbids persistent establishment");
+		}
+
+		executor = contract.executor;
+		registry = null;
+	} else {
+		if (
+			initial.kind !== "materialized" ||
+			initial.fields.type !== "application/json" ||
+			typeof initial.fields["clerus-executor"] !== "string" ||
+			initial.fields["clerus-executor"].length === 0
+		) {
+			throw new Error("Planned scope requires an existing JSON job");
+		}
+
+		executor = initial.fields["clerus-executor"];
+
+		registry = schemas.registry(
+			JSON.parse(initial.fields.text),
+			"operational"
+		);
+	}
 
 	var activePlan = plan;
 
@@ -290,7 +329,32 @@ function open(options) {
 			usedMessageIds.add(id);
 
 			activePlan.send(effect);
-		}
+		},
+
+		establishOperational: establishing
+			? function (registry) {
+				if (activePlan.read(options.title).kind !== "absent") {
+					throw new Error("Planned establishment target is occupied");
+				}
+
+				var normalized = schemas.registry(
+					registry,
+					"operational"
+				);
+
+				activePlan.apply(transitions.transition(
+					options.title,
+					null,
+					{
+						title: options.title,
+						type: "application/json",
+						"clerus-custody": options.platform,
+						"clerus-executor": executor,
+						text: JSON.stringify(normalized)
+					}
+				));
+			}
+			: undefined
 	});
 }
 
