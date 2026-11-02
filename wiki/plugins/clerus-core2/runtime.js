@@ -40,6 +40,7 @@ var deferredObligations = require(
 	"$:/plugins/clerus/core2/deferred-obligations.js"
 );
 var retention = require("$:/plugins/clerus/core2/retention.js");
+var collection = require("$:/plugins/clerus/core2/collection.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -894,6 +895,41 @@ Runtime.prototype.resume = function (title) {
 
 	return this.dispatch(title, {
 		type: "resumed"
+	});
+};
+
+Runtime.prototype.collectionBarriers = function () {
+	var reasons = [];
+
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running ||
+		this.runningDeferred
+	) {
+		reasons.push("execution-in-progress");
+	}
+
+	if (
+		this.scheduler.queue.length > 0 ||
+		this.scheduler.pendingBirths.size > 0
+	) {
+		reasons.push("ephemeral-messages-pending");
+	}
+
+	if (this.deferred.inspect().length > 0) {
+		reasons.push("ephemeral-ticks-pending");
+	}
+
+	return reasons;
+};
+
+Runtime.prototype.collect = function () {
+	return collection.collect({
+		store: this.store,
+		platform: this.platform,
+		readJobs: this.readJobs,
+		guard: this.collectionBarriers.bind(this)
 	});
 };
 
