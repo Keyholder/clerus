@@ -86,7 +86,10 @@ function Runtime(options) {
 		readJobs: this.readJobs,
 		resolveExecutor: options.resolveExecutor,
 		newId: options.newId,
-		lifecycle: this.lifecycle
+		lifecycle: this.lifecycle,
+		executePersistent: function (context) {
+			return this.executePersistentIngress(context);
+		}.bind(this)
 	});
 
 	this.flows = flowObligations.create({
@@ -221,6 +224,66 @@ Runtime.prototype.handlePersistentResult = function (
 	}
 };
 
+Runtime.prototype.executePersistentIngress = function (context) {
+	var stored = this.store.read(context.title);
+
+	if (
+		stored.kind !== "materialized" ||
+		stored.fields["clerus-executor"] !== context.executor
+	) {
+		return {
+			status: "unavailable",
+			reason: "ingress-recipient-changed"
+		};
+	}
+
+	if (
+		stored.fields["clerus-suspended"] === "yes" &&
+		stored.fields["clerus-custody"] === this.platform
+	) {
+		return {
+			status: "blocked",
+			reason: "resumption-required",
+			obligations: []
+		};
+	}
+
+	/*
+		No options.flow: this incoming event is not yet part of
+		a durable transactional flow.
+	*/
+	var result = persistentReactions.execute({
+		store: this.store,
+		title: context.title,
+		platform: this.platform,
+		event: context.event,
+		incoming: context.incoming,
+		handler: context.handler,
+		newId: this.newId
+	});
+
+	this.handlePersistentResult(
+		context.title,
+		context.executor,
+		context.handler,
+		context.event,
+		result
+	);
+
+	if (result.obligation) {
+		var journal = this.store.read(result.obligation);
+
+		if (
+			journal.kind === "materialized" &&
+			journal.fields["clerus-wal-kind"] === "flow"
+		) {
+			this.flowScheduler.track(result.obligation);
+		}
+	}
+
+	return result;
+};
+
 Runtime.prototype.dispatch = function (title, event, incoming) {
 	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
 		throw new Error("Cannot start a nested runtime dispatch");
@@ -236,11 +299,15 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 
 	try {
 		if (!space.persistent) {
-			return this.scheduler.dispatch(
+			var ephemeralResult = this.scheduler.dispatch(
 				title,
 				event,
 				incoming
 			);
+
+			ephemeralResult.flow = this.flowScheduler.drain();
+
+			return ephemeralResult;
 		}
 
 		var stored = this.store.read(title);
@@ -376,10 +443,7 @@ Runtime.prototype.observe = function () {
 			return;
 		}
 
-		passes.push(this.scheduler.dispatch(
-			current.title,
-			current
-		));
+		passes.push(this.dispatch(current.title, current));
 	}, this);
 
 	return passes;

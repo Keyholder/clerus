@@ -52,6 +52,13 @@ function Scheduler(options) {
 		throw new Error("lifecycle must provide dismiss()");
 	}
 
+	if (
+		options.executePersistent !== undefined &&
+		typeof options.executePersistent !== "function"
+	) {
+		throw new Error("executePersistent must be a function");
+	}
+
 	this.options = options;
 	this.queue = [];
 	this.running = false;
@@ -62,16 +69,19 @@ function Scheduler(options) {
 	this.pendingBirths = new Set();
 }
 
-Scheduler.prototype.recipient = function (title) {
+Scheduler.prototype.recipient = function (title, allowPersistent) {
 	var space = jobTitles.classify(title);
 
 	if (
 		!space ||
-		space.persistent ||
-		space.platform !== this.options.platform
+		(!space.persistent && space.platform !== this.options.platform)
 	) {
+		throw new Error("Recipient is not local to this scheduler");
+	}
+
+	if (space.persistent && allowPersistent !== true) {
 		throw new Error(
-			"This scheduler supports only local ephemeral recipients"
+			"Initial dispatch requires a local ephemeral recipient"
 		);
 	}
 
@@ -81,10 +91,32 @@ Scheduler.prototype.recipient = function (title) {
 		throw new Error("Recipient is not materialized");
 	}
 
-	var job = schemas.ephemeralJob(
-		stored.fields,
-		this.options.platform
-	);
+	var job;
+
+	if (space.persistent) {
+		if (
+			stored.fields.type !== "application/json" ||
+			typeof stored.fields["clerus-executor"] !== "string" ||
+			stored.fields["clerus-executor"].length === 0
+		) {
+			throw new Error("Invalid persistent recipient");
+		}
+
+		job = {
+			title: title,
+			executor: stored.fields["clerus-executor"],
+			custody: stored.fields["clerus-custody"],
+			registry: schemas.registry(
+				JSON.parse(stored.fields.text),
+				"operational"
+			)
+		};
+	} else {
+		job = schemas.ephemeralJob(
+			stored.fields,
+			this.options.platform
+		);
+	}
 
 	var handler = this.options.resolveExecutor(job.executor);
 
@@ -94,7 +126,8 @@ Scheduler.prototype.recipient = function (title) {
 
 	return {
 		job: job,
-		handler: handler
+		handler: handler,
+		persistent: space.persistent
 	};
 };
 
@@ -198,7 +231,17 @@ Scheduler.prototype.prepareMessage = function (value) {
 		throw new Error("Invalid establishment marker");
 	}
 
-	var recipient = this.recipient(message.recipient);
+	var recipient = this.recipient(message.recipient, true);
+
+	if (
+		jobTitles.classify(message.recipient).persistent &&
+		(
+			typeof this.options.executePersistent !== "function" ||
+			typeof this.options.newId !== "function"
+		)
+	) {
+		throw new Error("Persistent ingress is unavailable");
+	}
 
 	return {
 		title: recipient.job.title,
@@ -214,6 +257,20 @@ Scheduler.prototype.checkMessage = function (message) {
 
 Scheduler.prototype.acceptMessage = function (message) {
 	var work = this.prepareMessage(message);
+	var space = jobTitles.classify(work.title);
+
+	if (space.persistent) {
+		var id = this.options.newId();
+
+		if (
+			typeof id !== "string" ||
+			!/^[A-Za-z0-9_-]{16,128}$/.test(id)
+		) {
+			throw new Error("Invalid ingress event identifier");
+		}
+
+		work.event.id = id;
+	}
 
 	if (work.establishing) {
 		this.pendingBirths.add(work.title);
@@ -323,14 +380,21 @@ Scheduler.prototype.drain = function () {
 	var result = {
 		delivered: [],
 		skipped: [],
-		errors: []
+		errors: [],
+		persistent: [],
+		blocked: [],
+		remaining: 0
 	};
+
+	var deferred = [];
 
 	this.running = true;
 
 	try {
 		while (this.queue.length > 0) {
 			var work = this.queue.shift();
+			var space = jobTitles.classify(work.title);
+			var persistentWork = !!space && space.persistent;
 
 			try {
 				var handler;
@@ -356,7 +420,10 @@ Scheduler.prototype.drain = function () {
 							);
 						}
 					} else {
-						var recipient = this.recipient(work.title);
+						var recipient = this.recipient(
+							work.title,
+							persistentWork
+						);
 
 						if (recipient.job.executor !== work.executor) {
 							throw new Error(
@@ -367,11 +434,91 @@ Scheduler.prototype.drain = function () {
 						handler = recipient.handler;
 					}
 				} catch (error) {
-					result.skipped.push({
-						title: work.title,
-						type: work.event.type,
-						error: describe(error)
-					});
+					if (persistentWork) {
+						deferred.push(work);
+
+						result.blocked.push({
+							title: work.title,
+							type: work.event.type,
+							error: describe(error)
+						});
+					} else {
+						result.skipped.push({
+							title: work.title,
+							type: work.event.type,
+							error: describe(error)
+						});
+					}
+
+					continue;
+				}
+
+				/*
+					Select the reliability contract from the address.
+					A persistent recipient must never reach
+					reactions.execute() or ephemeral dismissal.
+				*/
+				if (persistentWork) {
+					try {
+						if (
+							typeof this.options.executePersistent !==
+							"function"
+						) {
+							throw new Error(
+								"Persistent ingress is unavailable"
+							);
+						}
+
+						var persistentResult =
+							this.options.executePersistent({
+								title: work.title,
+								executor: work.executor,
+								handler: handler,
+								event: work.event,
+								incoming: work.incoming
+							});
+
+						result.persistent.push({
+							title: work.title,
+							type: work.event.type,
+							result: persistentResult
+						});
+
+						if (
+							persistentResult.status === "blocked" ||
+							persistentResult.status === "unavailable"
+						) {
+							deferred.push(work);
+
+							result.blocked.push({
+								title: work.title,
+								type: work.event.type,
+								result: persistentResult
+							});
+						} else if (
+							persistentResult.status === "completed"
+						) {
+							result.delivered.push({
+								title: work.title,
+								type: work.event.type
+							});
+						} else {
+							result.errors.push({
+								title: work.title,
+								type: work.event.type,
+								phase: persistentResult.phase,
+								error: persistentResult.error,
+								result: persistentResult
+							});
+						}
+					} catch (error) {
+						result.errors.push({
+							title: work.title,
+							type: work.event.type,
+							phase: "persistent-ingress",
+							error: describe(error)
+						});
+					}
 
 					continue;
 				}
@@ -391,10 +538,6 @@ Scheduler.prototype.drain = function () {
 					};
 
 					if (work.establishing) {
-						/*
-						Use the handler selected for this delivery.
-						reaction.establish() still checks the contract.
-						*/
 						execution.resolveExecutor = function (name) {
 							if (name !== work.executor) {
 								throw new Error(
@@ -425,7 +568,9 @@ Scheduler.prototype.drain = function () {
 			}
 		}
 	} finally {
+		this.queue = deferred.concat(this.queue);
 		this.running = false;
+		result.remaining = this.queue.length;
 	}
 
 	return result;
