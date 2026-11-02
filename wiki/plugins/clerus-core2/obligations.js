@@ -131,13 +131,26 @@ function create(options) {
 			proposal: proposal
 		};
 
-		options.store.apply(stores.transition(title, null, {
-			title: title,
-			type: "application/json",
-			"clerus-custody": options.platform,
-			"clerus-wal-kind": "plan",
-			text: JSON.stringify(record)
-		}));
+		try {
+			options.store.apply(stores.transition(title, null, {
+				title: title,
+				type: "application/json",
+				"clerus-custody": options.platform,
+				"clerus-wal-kind": "plan",
+				text: JSON.stringify(record)
+			}));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "ObligationRegistrationError";
+			error.cause = cause;
+			error.obligationTitle = title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
 
 		return title;
 	}
