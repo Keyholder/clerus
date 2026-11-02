@@ -36,6 +36,7 @@ runTests("orders");
 runTests("scheduler");
 runTests("lifecycle");
 runTests("scheduler-lifecycle");
+runTests("runtime");
 runTests("message-policy");
 runTests("establishment-reaction");
 runTests("establishment-delivery");
