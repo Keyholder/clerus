@@ -69,6 +69,13 @@ function execute(options) {
 	define(event, "platform", options.platform);
 	freezeTree(event);
 
+	if (
+		options.newId !== undefined &&
+		typeof options.newId !== "function"
+	) {
+		throw new Error("newId must be a function");
+	}
+
 	var plan = new Plan(options.store.snapshot());
 	var scope = null;
 
@@ -104,7 +111,8 @@ function execute(options) {
 			title: options.title,
 			platform: options.platform,
 			eventType: event.type,
-			incoming: options.incoming
+			incoming: options.incoming,
+			newId: options.newId
 		});
 
 		var returned = options.handler(

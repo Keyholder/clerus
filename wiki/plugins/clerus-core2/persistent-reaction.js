@@ -90,7 +90,8 @@ function execute(options) {
 					incoming
 				);
 			},
-			acknowledgeResumption: options.acknowledgeResumption === true
+			acknowledgeResumption: options.acknowledgeResumption === true,
+			newId: options.newId
 		});
 	} catch (error) {
 		return failed(

@@ -15,6 +15,12 @@ var organizations = require("$:/plugins/clerus/core2/organization.js");
 var projectPerspectives = require(
 	"$:/plugins/clerus/core2/project-perspective.js"
 );
+var messageServices = require(
+	"$:/plugins/clerus/core2/message-service.js"
+);
+var messageEffects = require(
+	"$:/plugins/clerus/core2/message-effect.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -22,6 +28,13 @@ var hasOwn = Function.call.bind(
 
 function open(options) {
 	schemas.assertPlatform(options.platform);
+
+	if (
+		options.newId !== undefined &&
+		typeof options.newId !== "function"
+	) {
+		throw new Error("newId must be a function");
+	}
 
 	var plan = options.plan;
 	plan.assertOpen();
@@ -99,6 +112,69 @@ function open(options) {
 			current.fields["clerus-custody"] === options.platform;
 	}
 
+	function messageEffect(draft, id) {
+		if (
+			draft.source !== options.title ||
+			draft.platform !== options.platform
+		) {
+			throw new Error("Prepared message belongs to another sender");
+		}
+
+		if (draft.establishing !== undefined) {
+			throw new Error(
+				"Planned establishment is not connected yet"
+			);
+		}
+
+		var source = activePlan.read(options.title);
+		var recipient = activePlan.read(draft.recipient);
+
+		if (
+			source.kind !== "materialized" ||
+			source.fields["clerus-executor"] !== executor
+		) {
+			throw new Error("Planned message sender has changed");
+		}
+
+		if (
+			recipient.kind !== "materialized" ||
+			recipient.fields.type !== "application/json" ||
+			typeof recipient.fields["clerus-executor"] !== "string" ||
+			recipient.fields["clerus-executor"].length === 0
+		) {
+			throw new Error(
+				"Planned message requires a materialized recipient"
+			);
+		}
+
+		var effect = {
+			version: 1,
+			kind: "official-message",
+			id: id,
+			platform: options.platform,
+			type: draft.type,
+
+			source: {
+				title: options.title,
+				executor: executor
+			},
+
+			recipient: {
+				title: draft.recipient,
+				executor: recipient.fields["clerus-executor"]
+			},
+
+			registry: draft.registry
+		};
+
+		if (draft.type === "report") {
+			effect.project = draft.project;
+			effect.role = draft.role;
+		}
+
+		return messageEffects.validate(effect);
+	}
+
 	var organization = organizations.create({
 		title: options.title,
 		readJobs: readJobs
@@ -110,6 +186,16 @@ function open(options) {
 		store: view,
 		readJobs: readJobs
 	});
+
+	var messageService = messageServices.create({
+		title: options.title,
+		platform: options.platform,
+		readJobs: readJobs,
+		resolveReport: project.resolveReport,
+		authorizeTransmission: project.authorizeTransmission
+	});
+
+	var usedMessageIds = new Set();
 
 	return scopes.open({
 		operational: registry,
@@ -171,6 +257,39 @@ function open(options) {
 					activePlan = plan;
 				}
 			});
+		},
+
+		prepareOrder: messageService.prepareOrder,
+		prepareReport: messageService.prepareReport,
+
+		checkMessage: function (draft) {
+			if (typeof options.newId !== "function") {
+				throw new Error("Planned sending requires an identity source");
+			}
+
+			/*
+				Validate support and endpoint binding without allocating
+				an identity or changing the plan.
+			*/
+			messageEffect(draft, "validation-message-identity");
+		},
+
+		acceptMessage: function (draft) {
+			var id = options.newId();
+
+			var effect = messageEffect(draft, id);
+
+			if (usedMessageIds.has(id)) {
+				throw new Error("Message identity source repeated an identity");
+			}
+
+			/*
+				An allocated identity remains consumed even if this
+				operation's branch is subsequently discarded.
+			*/
+			usedMessageIds.add(id);
+
+			activePlan.send(effect);
 		}
 	});
 }
