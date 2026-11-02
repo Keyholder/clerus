@@ -218,12 +218,17 @@ function testReactionFailureDoesNotHideTransition(tw) {
 	assert(result.status === "failed");
 	assert(result.phase === "reaction");
 	assert(f.phase() === "initial");
+    assert(result.lifecycle.suspended);
 
-	// Persistent suspension is not connected yet.
-	assert(
-		f.wiki.getTiddler(f.title)
-			.fields["clerus-custody"] === f.platform
-	);
+    assert(
+        f.wiki.getTiddler(f.title)
+            .fields["clerus-custody"] === "user"
+    );
+
+    assert(
+        f.wiki.getTiddler(f.title)
+            .fields["clerus-suspended"] === "yes"
+    );
 }
 
 function testMalformedRegistryIsPreparationFailure(tw) {

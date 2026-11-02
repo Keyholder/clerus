@@ -56,7 +56,8 @@ var SUITES = Object.freeze([
     "materialization-barrier",
     "persistent-reaction",
     "recovery",
-    "runtime-persistent"
+    "runtime-persistent",
+    "persistent-suspension"
 ]);
 
 function describe(error) {

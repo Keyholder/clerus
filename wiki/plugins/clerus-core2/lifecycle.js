@@ -139,8 +139,109 @@ function create(options) {
 		return result;
 	}
 
+	function suspend(request) {
+		var space = jobTitles.classify(request.title);
+
+		if (
+			!space ||
+			!space.persistent ||
+			typeof request.executor !== "string" ||
+			request.executor.length === 0
+		) {
+			throw new Error(
+				"Suspension requires a persistent job identity"
+			);
+		}
+
+		var event = schemas.copyJSON(request.event);
+
+		if (
+			!schemas.isRecord(event) ||
+			typeof event.type !== "string" ||
+			event.type.length === 0
+		) {
+			throw new Error("Suspension requires an event");
+		}
+
+		var current = options.store.read(request.title);
+
+		var result = {
+			suspended: false,
+			reason: null,
+			incident: null,
+			incidentError: null,
+			transitionError: null
+		};
+
+		try {
+			var incident = options.recordIncident({
+				kind: "executor-failure",
+				platform: options.platform,
+				owner: {
+					title: request.title,
+					executor: request.executor
+				},
+				event: event,
+				error: describeError(request.error)
+			});
+
+			if (
+				typeof incident !== "string" ||
+				incident.length === 0
+			) {
+				throw new Error(
+					"Incident recorder must return its record title"
+				);
+			}
+
+			result.incident = incident;
+		} catch (error) {
+			result.incidentError = describeError(error);
+		}
+
+		if (current.kind !== "materialized") {
+			result.reason = "job-not-materialized";
+			return result;
+		}
+
+		if (
+			current.fields["clerus-executor"] !== request.executor
+		) {
+			result.reason = "executor-changed";
+			return result;
+		}
+
+		if (
+			current.fields["clerus-custody"] !== options.platform
+		) {
+			result.reason = "not-locally-owned";
+			return result;
+		}
+
+		var after = schemas.copyJSON(current.fields);
+
+		after["clerus-custody"] = "user";
+		after["clerus-suspended"] = "yes";
+
+		try {
+			options.store.apply(transitions.transition(
+				request.title,
+				current.fields,
+				after
+			));
+
+			result.suspended = true;
+		} catch (error) {
+			result.reason = "transition-failed";
+			result.transitionError = describeError(error);
+		}
+
+		return result;
+	}
+
 	return Object.freeze({
-		dismiss: dismiss
+		dismiss: dismiss,
+		suspend: suspend
 	});
 }
 

@@ -183,7 +183,9 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			};
 		}
 
-		return persistentReactions.execute({
+		var executor = stored.fields["clerus-executor"];
+
+		var result = persistentReactions.execute({
 			store: this.store,
 			title: title,
 			platform: this.platform,
@@ -192,6 +194,42 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			handler: handler,
 			newId: this.newId
 		});
+
+		if (
+			result.status === "failed" &&
+			result.phase === "reaction" &&
+			stored.fields["clerus-custody"] !== "user"
+		) {
+			result.lifecycle = this.lifecycle.suspend({
+				title: title,
+				executor: executor,
+				event: event,
+				error: result.error
+			});
+
+			if (result.lifecycle.suspended) {
+				var notification = persistentReactions.execute({
+					store: this.store,
+					title: title,
+					platform: this.platform,
+					event: { type: "suspended" },
+					handler: handler,
+					newId: this.newId
+				});
+
+				/*
+					Do not recursively punish an error of the restricted
+					notification handler or register another incident.
+				*/
+				result.notification = {
+					status: notification.status === "failed"
+						? "ignored-error"
+						: notification.status
+				};
+			}
+		}
+
+		return result;
 	} finally {
 		this.executing = false;
 	}
