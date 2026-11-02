@@ -15,7 +15,7 @@ function equal(left, right) {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function validate(record, platform) {
+function validate(record, platform, allowEmpty) {
 	schemas.assertPlatform(platform);
 
 	var value = schemas.copyJSON(record);
@@ -39,14 +39,11 @@ function validate(record, platform) {
 
 	var proposal = proposals.validate(value.proposal);
 
-	if (proposal.plan.effects.length === 0) {
-		throw new Error("Accepted plan must contain effects");
-	}
-
 	if (
-		proposal.owner.state["clerus-custody"] !== platform
+		proposal.plan.effects.length === 0 &&
+		allowEmpty !== true
 	) {
-		throw new Error("Invalid accepted owner authority");
+		throw new Error("Accepted plan must contain effects");
 	}
 
 	proposal.plan.effects.forEach(function (effect) {
@@ -73,11 +70,15 @@ function validate(record, platform) {
 	};
 }
 
-function execute(options) {
-	var record = validate(options.record, options.platform);
+function check(options) {
+	var record = validate(
+		options.record,
+		options.platform,
+		options.allowEmpty
+	);
+
 	var proposal = record.proposal;
 	var store = options.store;
-
 	var owner = store.read(proposal.owner.title);
 
 	var ownerEffect = proposal.plan.effects.find(function (effect) {
@@ -103,10 +104,6 @@ function execute(options) {
 		})
 	);
 
-	/*
-		Check the whole set before performing any further write.
-		Already materialized effects remain acceptable.
-	*/
 	proposal.plan.effects.forEach(function (effect) {
 		if (shadowTitles.has(effect.title)) {
 			throw new Error("Accepted target is shadow-backed");
@@ -115,10 +112,17 @@ function execute(options) {
 		store.check(effect);
 	});
 
-	return proposal.plan.effects.map(function (effect) {
-		return store.apply(effect);
+	return record;
+}
+
+function execute(options) {
+	var record = check(options);
+
+	return record.proposal.plan.effects.map(function (effect) {
+		return options.store.apply(effect);
 	});
 }
 
 exports.validate = validate;
+exports.check = check;
 exports.execute = execute;

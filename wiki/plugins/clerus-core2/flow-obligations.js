@@ -1,0 +1,287 @@
+/*\
+title: $:/plugins/clerus/core2/flow-obligations.js
+type: application/javascript
+module-type: library
+\*/
+
+"use strict";
+
+var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var proposals = require("$:/plugins/clerus/core2/proposal-schema.js");
+var flows = require("$:/plugins/clerus/core2/flow-schema.js");
+var messages = require("$:/plugins/clerus/core2/message-effect.js");
+var materializer = require("$:/plugins/clerus/core2/materializer.js");
+var barriers = require(
+	"$:/plugins/clerus/core2/materialization-barrier.js"
+);
+var stores = require("$:/plugins/clerus/core2/store.js");
+
+var hasOwn = Function.call.bind(
+	Object.prototype.hasOwnProperty
+);
+
+function stateRecord(record) {
+	return {
+		version: 1,
+		kind: "plan",
+		platform: record.platform,
+		proposal: {
+			version: 1,
+			owner: record.active.owner,
+			plan: {
+				version: 1,
+				effects: record.active.plan.effects
+			}
+		}
+	};
+}
+
+function create(options) {
+	schemas.assertPlatform(options.platform);
+
+	if (
+		!options.store ||
+		typeof options.store.read !== "function" ||
+		typeof options.store.snapshot !== "function" ||
+		typeof options.store.check !== "function" ||
+		typeof options.store.apply !== "function" ||
+		typeof options.newId !== "function"
+	) {
+		throw new Error("Flow obligations require a store and identity source");
+	}
+
+	var walPrefix = "$:/clerus/wal/" + options.platform + "/";
+	var used = new Set();
+
+	function read(title) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf(walPrefix) !== 0
+		) {
+			throw new Error("Cannot read a foreign flow");
+		}
+
+		var stored = options.store.read(title);
+
+		if (
+			stored.kind !== "materialized" ||
+			stored.fields.type !== "application/json" ||
+			stored.fields["clerus-wal-kind"] !== "flow" ||
+			stored.fields["clerus-custody"] !== options.platform
+		) {
+			throw new Error("Flow is not locally owned");
+		}
+
+		return {
+			fields: stored.fields,
+			record: flows.validate(
+				JSON.parse(stored.fields.text),
+				options.platform
+			)
+		};
+	}
+
+	function pause(title, error) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf(walPrefix) !== 0
+		) {
+			return;
+		}
+
+		var current = options.store.read(title);
+
+		if (
+			current.kind !== "materialized" ||
+			current.fields["clerus-custody"] !== options.platform
+		) {
+			return;
+		}
+
+		var after = schemas.copyJSON(current.fields);
+
+		after["clerus-custody"] = "user";
+		after["clerus-wal-error"] = JSON.stringify({
+			name: String(error && error.name || "Error"),
+			message: String(error && error.message || error)
+		});
+
+		options.store.apply(stores.transition(
+			title,
+			current.fields,
+			after
+		));
+	}
+
+	function register(value) {
+		var proposal = proposals.validate(value, {
+			allowMessages: true
+		});
+
+		if (
+			proposal.plan.effects.length === 0 &&
+			proposal.plan.messages.length === 0
+		) {
+			throw new Error("Cannot register an empty flow");
+		}
+
+		var owner = options.store.read(proposal.owner.title);
+
+		if (
+			owner.kind !== "materialized" ||
+			JSON.stringify(owner.fields) !==
+				JSON.stringify(proposal.owner.state)
+		) {
+			throw new Error("Flow owner state has changed");
+		}
+
+		if (
+			barriers.collect({
+				store: options.store
+			}).forJob(proposal.owner.title).length > 0
+		) {
+			throw new Error("Flow owner has unfinished materialization");
+		}
+
+		var record = flows.validate({
+			version: 1,
+			kind: "flow",
+			platform: options.platform,
+			active: proposal,
+			pending: [],
+			seen: {},
+			errors: []
+		}, options.platform);
+
+		materializer.check({
+			store: options.store,
+			platform: options.platform,
+			record: stateRecord(record),
+			allowEmpty: true
+		});
+
+		var id = options.newId();
+
+		if (
+			typeof id !== "string" ||
+			!/^[A-Za-z0-9_-]{16,128}$/.test(id) ||
+			used.has(id)
+		) {
+			throw new Error("Invalid or reused flow identifier");
+		}
+
+		used.add(id);
+
+		var title = walPrefix + "flow-" + id;
+
+		if (options.store.read(title).kind !== "absent") {
+			throw new Error("Flow title is occupied");
+		}
+
+		try {
+			options.store.apply(stores.transition(title, null, {
+				title: title,
+				type: "application/json",
+				"clerus-custody": options.platform,
+				"clerus-wal-kind": "flow",
+				text: JSON.stringify(record)
+			}));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "FlowRegistrationError";
+			error.cause = cause;
+			error.obligationTitle = title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+
+		return title;
+	}
+
+	function resume(title) {
+		try {
+			var loaded = read(title);
+			var record = loaded.record;
+
+			if (record.active !== null) {
+				materializer.execute({
+					store: options.store,
+					platform: options.platform,
+					record: stateRecord(record),
+					allowEmpty: true
+				});
+
+				record.active.plan.messages.forEach(function (message) {
+					if (hasOwn(record.seen, message.id)) {
+						return;
+					}
+
+					Object.defineProperty(record.seen, message.id, {
+						value: messages.fingerprint(message),
+						enumerable: true,
+						writable: true,
+						configurable: true
+					});
+
+					record.pending.push(message);
+				});
+
+				record.active = null;
+			}
+
+			if (record.pending.length === 0) {
+				options.store.apply(stores.transition(
+					title,
+					loaded.fields,
+					null
+				));
+
+				return [];
+			}
+
+			var after = schemas.copyJSON(loaded.fields);
+			after.text = JSON.stringify(record);
+
+			options.store.apply(stores.transition(
+				title,
+				loaded.fields,
+				after
+			));
+
+			return schemas.copyJSON(record.pending);
+		} catch (error) {
+			try {
+				pause(title, error);
+			} catch (pauseError) {
+				if (error && typeof error === "object") {
+					error.pauseError = String(
+						pauseError && pauseError.message || pauseError
+					);
+				}
+			}
+
+			throw error;
+		}
+	}
+
+	function pending(title) {
+		var record = read(title).record;
+
+		return record.active === null
+			? schemas.copyJSON(record.pending)
+			: [];
+	}
+
+	return Object.freeze({
+		register: register,
+		read: read,
+		resume: resume,
+		pending: pending
+	});
+}
+
+exports.create = create;

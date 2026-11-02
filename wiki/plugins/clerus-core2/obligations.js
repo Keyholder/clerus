@@ -64,13 +64,6 @@ function create(options) {
 			);
 		}
 
-		if (
-			proposal.owner.state["clerus-custody"] !==
-			options.platform
-		) {
-			throw new Error("Proposal owner is not locally authorized");
-		}
-
 		var shadowTitles = new Set(
 			options.store.snapshot().shadows.map(function (fields) {
 				return fields.title;
@@ -308,6 +301,16 @@ function create(options) {
 					entries.push({
 						title: title,
 						status: "historical"
+					});
+
+					return;
+				}
+
+				if (kind === "flow") {
+					entries.push({
+						title: title,
+						status: "delegated",
+						kind: "flow"
 					});
 
 					return;
