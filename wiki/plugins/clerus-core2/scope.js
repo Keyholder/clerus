@@ -82,6 +82,7 @@ function open(options) {
 		"canWriteOperational",
 		"commitOperational",
 		"authorizeMission",
+		"authorizeMissionMove",
 		"authorizeOrganization",
 		"prepareOrder",
 		"prepareReport",
@@ -917,14 +918,8 @@ function open(options) {
 				);
 			}
 
-			if (node.form === "mission") {
-				if (!move) {
-					throw new Error("Mission cannot be copied");
-				}
-
-				throw new Error(
-					"Mission transfer is not connected yet"
-				);
+			if (node.form === "mission" && !move) {
+				throw new Error("Mission cannot be copied");
 			}
 
 			var target = getRegistry(candidate, destinationId);
@@ -939,6 +934,44 @@ function open(options) {
 				throw new Error(
 					"Document key already exists: " + key
 				);
+			}
+
+			if (node.form === "mission") {
+				if (typeof options.authorizeMissionMove !== "function") {
+					throw new Error("Mission movement authorization is unavailable");
+				}
+
+				options.authorizeMissionMove(
+					missionSchema.validate(node.value),
+					registrySnapshot()
+				);
+
+				var identity = missionSchema.identity(node.value);
+
+				/*
+					A non-copyable assignment is moved as a whole.
+					All its local representations are consumed.
+				*/
+				candidate.registries.forEach(function (registry) {
+					var removed = [];
+
+					registry.entries.forEach(function (entry, entryKey) {
+						if (
+							entry.form === "mission" &&
+							missionSchema.identity(entry.value) === identity
+						) {
+							removed.push(entryKey);
+						}
+					});
+
+					removed.forEach(function (entryKey) {
+						registry.entries.delete(entryKey);
+					});
+				});
+
+				target.entries.set(key, node);
+
+				return;
 			}
 
 			/*

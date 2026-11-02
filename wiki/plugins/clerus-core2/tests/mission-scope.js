@@ -185,7 +185,7 @@ function testMutationIsNotAccidentallyEnabled() {
 				outgoing,
 				"assignment"
 			);
-		}, "not connected yet");
+		}, "movement authorization is unavailable");
 
 		assert(scope.incoming.keys().length === 1);
 		assert(outgoing.keys().length === 0);

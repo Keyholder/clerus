@@ -148,12 +148,6 @@ function check(options) {
 		var document = registry[key];
 		var form = schemas.formOf(document);
 
-		if (form === "mission") {
-			throw new Error(
-				"Mission transmission authorization is not connected yet"
-			);
-		}
-
 		if (form !== "job-title" || options.type !== "order") {
 			return;
 		}

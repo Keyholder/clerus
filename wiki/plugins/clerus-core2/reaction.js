@@ -115,7 +115,8 @@ function execute(options) {
 			title: job.title,
 			platform: options.platform,
 			readJobs: options.readJobs,
-			resolveReport: projectPerspective.resolveReport
+			resolveReport: projectPerspective.resolveReport,
+			authorizeTransmission: projectPerspective.authorizeTransmission
 		})
 		: null;
 
@@ -211,20 +212,19 @@ function execute(options) {
 			authorizeMission: projectPerspective
 				? projectPerspective.authorizeMutation
 				: undefined,
+			authorizeMissionMove: projectPerspective
+				? projectPerspective.authorizeMove
+				: undefined,
 			authorizeOrganization: organization
 				? organization.authorizeChange
 				: undefined,
-
 			prepareOrder: messageService
 				? messageService.prepareOrder
 				: undefined,
-
 			eventType: event.type,
-
 			prepareReport: messageService
 				? messageService.prepareReport
 				: undefined,
-
 			acceptMessage: options.acceptMessage,
 			checkMessage: options.checkMessage
 		});

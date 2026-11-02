@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
 var policy = require("$:/plugins/clerus/core2/message-policy.js");
+var missionSchema = require(
+	"$:/plugins/clerus/core2/mission-schema.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -20,7 +23,38 @@ function create(options) {
 		throw new Error("Message service requires an owner and job reader");
 	}
 
+	function authorizeMissions(type, registry, scope, addressing) {
+		var checked = schemas.registry(registry, "outgoing");
+
+		Object.keys(checked).forEach(function (key) {
+			var document = checked[key];
+
+			if (
+				!schemas.isRecord(document) ||
+				document.form !== "mission"
+			) {
+				return;
+			}
+
+			if (typeof options.authorizeTransmission !== "function") {
+				throw new Error(
+					"Mission transmission authorization is unavailable"
+				);
+			}
+
+			options.authorizeTransmission(
+				type,
+				missionSchema.validate(document),
+				scope,
+				addressing
+			);
+		});
+
+		return checked;
+	}
+
 	function prepareOrder(target, registry, scope) {
+		registry = authorizeMissions("order", registry, scope, null);
 		var jobs = schemas.copyJSON(options.readJobs());
 
 		if (!Array.isArray(jobs)) {
@@ -56,6 +90,13 @@ function create(options) {
 		if (typeof options.resolveReport !== "function") {
 			throw new Error("Report assignment authorization is unavailable");
 		}
+
+		registry = authorizeMissions(
+			"report",
+			registry,
+			scope,
+			document
+		);
 
 		var address = options.resolveReport(document, scope);
 		var jobs = schemas.copyJSON(options.readJobs());

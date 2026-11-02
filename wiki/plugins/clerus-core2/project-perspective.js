@@ -365,10 +365,87 @@ function create(options) {
 		};
 	}
 
+	function authorizeMove(value, scope) {
+		var assignment = inspectAssignment(value, scope);
+
+		if (!assignment.active) {
+			throw new Error(assignment.reason);
+		}
+	}
+
+	function authorizeTransmission(type, value, scope, addressing) {
+		var assignment = inspectAssignment(value, scope);
+		var document = assignment.document;
+
+		if (!assignment.active) {
+			throw new Error(assignment.reason);
+		}
+
+		if (document.role.length === 0) {
+			throw new Error("Root mission cannot be transmitted");
+		}
+
+		if (type === "report") {
+			if (
+				!addressing ||
+				missionSchema.identity(addressing) !==
+					missionSchema.identity(document)
+			) {
+				throw new Error(
+					"A report can transmit only its addressing mission"
+				);
+			}
+
+			return;
+		}
+
+		if (type !== "order") {
+			throw new Error("Unsupported mission transmission");
+		}
+
+		var parentRole = document.role.slice(0, -1);
+
+		var parent = assignment.evaluation.active.find(function (entry) {
+			return entry.title === options.title &&
+				entry.project === document.project &&
+				JSON.stringify(entry.role) === JSON.stringify(parentRole);
+		});
+
+		if (!parent) {
+			throw new Error(
+				"Order sender must hold the active immediate parent mission"
+			);
+		}
+
+		var operational = schemas.registry(
+			scope.operational,
+			"operational"
+		);
+
+		var retained = Object.keys(operational).some(function (key) {
+			var candidate = operational[key];
+
+			return schemas.isRecord(candidate) &&
+				candidate.form === "mission" &&
+				candidate.project === parent.project &&
+				candidate.link === parent.link &&
+				JSON.stringify(candidate.role) ===
+					JSON.stringify(parent.role);
+		});
+
+		if (!retained) {
+			throw new Error(
+				"Order sender must retain the parent mission operationally"
+			);
+		}
+	}
+
 	return Object.freeze({
 		readMission: readMission,
 		authorizeMutation: authorizeMutation,
-		resolveReport: resolveReport
+		resolveReport: resolveReport,
+		authorizeMove: authorizeMove,
+		authorizeTransmission: authorizeTransmission
 	});
 }
 

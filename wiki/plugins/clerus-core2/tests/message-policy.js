@@ -231,19 +231,6 @@ function testUnconnectedPathsAreRejected() {
 			recipient: f.manager
 		});
 	}, "Report requires a project");
-
-	throws(function () {
-		check(f, {
-			mission: {
-				form: "mission",
-				project: "Policy Project",
-				role: ["item"],
-				link: "10/1",
-				issued: "0",
-				children: {}
-			}
-		});
-	}, "Mission transmission authorization");
 }
 
 exports.run = function () {
