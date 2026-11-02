@@ -85,16 +85,16 @@ function check(options) {
 		return effect.title === proposal.owner.title;
 	});
 
-	if (
-		owner.kind !== "materialized" ||
-		(
-			!equal(owner.fields, proposal.owner.state) &&
-			!(
-				ownerEffect &&
-				equal(owner.fields, ownerEffect.after)
-			)
-		)
-	) {
+	var atBaseline = proposal.owner.state === null
+		? owner.kind === "absent"
+		: owner.kind === "materialized" &&
+			equal(owner.fields, proposal.owner.state);
+
+	var atFinal = ownerEffect !== undefined &&
+		owner.kind === "materialized" &&
+		equal(owner.fields, ownerEffect.after);
+
+	if (!atBaseline && !atFinal) {
 		throw new Error("Accepted plan owner state has changed");
 	}
 

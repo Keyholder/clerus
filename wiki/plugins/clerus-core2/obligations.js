@@ -39,6 +39,13 @@ function create(options) {
 
 	function accept(value) {
 		var proposal = proposals.validate(value);
+
+		if (proposal.owner.state === null) {
+			throw new Error(
+				"Birth proposal requires an establishing flow message"
+			);
+		}
+
 		var owner = options.store.read(proposal.owner.title);
 
 		if (

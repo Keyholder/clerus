@@ -70,6 +70,7 @@ var SUITES = Object.freeze([
     "mixed-egress",
     "delivery-availability",
     "establishment-effects",
+    "birth-proposals",
     "recovery",
     "runtime-persistent",
     "persistent-suspension",

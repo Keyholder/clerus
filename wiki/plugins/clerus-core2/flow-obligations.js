@@ -121,6 +121,12 @@ function create(options) {
 			allowMessages: true
 		});
 
+		if (proposal.owner.state === null) {
+			throw new Error(
+				"Root flow requires an existing owner"
+			);
+		}
+
 		if (
 			proposal.plan.effects.length === 0 &&
 			proposal.plan.messages.length === 0
@@ -320,13 +326,23 @@ function create(options) {
 			);
 		}
 
+		var birth = proposal.owner.state === null;
+
+		if (birth !== (incoming.establishing === true)) {
+			throw new Error(
+				"Proposal birth state does not match the incoming message"
+			);
+		}
+
 		var owner = options.store.read(proposal.owner.title);
 
-		if (
-			owner.kind !== "materialized" ||
-			JSON.stringify(owner.fields) !==
-				JSON.stringify(proposal.owner.state)
-		) {
+		var matchesBaseline = birth
+			? owner.kind === "absent"
+			: owner.kind === "materialized" &&
+				JSON.stringify(owner.fields) ===
+					JSON.stringify(proposal.owner.state);
+
+		if (!matchesBaseline) {
 			throw new Error("Recipient proposal owner state has changed");
 		}
 
