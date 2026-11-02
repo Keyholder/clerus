@@ -264,10 +264,232 @@ function testFailedInitializationPreservesDocuments(tw) {
 	assert(JSON.parse(journal.fields.text).errors.length === 1);
 }
 
+function testInterruptedBirthDoesNotReinitialize(tw) {
+	var f = fixture(tw, false);
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (
+			!injected &&
+			effect.before === null &&
+			effect.after &&
+			effect.after["clerus-executor"] === "worker"
+		) {
+			injected = true;
+			throw new Error("Interrupted after ephemeral birth");
+		}
+
+		return result;
+	};
+
+	var result;
+
+	try {
+		result = f.runtime.dispatch(
+			f.founder,
+			{ type: "found" }
+		);
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(result.flow.errors.length === 1);
+	assert(
+		result.flow.errors[0].result.phase === "materialization"
+	);
+	assert(!result.flow.errors[0].result.lifecycle);
+
+	assert(f.initialized() === 1);
+	assert(f.dismissed() === 0);
+
+	var workerTitle = f.workerTitle();
+	var worker = f.wiki.getTiddler(workerTitle);
+	var registry = JSON.parse(worker.fields.text);
+
+	// The birth write happened, but accept() did not return.
+	assert(worker);
+	assert(worker.fields["clerus-custody"] === f.runtime.platform);
+	assert(registry.charter.status.phase === "starting");
+	assert(!registry.mission);
+	assert(!registry.result);
+
+	var body = worker.fields.text;
+	var pending = f.runtime.flows.pending(result.obligation);
+
+	assert(pending.length === 1);
+	assert(pending[0].establishing);
+	assert(pending[0].registry.contract.form === "contract");
+	assert(pending[0].registry.assignment.form === "mission");
+
+	var retried = f.runtime.drainFlows();
+
+	assert(retried.unavailable.length === 1);
+	assert(
+		retried.unavailable[0].reason ===
+			"establishment-target-occupied"
+	);
+	assert(retried.remaining === 1);
+
+	assert(f.initialized() === 1);
+	assert(f.dismissed() === 0);
+	assert(f.wiki.getTiddler(workerTitle).fields.text === body);
+}
+
+function testUnrecordedAcknowledgementPreservesObligation(tw) {
+	var f = fixture(tw, false);
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+
+	f.runtime.store.apply = function (effect) {
+		if (
+			!injected &&
+			effect.after &&
+			effect.after["clerus-wal-kind"] === "flow"
+		) {
+			var record = JSON.parse(effect.after.text);
+
+			if (
+				record.active === null &&
+				record.pending.length === 0 &&
+				record.errors.length === 0
+			) {
+				injected = true;
+				throw new Error("Interrupted before birth acknowledgement");
+			}
+		}
+
+		return originalApply.call(this, effect);
+	};
+
+	var result;
+
+	try {
+		result = f.runtime.dispatch(
+			f.founder,
+			{ type: "found" }
+		);
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(result.flow.errors.length === 1);
+	assert(
+		result.flow.errors[0].result.phase === "acknowledgement"
+	);
+	assert(result.flow.errors[0].result.acceptanceUncertain);
+	assert(f.initialized() === 1);
+
+	var workerTitle = f.workerTitle();
+	var worker = f.wiki.getTiddler(workerTitle);
+	var body = worker.fields.text;
+	var registry = JSON.parse(body);
+
+	assert(registry.charter.status.phase === "running");
+	assert(registry.mission);
+	assert(registry.result.data.value === 42);
+	assert(f.runtime.flows.pending(result.obligation).length === 1);
+
+	/*
+		Recovery cannot infer successful initialization merely
+		from the presence of a plausible operational registry.
+	*/
+	f.runtime.recover();
+
+	var retried = f.runtime.drainFlows();
+
+	assert(retried.unavailable.length === 1);
+	assert(retried.remaining === 1);
+	assert(f.initialized() === 1);
+	assert(f.dismissed() === 0);
+	assert(f.wiki.getTiddler(workerTitle).fields.text === body);
+}
+
+function testRecordedAcknowledgementFinishesWithoutReinitialization(tw) {
+	var f = fixture(tw, false);
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (
+			!injected &&
+			effect.after &&
+			effect.after["clerus-wal-kind"] === "flow"
+		) {
+			var record = JSON.parse(effect.after.text);
+
+			if (
+				record.active === null &&
+				record.pending.length === 0 &&
+				record.errors.length === 0
+			) {
+				injected = true;
+				throw new Error("Interrupted after birth acknowledgement");
+			}
+		}
+
+		return result;
+	};
+
+	var result;
+
+	try {
+		result = f.runtime.dispatch(
+			f.founder,
+			{ type: "found" }
+		);
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(result.flow.errors.length === 1);
+	assert(
+		result.flow.errors[0].result.phase === "acknowledgement"
+	);
+	assert(f.initialized() === 1);
+
+	var journal = f.wiki.getTiddler(result.obligation);
+	var record = JSON.parse(journal.fields.text);
+
+	assert(record.active === null);
+	assert(record.pending.length === 0);
+	assert(record.errors.length === 0);
+
+	var workerTitle = f.workerTitle();
+	var body = f.wiki.getTiddler(workerTitle).fields.text;
+
+	var recovery = f.runtime.recover();
+
+	assert(recovery.entries.some(function (entry) {
+		return entry.title === result.obligation &&
+			entry.status === "completed";
+	}));
+
+	assert(!f.wiki.getTiddler(result.obligation));
+	assert(f.initialized() === 1);
+	assert(f.dismissed() === 0);
+	assert(f.wiki.getTiddler(workerTitle).fields.text === body);
+
+	var drained = f.runtime.drainFlows();
+
+	assert(drained.completed.length === 0);
+	assert(drained.remaining === 0);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["ephemeral staff founding: persistent founder receives worker report", testFoundingAndReport],
-		["ephemeral staff founding: failed initializer preserves documents", testFailedInitializationPreservesDocuments]
+		["ephemeral staff founding: failed initializer preserves documents", testFailedInitializationPreservesDocuments],
+		["ephemeral staff founding: interrupted birth does not reinitialize occupied address", testInterruptedBirthDoesNotReinitialize],
+		["ephemeral staff founding: unrecorded acknowledgement preserves the obligation", testUnrecordedAcknowledgementPreservesObligation],
+		["ephemeral staff founding: recorded acknowledgement completes without replay", testRecordedAcknowledgementFinishesWithoutReinitialization]
 	];
 
 	var results = cases.map(function (item) {
