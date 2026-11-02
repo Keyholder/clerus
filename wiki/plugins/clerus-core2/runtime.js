@@ -39,6 +39,7 @@ var deferredActivations = require(
 var deferredObligations = require(
 	"$:/plugins/clerus/core2/deferred-obligations.js"
 );
+var retention = require("$:/plugins/clerus/core2/retention.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -822,7 +823,11 @@ Runtime.prototype.inspect = function () {
 		platform: this.platform,
 		jobs: jobs,
 		hierarchy: hierarchy.evaluate(jobs),
-		missions: missions.evaluate(jobs)
+		missions: missions.evaluate(jobs),
+		retention: retention.evaluate({
+			jobs: jobs,
+			tiddlers: this.store.snapshot().materialized
+		})
 	};
 };
 
