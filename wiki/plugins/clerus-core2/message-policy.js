@@ -148,6 +148,12 @@ function check(options) {
 		var document = registry[key];
 		var form = schemas.formOf(document);
 
+		if (form === "contract") {
+			throw new Error(
+				"Establishing message handling is not connected yet"
+			);
+		}
+
 		if (form !== "job-title" || options.type !== "order") {
 			return;
 		}

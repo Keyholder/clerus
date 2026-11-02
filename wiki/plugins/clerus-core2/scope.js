@@ -975,6 +975,10 @@ function open(options) {
 				);
 			}
 
+			if (node.form === "contract" && !move) {
+				throw new Error("Contract cannot be copied");
+			}
+
 			if (node.form === "mission" && !move) {
 				throw new Error("Mission cannot be copied");
 			}

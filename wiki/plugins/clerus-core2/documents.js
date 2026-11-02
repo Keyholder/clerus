@@ -21,6 +21,9 @@ var mission = require(
 var jobTitle = require(
 	"$:/plugins/clerus/core2/documents/job-title.js"
 );
+var contract = require(
+	"$:/plugins/clerus/core2/documents/contract.js"
+);
 
 exports.create = function (form, access) {
 	switch (form) {
@@ -38,6 +41,9 @@ exports.create = function (form, access) {
 
 		case "job-title":
 			return jobTitle.create(access);
+
+		case "contract":
+			return contract.create(access);
 
 		default:
 			throw new Error("Unsupported instrument form: " + form);

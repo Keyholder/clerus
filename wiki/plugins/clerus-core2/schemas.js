@@ -196,6 +196,13 @@ function formOf(document) {
 		return "mission";
 	}
 
+	if (document.form === "contract") {
+		require("$:/plugins/clerus/core2/contract-schema.js")
+			.validate(document);
+
+		return "contract";
+	}
+
 	throw new Error("Unsupported document form");
 }
 

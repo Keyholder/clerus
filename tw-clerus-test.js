@@ -36,3 +36,4 @@ runTests("organization");
 runTests("orders");
 runTests("scheduler");
 runTests("title-issuance");
+runTests("contracts");
