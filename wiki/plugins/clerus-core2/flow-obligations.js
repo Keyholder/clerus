@@ -458,13 +458,78 @@ function create(options) {
 		};
 	}
 
+	function recover() {
+		var walTitles = options.store.snapshot().materialized.filter(
+			function (fields) {
+				return fields.title.indexOf(walPrefix) === 0 &&
+					fields["clerus-wal-kind"] === "flow";
+			}
+		).map(function (fields) {
+			return fields.title;
+		}).sort();
+
+		var entries = [];
+
+		walTitles.forEach(function (title) {
+			var current = options.store.read(title);
+
+			if (current.kind !== "materialized") {
+				entries.push({
+					title: title,
+					status: "absent"
+				});
+
+				return;
+			}
+
+			if (
+				current.fields["clerus-custody"] !== options.platform
+			) {
+				entries.push({
+					title: title,
+					status: "paused"
+				});
+
+				return;
+			}
+
+			try {
+				var pendingMessages = resume(title);
+				var remaining = options.store.read(title);
+
+				entries.push({
+					title: title,
+
+					status: remaining.kind === "absent"
+						? "completed"
+						: remaining.fields["clerus-custody"] === "user"
+							? "paused"
+							: "pending",
+
+					pending: pendingMessages
+				});
+			} catch (error) {
+				entries.push({
+					title: title,
+					status: "failed",
+					error: String(error && error.message || error)
+				});
+			}
+		});
+
+		return {
+			entries: entries
+		};
+	}
+
 	return Object.freeze({
 		register: register,
 		read: read,
 		resume: resume,
 		pending: pending,
 		accept: accept,
-		fail: fail
+		fail: fail,
+		recover: recover
 	});
 }
 

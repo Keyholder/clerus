@@ -40,6 +40,13 @@ function Scheduler(options) {
 		);
 	}
 
+    if (
+        options.onResult !== undefined &&
+        typeof options.onResult !== "function"
+    ) {
+        throw new Error("onResult must be a function");
+    }
+
 	this.options = options;
 	this.queue = new Map();
 	this.running = false;
@@ -238,6 +245,30 @@ Scheduler.prototype.drain = function () {
 					messageId: selected.id
 				}
 			});
+
+            if (typeof this.options.onResult === "function") {
+                var deliveredEvent = {
+                    type: message.type,
+                    id: message.id
+                };
+
+                if (message.type === "report") {
+                    deliveredEvent.project = message.project;
+                    deliveredEvent.role = message.role.slice();
+                }
+
+                try {
+                    this.options.onResult({
+                        title: message.recipient.title,
+                        executor: message.recipient.executor,
+                        handler: handler,
+                        event: deliveredEvent,
+                        result: result
+                    });
+                } catch (error) {
+                    result.policyError = describe(error);
+                }
+            }
 
 			var entry = {
 				title: selected.title,

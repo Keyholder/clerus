@@ -21,6 +21,12 @@ var obligations = require(
 var persistentReactions = require(
 	"$:/plugins/clerus/core2/persistent-reaction.js"
 );
+var flowObligations = require(
+	"$:/plugins/clerus/core2/flow-obligations.js"
+);
+var FlowScheduler = require(
+	"$:/plugins/clerus/core2/flow-scheduler.js"
+).Scheduler;
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -82,6 +88,29 @@ function Runtime(options) {
 		newId: options.newId,
 		lifecycle: this.lifecycle
 	});
+
+	this.flows = flowObligations.create({
+		store: this.store,
+		platform: this.platform,
+		newId: this.newId
+	});
+
+	this.flowScheduler = new FlowScheduler({
+		store: this.store,
+		platform: this.platform,
+		newId: this.newId,
+		resolveExecutor: this.resolveExecutor,
+
+		onResult: function (context) {
+			this.handlePersistentResult(
+				context.title,
+				context.executor,
+				context.handler,
+				context.event,
+				context.result
+			);
+		}.bind(this)
+	});
 }
 
 Runtime.prototype.readJobs = function () {
@@ -130,8 +159,70 @@ Runtime.prototype.readJobs = function () {
 	return schemas.copyJSON(jobs);
 };
 
+Runtime.prototype.handlePersistentResult = function (
+	title,
+	executor,
+	handler,
+	event,
+	result
+) {
+	if (
+		result.status !== "failed" ||
+		result.phase !== "reaction"
+	) {
+		return;
+	}
+
+	var current = this.store.read(title);
+
+	if (
+		current.kind === "materialized" &&
+		current.fields["clerus-executor"] === executor &&
+		current.fields["clerus-custody"] === "user"
+	) {
+		return;
+	}
+
+	result.lifecycle = this.lifecycle.suspend({
+		title: title,
+		executor: executor,
+		event: event,
+		error: result.error
+	});
+
+	if (!result.lifecycle.suspended) {
+		return;
+	}
+
+	var notification = persistentReactions.execute({
+		store: this.store,
+		title: title,
+		platform: this.platform,
+		event: { type: "suspended" },
+		handler: handler,
+		newId: this.newId
+	});
+
+	result.notification = {
+		status: notification.status === "failed"
+			? "ignored-error"
+			: notification.status
+	};
+
+	/*
+		A restricted notification may legally send messages
+		without changing its own operational registry.
+	*/
+	if (
+		notification.status === "completed" &&
+		notification.pending.length > 0
+	) {
+		this.flowScheduler.track(notification.obligation);
+	}
+};
+
 Runtime.prototype.dispatch = function (title, event, incoming) {
-	if (this.executing || this.scheduler.running) {
+	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
 		throw new Error("Cannot start a nested runtime dispatch");
 	}
 
@@ -226,39 +317,26 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			acknowledgeResumption: resumptionPending && resumedEvent
 		});
 
-		if (
-			result.status === "failed" &&
-			result.phase === "reaction" &&
-			stored.fields["clerus-custody"] !== "user"
-		) {
-			result.lifecycle = this.lifecycle.suspend({
-				title: title,
-				executor: executor,
-				event: event,
-				error: result.error
-			});
+		this.handlePersistentResult(
+			title,
+			executor,
+			handler,
+			event,
+			result
+		);
 
-			if (result.lifecycle.suspended) {
-				var notification = persistentReactions.execute({
-					store: this.store,
-					title: title,
-					platform: this.platform,
-					event: { type: "suspended" },
-					handler: handler,
-					newId: this.newId
-				});
+		if (result.obligation) {
+			var journal = this.store.read(result.obligation);
 
-				/*
-					Do not recursively punish an error of the restricted
-					notification handler or register another incident.
-				*/
-				result.notification = {
-					status: notification.status === "failed"
-						? "ignored-error"
-						: notification.status
-				};
+			if (
+				journal.kind === "materialized" &&
+				journal.fields["clerus-wal-kind"] === "flow"
+			) {
+				this.flowScheduler.track(result.obligation);
 			}
 		}
+
+		result.flow = this.flowScheduler.drain();
 
 		return result;
 	} finally {
@@ -267,7 +345,7 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 };
 
 Runtime.prototype.observe = function () {
-	if (this.executing || this.scheduler.running) {
+	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
 		throw new Error("Cannot collect observations during a reaction");
 	}
 
@@ -322,12 +400,55 @@ Runtime.prototype.inspect = function () {
 	};
 };
 
+Runtime.prototype.drainFlows = function () {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running
+	) {
+		throw new Error("Cannot start a nested flow pass");
+	}
+
+	this.executing = true;
+
+	try {
+		return this.flowScheduler.drain();
+	} finally {
+		this.executing = false;
+	}
+};
+
 Runtime.prototype.recover = function () {
-	if (this.executing || this.scheduler.running) {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running
+	) {
 		throw new Error("Cannot recover obligations during a reaction");
 	}
 
-	return this.obligations.recover();
+	this.executing = true;
+
+	try {
+		var ordinary = this.obligations.recover();
+		var flow = this.flows.recover();
+
+		flow.entries.forEach(function (entry) {
+			if (entry.status === "pending") {
+				this.flowScheduler.track(entry.title);
+			}
+		}, this);
+
+		return {
+			entries: ordinary.entries.filter(function (entry) {
+				return entry.status !== "delegated";
+			}).concat(flow.entries),
+
+			pendingFlowAttempts: this.flowScheduler.queue.size
+		};
+	} finally {
+		this.executing = false;
+	}
 };
 
 Runtime.prototype.resume = function (title) {
