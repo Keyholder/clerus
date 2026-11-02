@@ -54,7 +54,8 @@ var SUITES = Object.freeze([
     "obligation-acceptance",
     "materialization",
     "materialization-barrier",
-    "persistent-reaction"
+    "persistent-reaction",
+    "recovery"
 ]);
 
 function describe(error) {

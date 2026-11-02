@@ -33,7 +33,9 @@ function create(options) {
 	}
 
 	var used = new Set();
-	var prefix = "$:/clerus/wal/" + options.platform + "/plan-";
+	var walPrefix = "$:/clerus/wal/" + options.platform + "/";
+	var prefix = walPrefix + "plan-";
+	var recovering = false;
 
 	function accept(value) {
 		var proposal = proposals.validate(value);
@@ -158,7 +160,7 @@ function create(options) {
 	function read(title) {
 		if (
 			typeof title !== "string" ||
-			title.indexOf(prefix) !== 0
+			title.indexOf(walPrefix) !== 0
 		) {
 			throw new Error("Cannot read a foreign plan obligation");
 		}
@@ -188,7 +190,7 @@ function create(options) {
 	function pause(title, error) {
 		if (
 			typeof title !== "string" ||
-			title.indexOf(prefix) !== 0
+			title.indexOf(walPrefix) !== 0
 		) {
 			return;
 		}
@@ -257,10 +259,123 @@ function create(options) {
 		}
 	}
 
+	function recover() {
+		if (recovering) {
+			throw new Error("Obligation recovery is already running");
+		}
+
+		recovering = true;
+
+		try {
+			var titles = options.store.snapshot().materialized.filter(
+				function (fields) {
+					return fields.title.indexOf(walPrefix) === 0;
+				}
+			).map(function (fields) {
+				return fields.title;
+			}).sort();
+
+			var entries = [];
+
+			titles.forEach(function (title) {
+				var current;
+
+				try {
+					current = options.store.read(title);
+				} catch (error) {
+					entries.push({
+						title: title,
+						status: "failed",
+						error: String(error && error.message || error)
+					});
+
+					return;
+				}
+
+				if (current.kind !== "materialized") {
+					entries.push({
+						title: title,
+						status: "absent"
+					});
+
+					return;
+				}
+
+				var fields = current.fields;
+				var kind = fields["clerus-wal-kind"];
+
+				if (kind === "incident") {
+					entries.push({
+						title: title,
+						status: "historical"
+					});
+
+					return;
+				}
+
+				if (fields["clerus-custody"] !== options.platform) {
+					entries.push({
+						title: title,
+						status: "paused"
+					});
+
+					return;
+				}
+
+				if (kind !== "plan") {
+					var unsupported = new Error(
+						"Unsupported recoverable WAL kind"
+					);
+
+					var diagnostic = {
+						title: title,
+						status: "unsupported",
+						error: unsupported.message
+					};
+
+					try {
+						pause(title, unsupported);
+					} catch (error) {
+						diagnostic.pauseError = String(
+							error && error.message || error
+						);
+					}
+
+					entries.push(diagnostic);
+					return;
+				}
+
+				try {
+					entries.push({
+						title: title,
+						status: "completed",
+						results: resume(title)
+					});
+				} catch (error) {
+					entries.push({
+						title: title,
+						status: "failed",
+						error: String(error && error.message || error),
+						pauseError: error && error.pauseError
+							? String(error.pauseError)
+							: null
+					});
+				}
+			});
+
+			return {
+				entries: entries
+			};
+		} finally {
+			recovering = false;
+		}
+	}
+
 	return Object.freeze({
 		accept: accept,
 		read: read,
-		resume: resume
+		resume: resume,
+		recover: recover
 	});
 }
 

@@ -15,6 +15,9 @@ var incidents = require("$:/plugins/clerus/core2/incidents.js");
 var lifecycle = require("$:/plugins/clerus/core2/lifecycle.js");
 var hierarchy = require("$:/plugins/clerus/core2/hierarchy.js");
 var missions = require("$:/plugins/clerus/core2/missions.js");
+var obligations = require(
+	"$:/plugins/clerus/core2/obligations.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -41,6 +44,12 @@ function Runtime(options) {
 	this.store = new Store({
 		wiki: options.wiki,
 		Tiddler: options.Tiddler
+	});
+
+	this.obligations = obligations.create({
+		store: this.store,
+		platform: this.platform,
+		newId: options.newId
 	});
 
 	this.readJobs = this.readJobs.bind(this);
@@ -173,6 +182,14 @@ Runtime.prototype.inspect = function () {
 		hierarchy: hierarchy.evaluate(jobs),
 		missions: missions.evaluate(jobs)
 	};
+};
+
+Runtime.prototype.recover = function () {
+	if (this.scheduler.running) {
+		throw new Error("Cannot recover obligations during a reaction");
+	}
+
+	return this.obligations.recover();
 };
 
 exports.Runtime = Runtime;
