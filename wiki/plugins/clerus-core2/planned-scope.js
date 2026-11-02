@@ -1,31 +1,31 @@
 /*\
-title: $:/plugins/clerus/core2/planned-scope.js
+title: $:/plugins/clerus/core/planned-scope.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var scopes = require("$:/plugins/clerus/core2/scope.js");
-var transitions = require("$:/plugins/clerus/core2/store.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var jobViews = require("$:/plugins/clerus/core2/job-view.js");
-var organizations = require("$:/plugins/clerus/core2/organization.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var scopes = require("$:/plugins/clerus/core/scope.js");
+var transitions = require("$:/plugins/clerus/core/store.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var jobViews = require("$:/plugins/clerus/core/job-view.js");
+var organizations = require("$:/plugins/clerus/core/organization.js");
 var projectPerspectives = require(
-	"$:/plugins/clerus/core2/project-perspective.js"
+	"$:/plugins/clerus/core/project-perspective.js"
 );
 var messageServices = require(
-	"$:/plugins/clerus/core2/message-service.js"
+	"$:/plugins/clerus/core/message-service.js"
 );
 var messageEffects = require(
-	"$:/plugins/clerus/core2/message-effect.js"
+	"$:/plugins/clerus/core/message-effect.js"
 );
 var titleIssuers = require(
-	"$:/plugins/clerus/core2/title-issuer.js"
+	"$:/plugins/clerus/core/title-issuer.js"
 );
 var deferredEffects = require(
-	"$:/plugins/clerus/core2/deferred-effect.js"
+	"$:/plugins/clerus/core/deferred-effect.js"
 );
 
 var hasOwn = Function.call.bind(

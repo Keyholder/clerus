@@ -1,15 +1,15 @@
 /*\
-title: $:/plugins/clerus/core2/collection.js
+title: $:/plugins/clerus/core/collection.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var retention = require("$:/plugins/clerus/core2/retention.js");
-var stores = require("$:/plugins/clerus/core2/store.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var retention = require("$:/plugins/clerus/core/retention.js");
+var stores = require("$:/plugins/clerus/core/store.js");
 
 var PASSIVE_FORMS = [
 	"charter",

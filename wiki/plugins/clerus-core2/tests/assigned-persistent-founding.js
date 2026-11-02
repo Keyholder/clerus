@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/tests/assigned-persistent-founding.js
+title: $:/plugins/clerus/core/tests/assigned-persistent-founding.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var Runtime = require("$:/plugins/clerus/core2/runtime.js").Runtime;
+var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
 
 function assert(condition, message) {
 	if (!condition) {

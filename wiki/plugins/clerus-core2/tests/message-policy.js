@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/message-policy.js
+title: $:/plugins/clerus/core/tests/message-policy.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,7 +7,7 @@ module-type: library
 "use strict";
 
 var policy = require(
-	"$:/plugins/clerus/core2/message-policy.js"
+	"$:/plugins/clerus/core/message-policy.js"
 );
 
 function assert(condition, message) {

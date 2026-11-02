@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/documents/charter.js
+title: $:/plugins/clerus/core/documents/charter.js
 type: application/javascript
 module-type: library
 \*/

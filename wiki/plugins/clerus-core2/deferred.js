@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/deferred.js
+title: $:/plugins/clerus/core/deferred.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 
 function create(options) {
 	schemas.assertPlatform(options.platform);

@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/tests/delivery-availability.js
+title: $:/plugins/clerus/core/tests/delivery-availability.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var Runtime = require("$:/plugins/clerus/core2/runtime.js").Runtime;
+var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
 var plannedReactions = require(
-	"$:/plugins/clerus/core2/planned-reaction.js"
+	"$:/plugins/clerus/core/planned-reaction.js"
 );
 
 function assert(condition, message) {

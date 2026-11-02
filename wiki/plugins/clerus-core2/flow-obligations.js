@@ -1,25 +1,25 @@
 /*\
-title: $:/plugins/clerus/core2/flow-obligations.js
+title: $:/plugins/clerus/core/flow-obligations.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var proposals = require("$:/plugins/clerus/core2/proposal-schema.js");
-var flows = require("$:/plugins/clerus/core2/flow-schema.js");
-var messages = require("$:/plugins/clerus/core2/message-effect.js");
-var materializer = require("$:/plugins/clerus/core2/materializer.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var proposals = require("$:/plugins/clerus/core/proposal-schema.js");
+var flows = require("$:/plugins/clerus/core/flow-schema.js");
+var messages = require("$:/plugins/clerus/core/message-effect.js");
+var materializer = require("$:/plugins/clerus/core/materializer.js");
 var barriers = require(
-	"$:/plugins/clerus/core2/materialization-barrier.js"
+	"$:/plugins/clerus/core/materialization-barrier.js"
 );
-var stores = require("$:/plugins/clerus/core2/store.js");
+var stores = require("$:/plugins/clerus/core/store.js");
 var jobTitles = require(
-	"$:/plugins/clerus/core2/job-titles.js"
+	"$:/plugins/clerus/core/job-titles.js"
 );
 var deferredObligations = require(
-	"$:/plugins/clerus/core2/deferred-obligations.js"
+	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 
 var hasOwn = Function.call.bind(

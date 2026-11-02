@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/flow-scheduler.js
+title: $:/plugins/clerus/core/tests/flow-scheduler.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,14 +7,14 @@ module-type: library
 "use strict";
 
 var FlowScheduler = require(
-	"$:/plugins/clerus/core2/flow-scheduler.js"
+	"$:/plugins/clerus/core/flow-scheduler.js"
 ).Scheduler;
 
 var persistent = require(
-	"$:/plugins/clerus/core2/persistent-reaction.js"
+	"$:/plugins/clerus/core/persistent-reaction.js"
 );
 
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {

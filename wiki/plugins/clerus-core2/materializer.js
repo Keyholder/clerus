@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/materializer.js
+title: $:/plugins/clerus/core/materializer.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 var proposals = require(
-	"$:/plugins/clerus/core2/proposal-schema.js"
+	"$:/plugins/clerus/core/proposal-schema.js"
 );
 
 function equal(left, right) {

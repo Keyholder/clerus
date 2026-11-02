@@ -1,22 +1,22 @@
 /*\
-title: $:/plugins/clerus/core2/scope.js
+title: $:/plugins/clerus/core/scope.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var documents = require("$:/plugins/clerus/core2/documents.js");
-var operations = require("$:/plugins/clerus/core2/operation.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var documents = require("$:/plugins/clerus/core/documents.js");
+var operations = require("$:/plugins/clerus/core/operation.js");
 var missionSchema = require(
-	"$:/plugins/clerus/core2/mission-schema.js"
+	"$:/plugins/clerus/core/mission-schema.js"
 );
 var missionIssuance = require(
-	"$:/plugins/clerus/core2/mission-issuance.js"
+	"$:/plugins/clerus/core/mission-issuance.js"
 );
 var jobTitles = require(
-	"$:/plugins/clerus/core2/job-titles.js"
+	"$:/plugins/clerus/core/job-titles.js"
 );
 
 function define(record, key, value) {

@@ -1,46 +1,46 @@
 /*\
-title: $:/plugins/clerus/core2/runtime.js
+title: $:/plugins/clerus/core/runtime.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
-var Scheduler = require("$:/plugins/clerus/core2/scheduler.js").Scheduler;
-var observation = require("$:/plugins/clerus/core2/observation.js");
-var incidents = require("$:/plugins/clerus/core2/incidents.js");
-var lifecycle = require("$:/plugins/clerus/core2/lifecycle.js");
-var hierarchy = require("$:/plugins/clerus/core2/hierarchy.js");
-var missions = require("$:/plugins/clerus/core2/missions.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var Store = require("$:/plugins/clerus/core/store.js").Store;
+var Scheduler = require("$:/plugins/clerus/core/scheduler.js").Scheduler;
+var observation = require("$:/plugins/clerus/core/observation.js");
+var incidents = require("$:/plugins/clerus/core/incidents.js");
+var lifecycle = require("$:/plugins/clerus/core/lifecycle.js");
+var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
+var missions = require("$:/plugins/clerus/core/missions.js");
 var obligations = require(
-	"$:/plugins/clerus/core2/obligations.js"
+	"$:/plugins/clerus/core/obligations.js"
 );
 var persistentReactions = require(
-	"$:/plugins/clerus/core2/persistent-reaction.js"
+	"$:/plugins/clerus/core/persistent-reaction.js"
 );
 var flowObligations = require(
-	"$:/plugins/clerus/core2/flow-obligations.js"
+	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var FlowScheduler = require(
-	"$:/plugins/clerus/core2/flow-scheduler.js"
+	"$:/plugins/clerus/core/flow-scheduler.js"
 ).Scheduler;
 var ephemeralReactions = require(
-	"$:/plugins/clerus/core2/reaction.js"
+	"$:/plugins/clerus/core/reaction.js"
 );
 var MaterializationError = require(
-	"$:/plugins/clerus/core2/operation.js"
+	"$:/plugins/clerus/core/operation.js"
 ).MaterializationError;
 var deferredActivations = require(
-	"$:/plugins/clerus/core2/deferred.js"
+	"$:/plugins/clerus/core/deferred.js"
 );
 var deferredObligations = require(
-	"$:/plugins/clerus/core2/deferred-obligations.js"
+	"$:/plugins/clerus/core/deferred-obligations.js"
 );
-var retention = require("$:/plugins/clerus/core2/retention.js");
-var collection = require("$:/plugins/clerus/core2/collection.js");
+var retention = require("$:/plugins/clerus/core/retention.js");
+var collection = require("$:/plugins/clerus/core/collection.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty

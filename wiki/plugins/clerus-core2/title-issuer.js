@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/title-issuer.js
+title: $:/plugins/clerus/core/title-issuer.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var roles = require("$:/plugins/clerus/core2/roles.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 var jobTitles = require(
-	"$:/plugins/clerus/core2/job-titles.js"
+	"$:/plugins/clerus/core/job-titles.js"
 );
 
 function create(options) {

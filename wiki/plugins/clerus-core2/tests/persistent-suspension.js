@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/tests/persistent-suspension.js
+title: $:/plugins/clerus/core/tests/persistent-suspension.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var Runtime = require("$:/plugins/clerus/core2/runtime.js").Runtime;
+var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
 
 function assert(condition, message) {
 	if (!condition) {

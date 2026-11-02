@@ -1,13 +1,13 @@
 /*\
-title: $:/plugins/clerus/core2/incidents.js
+title: $:/plugins/clerus/core/incidents.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var transitions = require("$:/plugins/clerus/core2/store.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var transitions = require("$:/plugins/clerus/core/store.js");
 
 function create(options) {
 	schemas.assertPlatform(options.platform);

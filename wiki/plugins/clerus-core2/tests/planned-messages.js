@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/tests/planned-messages.js
+title: $:/plugins/clerus/core/tests/planned-messages.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var Plan = require("$:/plugins/clerus/core2/plan.js").Plan;
+var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
 var effects = require(
-	"$:/plugins/clerus/core2/message-effect.js"
+	"$:/plugins/clerus/core/message-effect.js"
 );
 
 function assert(condition, message) {

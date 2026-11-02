@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/tests.js
+title: $:/plugins/clerus/core/tests.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var PREFIX = "$:/plugins/clerus/core2/tests/";
+var PREFIX = "$:/plugins/clerus/core/tests/";
 
 var SUITES = Object.freeze([
 	"foundation",

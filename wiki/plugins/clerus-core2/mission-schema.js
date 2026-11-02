@@ -1,15 +1,15 @@
 /*\
-title: $:/plugins/clerus/core2/mission-schema.js
+title: $:/plugins/clerus/core/mission-schema.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var roles = require("$:/plugins/clerus/core2/roles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 var generations = require(
-	"$:/plugins/clerus/core2/generations.js"
+	"$:/plugins/clerus/core/generations.js"
 );
 
 function validate(value) {

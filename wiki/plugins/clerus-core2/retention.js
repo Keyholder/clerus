@@ -1,19 +1,19 @@
 /*\
-title: $:/plugins/clerus/core2/retention.js
+title: $:/plugins/clerus/core/retention.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var hierarchy = require("$:/plugins/clerus/core2/hierarchy.js");
-var missions = require("$:/plugins/clerus/core2/missions.js");
-var materializer = require("$:/plugins/clerus/core2/materializer.js");
-var flowSchema = require("$:/plugins/clerus/core2/flow-schema.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
+var missions = require("$:/plugins/clerus/core/missions.js");
+var materializer = require("$:/plugins/clerus/core/materializer.js");
+var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
 var deferred = require(
-	"$:/plugins/clerus/core2/deferred-obligations.js"
+	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 
 var hasOwn = Function.call.bind(

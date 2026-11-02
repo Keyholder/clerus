@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/documents/tiddler-title.js
+title: $:/plugins/clerus/core/documents/tiddler-title.js
 type: application/javascript
 module-type: library
 \*/

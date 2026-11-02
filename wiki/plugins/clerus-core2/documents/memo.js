@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/documents/memo.js
+title: $:/plugins/clerus/core/documents/memo.js
 type: application/javascript
 module-type: library
 \*/

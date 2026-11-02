@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/establishment-delivery.js
+title: $:/plugins/clerus/core/tests/establishment-delivery.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,11 +7,11 @@ module-type: library
 "use strict";
 
 var Scheduler = require(
-	"$:/plugins/clerus/core2/scheduler.js"
+	"$:/plugins/clerus/core/scheduler.js"
 ).Scheduler;
 
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var Store = require("$:/plugins/clerus/core/store.js").Store;
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 function assert(condition, message) {
 	if (!condition) {

@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/store.js
+title: $:/plugins/clerus/core/store.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 
 function assertTitle(title) {
 	if (typeof title !== "string" || title.length === 0) {

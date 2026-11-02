@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/materialization-barrier.js
+title: $:/plugins/clerus/core/tests/materialization-barrier.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,14 +7,14 @@ module-type: library
 "use strict";
 
 var barriers = require(
-	"$:/plugins/clerus/core2/materialization-barrier.js"
+	"$:/plugins/clerus/core/materialization-barrier.js"
 );
 
 var obligations = require(
-	"$:/plugins/clerus/core2/obligations.js"
+	"$:/plugins/clerus/core/obligations.js"
 );
 
-var stores = require("$:/plugins/clerus/core2/store.js");
+var stores = require("$:/plugins/clerus/core/store.js");
 
 function assert(condition, message) {
 	if (!condition) {

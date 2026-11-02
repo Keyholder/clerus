@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/documents.js
+title: $:/plugins/clerus/core/documents.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,22 +7,22 @@ module-type: library
 "use strict";
 
 var charter = require(
-	"$:/plugins/clerus/core2/documents/charter.js"
+	"$:/plugins/clerus/core/documents/charter.js"
 );
 var memo = require(
-	"$:/plugins/clerus/core2/documents/memo.js"
+	"$:/plugins/clerus/core/documents/memo.js"
 );
 var tiddlerTitle = require(
-	"$:/plugins/clerus/core2/documents/tiddler-title.js"
+	"$:/plugins/clerus/core/documents/tiddler-title.js"
 );
 var mission = require(
-	"$:/plugins/clerus/core2/documents/mission.js"
+	"$:/plugins/clerus/core/documents/mission.js"
 );
 var jobTitle = require(
-	"$:/plugins/clerus/core2/documents/job-title.js"
+	"$:/plugins/clerus/core/documents/job-title.js"
 );
 var contract = require(
-	"$:/plugins/clerus/core2/documents/contract.js"
+	"$:/plugins/clerus/core/documents/contract.js"
 );
 
 exports.create = function (form, access) {

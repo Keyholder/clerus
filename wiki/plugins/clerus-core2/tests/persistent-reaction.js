@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/persistent-reaction.js
+title: $:/plugins/clerus/core/tests/persistent-reaction.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,12 +7,12 @@ module-type: library
 "use strict";
 
 var persistent = require(
-	"$:/plugins/clerus/core2/persistent-reaction.js"
+	"$:/plugins/clerus/core/persistent-reaction.js"
 );
 var obligations = require(
-	"$:/plugins/clerus/core2/obligations.js"
+	"$:/plugins/clerus/core/obligations.js"
 );
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {

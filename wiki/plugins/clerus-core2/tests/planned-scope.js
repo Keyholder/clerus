@@ -1,15 +1,15 @@
 /*\
-title: $:/plugins/clerus/core2/tests/planned-scope.js
+title: $:/plugins/clerus/core/tests/planned-scope.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var Plan = require("$:/plugins/clerus/core2/plan.js").Plan;
-var stores = require("$:/plugins/clerus/core2/store.js");
+var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
+var stores = require("$:/plugins/clerus/core/store.js");
 var plannedScopes = require(
-	"$:/plugins/clerus/core2/planned-scope.js"
+	"$:/plugins/clerus/core/planned-scope.js"
 );
 
 function assert(condition, message) {

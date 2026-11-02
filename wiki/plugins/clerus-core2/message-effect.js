@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/message-effect.js
+title: $:/plugins/clerus/core/message-effect.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var roles = require("$:/plugins/clerus/core2/roles.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 function fieldsOnly(record, allowed, description) {
 	if (

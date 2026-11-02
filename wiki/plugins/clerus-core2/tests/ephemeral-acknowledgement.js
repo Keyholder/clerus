@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/ephemeral-acknowledgement.js
+title: $:/plugins/clerus/core/tests/ephemeral-acknowledgement.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,12 +7,12 @@ module-type: library
 "use strict";
 
 var flows = require(
-	"$:/plugins/clerus/core2/flow-obligations.js"
+	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var reactions = require(
-	"$:/plugins/clerus/core2/reaction.js"
+	"$:/plugins/clerus/core/reaction.js"
 );
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {

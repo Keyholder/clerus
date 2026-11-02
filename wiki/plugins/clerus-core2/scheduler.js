@@ -1,17 +1,17 @@
 /*\
-title: $:/plugins/clerus/core2/scheduler.js
+title: $:/plugins/clerus/core/scheduler.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var reactions = require("$:/plugins/clerus/core2/reaction.js");
-var roles = require("$:/plugins/clerus/core2/roles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var reactions = require("$:/plugins/clerus/core/reaction.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 var MaterializationError = require(
-	"$:/plugins/clerus/core2/operation.js"
+	"$:/plugins/clerus/core/operation.js"
 ).MaterializationError;
 
 function describe(error) {

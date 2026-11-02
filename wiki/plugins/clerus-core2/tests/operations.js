@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/tests/operations.js
+title: $:/plugins/clerus/core/tests/operations.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var scopes = require("$:/plugins/clerus/core2/scope.js");
+var scopes = require("$:/plugins/clerus/core/scope.js");
 
 function assert(condition, message) {
 	if (!condition) {

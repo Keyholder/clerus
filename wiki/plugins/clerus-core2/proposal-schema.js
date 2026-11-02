@@ -1,19 +1,19 @@
 /*\
-title: $:/plugins/clerus/core2/proposal-schema.js
+title: $:/plugins/clerus/core/proposal-schema.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var stores = require("$:/plugins/clerus/core2/store.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var stores = require("$:/plugins/clerus/core/store.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var messageEffects = require(
-	"$:/plugins/clerus/core2/message-effect.js"
+	"$:/plugins/clerus/core/message-effect.js"
 );
 var deferredEffects = require(
-	"$:/plugins/clerus/core2/deferred-effect.js"
+	"$:/plugins/clerus/core/deferred-effect.js"
 );
 
 function fieldsOnly(record, allowed, description) {

@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/planned-establishment.js
+title: $:/plugins/clerus/core/tests/planned-establishment.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,12 +7,12 @@ module-type: library
 "use strict";
 
 var reactions = require(
-	"$:/plugins/clerus/core2/planned-reaction.js"
+	"$:/plugins/clerus/core/planned-reaction.js"
 );
 var proposals = require(
-	"$:/plugins/clerus/core2/proposal-schema.js"
+	"$:/plugins/clerus/core/proposal-schema.js"
 );
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {

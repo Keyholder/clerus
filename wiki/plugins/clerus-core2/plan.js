@@ -1,18 +1,18 @@
 /*\
-title: $:/plugins/clerus/core2/plan.js
+title: $:/plugins/clerus/core/plan.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var transitions = require("$:/plugins/clerus/core2/store.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var transitions = require("$:/plugins/clerus/core/store.js");
 var messageEffects = require(
-	"$:/plugins/clerus/core2/message-effect.js"
+	"$:/plugins/clerus/core/message-effect.js"
 );
 var deferredEffects = require(
-	"$:/plugins/clerus/core2/deferred-effect.js"
+	"$:/plugins/clerus/core/deferred-effect.js"
 );
 
 function equal(left, right) {

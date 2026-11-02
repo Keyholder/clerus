@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/tests/lifecycle.js
+title: $:/plugins/clerus/core/tests/lifecycle.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var lifecycle = require("$:/plugins/clerus/core2/lifecycle.js");
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
-var missions = require("$:/plugins/clerus/core2/missions.js");
+var lifecycle = require("$:/plugins/clerus/core/lifecycle.js");
+var Store = require("$:/plugins/clerus/core/store.js").Store;
+var missions = require("$:/plugins/clerus/core/missions.js");
 
 function assert(condition, message) {
 	if (!condition) {

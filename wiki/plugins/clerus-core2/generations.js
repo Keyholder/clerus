@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/generations.js
+title: $:/plugins/clerus/core/generations.js
 type: application/javascript
 module-type: library
 \*/

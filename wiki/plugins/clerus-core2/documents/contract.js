@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/documents/contract.js
+title: $:/plugins/clerus/core/documents/contract.js
 type: application/javascript
 module-type: library
 \*/

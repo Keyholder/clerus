@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/job-titles.js
+title: $:/plugins/clerus/core/job-titles.js
 type: application/javascript
 module-type: library
 \*/

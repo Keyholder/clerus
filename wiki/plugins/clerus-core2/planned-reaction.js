@@ -1,17 +1,17 @@
 /*\
-title: $:/plugins/clerus/core2/planned-reaction.js
+title: $:/plugins/clerus/core/planned-reaction.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var transitions = require("$:/plugins/clerus/core2/store.js");
-var Plan = require("$:/plugins/clerus/core2/plan.js").Plan;
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var transitions = require("$:/plugins/clerus/core/store.js");
+var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
 var plannedScopes = require(
-	"$:/plugins/clerus/core2/planned-scope.js"
+	"$:/plugins/clerus/core/planned-scope.js"
 );
 
 function define(record, key, value) {

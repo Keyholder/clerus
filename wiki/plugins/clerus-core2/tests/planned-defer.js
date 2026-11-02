@@ -1,17 +1,17 @@
 /*\
-title: $:/plugins/clerus/core2/tests/planned-defer.js
+title: $:/plugins/clerus/core/tests/planned-defer.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var Plan = require("$:/plugins/clerus/core2/plan.js").Plan;
+var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
 var effects = require(
-	"$:/plugins/clerus/core2/deferred-effect.js"
+	"$:/plugins/clerus/core/deferred-effect.js"
 );
 var proposals = require(
-	"$:/plugins/clerus/core2/proposal-schema.js"
+	"$:/plugins/clerus/core/proposal-schema.js"
 );
 
 function assert(condition, message) {

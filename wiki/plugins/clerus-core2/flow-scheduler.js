@@ -1,19 +1,19 @@
 /*\
-title: $:/plugins/clerus/core2/flow-scheduler.js
+title: $:/plugins/clerus/core/flow-scheduler.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 var flowObligations = require(
-	"$:/plugins/clerus/core2/flow-obligations.js"
+	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var persistent = require(
-	"$:/plugins/clerus/core2/persistent-reaction.js"
+	"$:/plugins/clerus/core/persistent-reaction.js"
 );
 
 function key(title, id) {

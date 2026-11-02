@@ -1,20 +1,20 @@
 /*\
-title: $:/plugins/clerus/core2/project-perspective.js
+title: $:/plugins/clerus/core/project-perspective.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 var missionSchema = require(
-	"$:/plugins/clerus/core2/mission-schema.js"
+	"$:/plugins/clerus/core/mission-schema.js"
 );
-var missions = require("$:/plugins/clerus/core2/missions.js");
-var tasks = require("$:/plugins/clerus/core2/project-tasks.js");
-var roles = require("$:/plugins/clerus/core2/roles.js");
+var missions = require("$:/plugins/clerus/core/missions.js");
+var tasks = require("$:/plugins/clerus/core/project-tasks.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 var jobTitles = require(
-	"$:/plugins/clerus/core2/job-titles.js"
+	"$:/plugins/clerus/core/job-titles.js"
 );
 
 var hasOwn = Function.call.bind(

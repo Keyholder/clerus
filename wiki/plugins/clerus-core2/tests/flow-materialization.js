@@ -1,13 +1,13 @@
 /*\
-title: $:/plugins/clerus/core2/tests/flow-materialization.js
+title: $:/plugins/clerus/core/tests/flow-materialization.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var flows = require("$:/plugins/clerus/core2/flow-obligations.js");
-var stores = require("$:/plugins/clerus/core2/store.js");
+var flows = require("$:/plugins/clerus/core/flow-obligations.js");
+var stores = require("$:/plugins/clerus/core/store.js");
 
 function assert(condition, message) {
 	if (!condition) {

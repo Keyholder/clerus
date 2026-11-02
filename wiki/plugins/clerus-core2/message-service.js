@@ -1,16 +1,16 @@
 /*\
-title: $:/plugins/clerus/core2/message-service.js
+title: $:/plugins/clerus/core/message-service.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var policy = require("$:/plugins/clerus/core2/message-policy.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var policy = require("$:/plugins/clerus/core/message-policy.js");
 var missionSchema = require(
-	"$:/plugins/clerus/core2/mission-schema.js"
+	"$:/plugins/clerus/core/mission-schema.js"
 );
 
 function create(options) {

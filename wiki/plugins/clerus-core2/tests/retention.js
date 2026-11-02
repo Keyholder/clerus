@@ -1,13 +1,13 @@
 /*\
-title: $:/plugins/clerus/core2/tests/retention.js
+title: $:/plugins/clerus/core/tests/retention.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var retention = require("$:/plugins/clerus/core2/retention.js");
-var messages = require("$:/plugins/clerus/core2/message-effect.js");
+var retention = require("$:/plugins/clerus/core/retention.js");
+var messages = require("$:/plugins/clerus/core/message-effect.js");
 
 function assert(condition, message) {
 	if (!condition) {

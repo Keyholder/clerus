@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/hierarchy.js
+title: $:/plugins/clerus/core/tests/hierarchy.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,11 +7,11 @@ module-type: library
 "use strict";
 
 var jobTitles = require(
-	"$:/plugins/clerus/core2/job-titles.js"
+	"$:/plugins/clerus/core/job-titles.js"
 );
 
 var hierarchy = require(
-	"$:/plugins/clerus/core2/hierarchy.js"
+	"$:/plugins/clerus/core/hierarchy.js"
 );
 
 function assert(condition, message) {

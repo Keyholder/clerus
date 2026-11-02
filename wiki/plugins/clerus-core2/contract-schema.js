@@ -1,12 +1,12 @@
 /*\
-title: $:/plugins/clerus/core2/contract-schema.js
+title: $:/plugins/clerus/core/contract-schema.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty

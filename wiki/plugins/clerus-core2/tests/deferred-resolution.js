@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/deferred-resolution.js
+title: $:/plugins/clerus/core/tests/deferred-resolution.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,15 +7,15 @@ module-type: library
 "use strict";
 
 var deferred = require(
-	"$:/plugins/clerus/core2/deferred-obligations.js"
+	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 var flows = require(
-	"$:/plugins/clerus/core2/flow-obligations.js"
+	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var planned = require(
-	"$:/plugins/clerus/core2/planned-reaction.js"
+	"$:/plugins/clerus/core/planned-reaction.js"
 );
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {

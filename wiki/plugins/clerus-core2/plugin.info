@@ -1,5 +1,5 @@
 {
-  "title": "$:/plugins/clerus/core2",
+  "title": "$:/plugins/clerus/core",
   "name": "Clerus Core",
   "description": "Persistent actor runtime for TiddlyWiki",
   "author": "Clerus",

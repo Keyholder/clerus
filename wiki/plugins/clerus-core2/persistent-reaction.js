@@ -1,28 +1,28 @@
 /*\
-title: $:/plugins/clerus/core2/persistent-reaction.js
+title: $:/plugins/clerus/core/persistent-reaction.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 var barriers = require(
-	"$:/plugins/clerus/core2/materialization-barrier.js"
+	"$:/plugins/clerus/core/materialization-barrier.js"
 );
 var obligations = require(
-	"$:/plugins/clerus/core2/obligations.js"
+	"$:/plugins/clerus/core/obligations.js"
 );
 var flowObligations = require(
-	"$:/plugins/clerus/core2/flow-obligations.js"
+	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var plannedReactions = require(
-	"$:/plugins/clerus/core2/planned-reaction.js"
+	"$:/plugins/clerus/core/planned-reaction.js"
 );
 var deferredObligations = require(
-	"$:/plugins/clerus/core2/deferred-obligations.js"
+	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 
 function describe(error) {

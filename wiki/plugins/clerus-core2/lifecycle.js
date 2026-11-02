@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/lifecycle.js
+title: $:/plugins/clerus/core/lifecycle.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var transitions = require("$:/plugins/clerus/core2/store.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var transitions = require("$:/plugins/clerus/core/store.js");
 
 function describeError(error) {
 	return {

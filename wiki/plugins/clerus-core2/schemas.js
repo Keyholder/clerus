@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/schemas.js
+title: $:/plugins/clerus/core/schemas.js
 type: application/javascript
 module-type: library
 \*/
@@ -155,7 +155,7 @@ function assertKey(key) {
 
 function formOf(document) {
 	if (
-		require("$:/plugins/clerus/core2/job-titles.js")
+		require("$:/plugins/clerus/core/job-titles.js")
 			.isJobTitle(document)
 	) {
 		return "job-title";
@@ -190,14 +190,14 @@ function formOf(document) {
 		Lazy loading avoids an initialization cycle:
 		mission-schema uses the shared JSON utilities.
 		*/
-		require("$:/plugins/clerus/core2/mission-schema.js")
+		require("$:/plugins/clerus/core/mission-schema.js")
 			.validate(document);
 
 		return "mission";
 	}
 
 	if (document.form === "contract") {
-		require("$:/plugins/clerus/core2/contract-schema.js")
+		require("$:/plugins/clerus/core/contract-schema.js")
 			.validate(document);
 
 		return "contract";

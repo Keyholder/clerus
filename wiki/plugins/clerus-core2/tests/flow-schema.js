@@ -1,14 +1,14 @@
 /*\
-title: $:/plugins/clerus/core2/tests/flow-schema.js
+title: $:/plugins/clerus/core/tests/flow-schema.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var flows = require("$:/plugins/clerus/core2/flow-schema.js");
-var messages = require("$:/plugins/clerus/core2/message-effect.js");
-var proposals = require("$:/plugins/clerus/core2/proposal-schema.js");
+var flows = require("$:/plugins/clerus/core/flow-schema.js");
+var messages = require("$:/plugins/clerus/core/message-effect.js");
+var proposals = require("$:/plugins/clerus/core/proposal-schema.js");
 
 function assert(condition, message) {
 	if (!condition) {

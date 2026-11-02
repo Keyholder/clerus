@@ -1,17 +1,17 @@
 /*\
-title: $:/plugins/clerus/core2/tests/mission-foundation.js
+title: $:/plugins/clerus/core/tests/mission-foundation.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var roles = require("$:/plugins/clerus/core2/roles.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 var generations = require(
-	"$:/plugins/clerus/core2/generations.js"
+	"$:/plugins/clerus/core/generations.js"
 );
 var missions = require(
-	"$:/plugins/clerus/core2/mission-schema.js"
+	"$:/plugins/clerus/core/mission-schema.js"
 );
 
 function assert(condition, message) {

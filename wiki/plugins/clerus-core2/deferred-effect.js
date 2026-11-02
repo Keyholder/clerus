@@ -1,13 +1,13 @@
 /*\
-title: $:/plugins/clerus/core2/deferred-effect.js
+title: $:/plugins/clerus/core/deferred-effect.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 function fieldsOnly(record, allowed, description) {
 	if (

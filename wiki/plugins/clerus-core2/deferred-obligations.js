@@ -1,22 +1,22 @@
 /*\
-title: $:/plugins/clerus/core2/deferred-obligations.js
+title: $:/plugins/clerus/core/deferred-obligations.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var effects = require("$:/plugins/clerus/core2/deferred-effect.js");
-var flowSchema = require("$:/plugins/clerus/core2/flow-schema.js");
-var stores = require("$:/plugins/clerus/core2/store.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var effects = require("$:/plugins/clerus/core/deferred-effect.js");
+var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
+var stores = require("$:/plugins/clerus/core/store.js");
 
 var proposals = require(
-	"$:/plugins/clerus/core2/proposal-schema.js"
+	"$:/plugins/clerus/core/proposal-schema.js"
 );
 
 var materializer = require(
-	"$:/plugins/clerus/core2/materializer.js"
+	"$:/plugins/clerus/core/materializer.js"
 );
 
 function validate(value, platform) {
@@ -243,7 +243,7 @@ function create(options) {
 			the barrier also recognizes deferred obligations.
 		*/
 		var blockers = require(
-			"$:/plugins/clerus/core2/materialization-barrier.js"
+			"$:/plugins/clerus/core/materialization-barrier.js"
 		).collect({
 			store: options.store
 		}).forJob(proposal.owner.title);

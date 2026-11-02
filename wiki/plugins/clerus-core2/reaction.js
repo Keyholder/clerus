@@ -1,29 +1,29 @@
 /*\
-title: $:/plugins/clerus/core2/reaction.js
+title: $:/plugins/clerus/core/reaction.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var scopes = require("$:/plugins/clerus/core2/scope.js");
-var transitions = require("$:/plugins/clerus/core2/store.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var scopes = require("$:/plugins/clerus/core/scope.js");
+var transitions = require("$:/plugins/clerus/core/store.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 var projectPerspectives = require(
-	"$:/plugins/clerus/core2/project-perspective.js"
+	"$:/plugins/clerus/core/project-perspective.js"
 );
 var organizations = require(
-	"$:/plugins/clerus/core2/organization.js"
+	"$:/plugins/clerus/core/organization.js"
 );
 var messageServices = require(
-	"$:/plugins/clerus/core2/message-service.js"
+	"$:/plugins/clerus/core/message-service.js"
 );
 var titleIssuers = require(
-	"$:/plugins/clerus/core2/title-issuer.js"
+	"$:/plugins/clerus/core/title-issuer.js"
 );
-var jobViews = require("$:/plugins/clerus/core2/job-view.js");
+var jobViews = require("$:/plugins/clerus/core/job-view.js");
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {

@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/flow-failures.js
+title: $:/plugins/clerus/core/tests/flow-failures.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,15 +7,15 @@ module-type: library
 "use strict";
 
 var flows = require(
-	"$:/plugins/clerus/core2/flow-obligations.js"
+	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var plannedReactions = require(
-	"$:/plugins/clerus/core2/planned-reaction.js"
+	"$:/plugins/clerus/core/planned-reaction.js"
 );
 var barriers = require(
-	"$:/plugins/clerus/core2/materialization-barrier.js"
+	"$:/plugins/clerus/core/materialization-barrier.js"
 );
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {

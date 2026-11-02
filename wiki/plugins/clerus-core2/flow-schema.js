@@ -1,20 +1,20 @@
 /*\
-title: $:/plugins/clerus/core2/flow-schema.js
+title: $:/plugins/clerus/core/flow-schema.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 var proposals = require(
-	"$:/plugins/clerus/core2/proposal-schema.js"
+	"$:/plugins/clerus/core/proposal-schema.js"
 );
 var messageEffects = require(
-	"$:/plugins/clerus/core2/message-effect.js"
+	"$:/plugins/clerus/core/message-effect.js"
 );
 var deferredEffects = require(
-	"$:/plugins/clerus/core2/deferred-effect.js"
+	"$:/plugins/clerus/core/deferred-effect.js"
 );
 
 var hasOwn = Function.call.bind(

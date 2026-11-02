@@ -1,21 +1,21 @@
 /*\
-title: $:/plugins/clerus/core2/obligations.js
+title: $:/plugins/clerus/core/obligations.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 var proposals = require(
-	"$:/plugins/clerus/core2/proposal-schema.js"
+	"$:/plugins/clerus/core/proposal-schema.js"
 );
-var stores = require("$:/plugins/clerus/core2/store.js");
+var stores = require("$:/plugins/clerus/core/store.js");
 var materializer = require(
-	"$:/plugins/clerus/core2/materializer.js"
+	"$:/plugins/clerus/core/materializer.js"
 );
 var barriers = require(
-	"$:/plugins/clerus/core2/materialization-barrier.js"
+	"$:/plugins/clerus/core/materialization-barrier.js"
 );
 
 function create(options) {

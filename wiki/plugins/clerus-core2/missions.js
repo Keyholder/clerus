@@ -1,23 +1,23 @@
 /*\
-title: $:/plugins/clerus/core2/missions.js
+title: $:/plugins/clerus/core/missions.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 var missionSchema = require(
-	"$:/plugins/clerus/core2/mission-schema.js"
+	"$:/plugins/clerus/core/mission-schema.js"
 );
 var generations = require(
-	"$:/plugins/clerus/core2/generations.js"
+	"$:/plugins/clerus/core/generations.js"
 );
 var jobTitles = require(
-	"$:/plugins/clerus/core2/job-titles.js"
+	"$:/plugins/clerus/core/job-titles.js"
 );
 var hierarchy = require(
-	"$:/plugins/clerus/core2/hierarchy.js"
+	"$:/plugins/clerus/core/hierarchy.js"
 );
 
 function roleId(project, role) {

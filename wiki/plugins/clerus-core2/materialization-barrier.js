@@ -1,21 +1,21 @@
 /*\
-title: $:/plugins/clerus/core2/materialization-barrier.js
+title: $:/plugins/clerus/core/materialization-barrier.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var materializer = require(
-	"$:/plugins/clerus/core2/materializer.js"
+	"$:/plugins/clerus/core/materializer.js"
 );
 var flowSchema = require(
-	"$:/plugins/clerus/core2/flow-schema.js"
+	"$:/plugins/clerus/core/flow-schema.js"
 );
 var deferredObligations = require(
-	"$:/plugins/clerus/core2/deferred-obligations.js"
+	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 
 function walPlatform(title) {

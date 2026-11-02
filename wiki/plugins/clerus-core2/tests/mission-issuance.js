@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core2/tests/mission-issuance.js
+title: $:/plugins/clerus/core/tests/mission-issuance.js
 type: application/javascript
 module-type: library
 \*/
@@ -7,11 +7,11 @@ module-type: library
 "use strict";
 
 var issuance = require(
-	"$:/plugins/clerus/core2/mission-issuance.js"
+	"$:/plugins/clerus/core/mission-issuance.js"
 );
 
 var missions = require(
-	"$:/plugins/clerus/core2/missions.js"
+	"$:/plugins/clerus/core/missions.js"
 );
 
 function assert(condition, message) {

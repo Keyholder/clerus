@@ -1,15 +1,15 @@
 /*\
-title: $:/plugins/clerus/core2/message-policy.js
+title: $:/plugins/clerus/core/message-policy.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var schemas = require("$:/plugins/clerus/core2/schemas.js");
-var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
-var hierarchy = require("$:/plugins/clerus/core2/hierarchy.js");
-var roles = require("$:/plugins/clerus/core2/roles.js");
+var schemas = require("$:/plugins/clerus/core/schemas.js");
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 
 function reachable(children, from, to) {
 	var pending = [from];

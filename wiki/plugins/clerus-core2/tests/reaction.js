@@ -1,13 +1,13 @@
 /*\
-title: $:/plugins/clerus/core2/tests/reaction.js
+title: $:/plugins/clerus/core/tests/reaction.js
 type: application/javascript
 module-type: library
 \*/
 
 "use strict";
 
-var reactions = require("$:/plugins/clerus/core2/reaction.js");
-var Store = require("$:/plugins/clerus/core2/store.js").Store;
+var reactions = require("$:/plugins/clerus/core/reaction.js");
+var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {
