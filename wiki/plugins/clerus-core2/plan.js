@@ -60,11 +60,18 @@ function Plan(snapshot) {
 	this.touched = new Set();
 	this.state = "open";
 	this.compiled = null;
+    this.revision = 0;
+    this.parent = null;
+    this.parentRevision = null;
 }
 
 Plan.prototype.assertOpen = function () {
 	if (this.state !== "open") {
 		throw new Error("Plan is not open: " + this.state);
+	}
+
+	if (this.parent !== null) {
+		this.parent.assertOpen();
 	}
 };
 
@@ -143,6 +150,7 @@ Plan.prototype.apply = function (value) {
 	}
 
 	this.touched.add(effect.title);
+    this.revision++;
 
 	return "applied";
 };
@@ -184,8 +192,102 @@ Plan.prototype.export = function () {
 	});
 };
 
+Plan.prototype.fork = function () {
+	this.assertOpen();
+
+	var branch = Object.create(Plan.prototype);
+
+	/*
+		Field snapshots are immutable normalized records.
+		Maps and sets must be independent.
+	*/
+	branch.baseline = new Map(this.baseline);
+	branch.current = new Map(this.current);
+	branch.shadows = new Map(this.shadows);
+	branch.touched = new Set(this.touched);
+
+	branch.state = "open";
+	branch.compiled = null;
+	branch.revision = this.revision;
+
+	branch.parent = this;
+	branch.parentRevision = this.revision;
+
+	return branch;
+};
+
+Plan.prototype.accept = function (branch) {
+	this.assertOpen();
+
+	if (
+		!(branch instanceof Plan) ||
+		branch.parent !== this
+	) {
+		throw new Error("Plan branch belongs to another parent");
+	}
+
+	branch.assertOpen();
+
+	if (branch.parentRevision !== this.revision) {
+		throw new Error("Plan branch is stale");
+	}
+
+	/*
+		Prepare the replacement collections before publication.
+		No effect is written to the authoritative store.
+	*/
+	var current = new Map(branch.current);
+	var touched = new Set(branch.touched);
+
+	this.current = current;
+	this.touched = touched;
+	this.revision++;
+
+	branch.state = "accepted";
+	branch.baseline.clear();
+	branch.current.clear();
+	branch.shadows.clear();
+	branch.touched.clear();
+};
+
+Plan.prototype.transact = function (prepare) {
+	this.assertOpen();
+
+	if (typeof prepare !== "function") {
+		throw new Error("Plan operation requires a preparation function");
+	}
+
+	var branch = this.fork();
+
+	try {
+		var result = prepare(branch);
+
+		if (
+			result !== null &&
+			result !== undefined &&
+			typeof result.then === "function"
+		) {
+			throw new Error("Plan operations must be synchronous");
+		}
+
+		this.accept(branch);
+
+		return result;
+	} catch (error) {
+		if (branch.state === "open") {
+			branch.abort();
+		}
+
+		throw error;
+	}
+};
+
 Plan.prototype.seal = function () {
 	this.assertOpen();
+
+    if (this.parent !== null) {
+        throw new Error("Plan branch must be accepted, not sealed");
+    }
 
 	this.compiled = this.export();
 	this.state = "sealed";
@@ -199,7 +301,13 @@ Plan.prototype.seal = function () {
 };
 
 Plan.prototype.abort = function () {
-	this.assertOpen();
+	/*
+		An orphaned branch may still be explicitly disposed of
+		after its parent has closed.
+	*/
+	if (this.state !== "open") {
+		throw new Error("Plan is not open: " + this.state);
+	}
 
 	this.state = "aborted";
 	this.baseline.clear();
