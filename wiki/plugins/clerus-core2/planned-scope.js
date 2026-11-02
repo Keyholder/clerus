@@ -21,6 +21,9 @@ var messageServices = require(
 var messageEffects = require(
 	"$:/plugins/clerus/core2/message-effect.js"
 );
+var titleIssuers = require(
+	"$:/plugins/clerus/core2/title-issuer.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -105,6 +108,14 @@ function open(options) {
 		}
 	};
 
+	var titleIssuer = options.newId
+		? titleIssuers.create({
+			title: options.title,
+			store: view,
+			newId: options.newId
+		})
+		: null;
+
 	function readJobs() {
 		var jobs = [];
 
@@ -159,14 +170,7 @@ function open(options) {
 			throw new Error("Prepared message belongs to another sender");
 		}
 
-		if (draft.establishing !== undefined) {
-			throw new Error(
-				"Planned establishment is not connected yet"
-			);
-		}
-
 		var source = activePlan.read(options.title);
-		var recipient = activePlan.read(draft.recipient);
 
 		if (
 			source.kind !== "materialized" ||
@@ -175,15 +179,45 @@ function open(options) {
 			throw new Error("Planned message sender has changed");
 		}
 
-		if (
-			recipient.kind !== "materialized" ||
-			recipient.fields.type !== "application/json" ||
-			typeof recipient.fields["clerus-executor"] !== "string" ||
-			recipient.fields["clerus-executor"].length === 0
-		) {
-			throw new Error(
-				"Planned message requires a materialized recipient"
+		var recipient = activePlan.read(draft.recipient);
+		var recipientExecutor;
+
+		if (draft.establishing === true) {
+			if (recipient.kind !== "absent") {
+				throw new Error("Planned establishment target is occupied");
+			}
+
+			var reserved = activePlan.export().messages.some(
+				function (message) {
+					return message.establishing === true &&
+						message.recipient.title === draft.recipient;
+				}
 			);
+
+			if (reserved) {
+				throw new Error(
+					"Plan already contains establishment for this target"
+				);
+			}
+
+			recipientExecutor = draft.executor;
+		} else {
+			if (draft.establishing !== undefined) {
+				throw new Error("Invalid establishment marker");
+			}
+
+			if (
+				recipient.kind !== "materialized" ||
+				recipient.fields.type !== "application/json" ||
+				typeof recipient.fields["clerus-executor"] !== "string" ||
+				recipient.fields["clerus-executor"].length === 0
+			) {
+				throw new Error(
+					"Planned message requires a materialized recipient"
+				);
+			}
+
+			recipientExecutor = recipient.fields["clerus-executor"];
 		}
 
 		var effect = {
@@ -200,11 +234,15 @@ function open(options) {
 
 			recipient: {
 				title: draft.recipient,
-				executor: recipient.fields["clerus-executor"]
+				executor: recipientExecutor
 			},
 
 			registry: draft.registry
 		};
+
+		if (draft.establishing === true) {
+			effect.establishing = true;
+		}
 
 		if (draft.type === "report") {
 			effect.project = draft.project;
@@ -354,6 +392,10 @@ function open(options) {
 					}
 				));
 			}
+			: undefined,
+
+		issueJobTitle: titleIssuer
+			? titleIssuer.issue
 			: undefined
 	});
 }
