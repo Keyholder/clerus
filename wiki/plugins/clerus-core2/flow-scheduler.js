@@ -260,16 +260,6 @@ Scheduler.prototype.drain = function () {
 				continue;
 			}
 
-			if (message.establishing === true) {
-				report.unavailable.push({
-					title: selected.title,
-					messageId: selected.id,
-					reason: "flow-establishment-not-connected"
-				});
-
-				continue;
-			}
-
 			var recipient = this.options.store.read(
 				message.recipient.title
 			);
@@ -302,6 +292,29 @@ Scheduler.prototype.drain = function () {
 			}
 
 			if (
+				message.establishing === true &&
+				!space.persistent
+			) {
+				report.unavailable.push({
+					title: selected.title,
+					messageId: selected.id,
+					reason: "ephemeral-flow-establishment-not-connected"
+				});
+
+				continue;
+			}
+
+			if (message.establishing === true) {
+				if (recipient.kind !== "absent") {
+					report.unavailable.push({
+						title: selected.title,
+						messageId: selected.id,
+						reason: "establishment-target-occupied"
+					});
+
+					continue;
+				}
+			} else if (
 				recipient.kind !== "materialized" ||
 				recipient.fields.type !== "application/json" ||
 				recipient.fields["clerus-executor"] !==
@@ -317,6 +330,7 @@ Scheduler.prototype.drain = function () {
 			}
 
 			if (
+				message.establishing !== true &&
 				space.persistent &&
 				recipient.fields["clerus-suspended"] === "yes" &&
 				recipient.fields["clerus-custody"] === this.options.platform

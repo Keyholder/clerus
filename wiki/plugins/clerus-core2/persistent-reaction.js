@@ -123,16 +123,23 @@ function execute(options) {
 			}
 
 			var current = options.store.read(options.title);
+			var establishing = delivery.establishing === true;
 
-			if (
-				delivery.recipient.title !== options.title ||
-				current.kind !== "materialized" ||
-				current.fields["clerus-executor"] !==
-					delivery.recipient.executor
-			) {
+			var recipientMatches = delivery.recipient.title === options.title &&
+				(
+					establishing
+						? current.kind === "absent"
+						: current.kind === "materialized" &&
+							current.fields["clerus-executor"] ===
+								delivery.recipient.executor
+				);
+
+			if (!recipientMatches) {
 				return {
 					status: "unavailable",
-					reason: "flow-recipient-changed"
+					reason: establishing
+						? "establishment-target-occupied"
+						: "flow-recipient-changed"
 				};
 			}
 
@@ -151,7 +158,7 @@ function execute(options) {
 	var invoked = false;
 
 	try {
-		proposal = plannedReactions.execute({
+		var execution = {
 			store: options.store,
 			title: options.title,
 			platform: options.platform,
@@ -159,18 +166,35 @@ function execute(options) {
 			incoming: incoming,
 			newId: options.newId,
 			acknowledgeResumption:
-				options.acknowledgeResumption === true,
+				options.acknowledgeResumption === true
+		};
 
-			handler: function (event, operational, incoming) {
-				invoked = true;
+		var wrappedHandler = function (event, operational, incoming) {
+			invoked = true;
 
-				return options.handler(
-					event,
-					operational,
-					incoming
-				);
-			}
-		});
+			return options.handler(
+				event,
+				operational,
+				incoming
+			);
+		};
+
+		if (delivery && delivery.establishing === true) {
+			execution.resolveExecutor = function (name) {
+				if (name !== delivery.recipient.executor) {
+					throw new Error(
+						"Establishment executor does not match the message"
+					);
+				}
+
+				return wrappedHandler;
+			};
+
+			proposal = plannedReactions.establish(execution);
+		} else {
+			execution.handler = wrappedHandler;
+			proposal = plannedReactions.execute(execution);
+		}
 	} catch (error) {
 		var failure = failed(
 			invoked ? "reaction" : "preparation",
