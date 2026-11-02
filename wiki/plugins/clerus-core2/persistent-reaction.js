@@ -8,11 +8,15 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+
 var barriers = require(
 	"$:/plugins/clerus/core2/materialization-barrier.js"
 );
 var obligations = require(
 	"$:/plugins/clerus/core2/obligations.js"
+);
+var flowObligations = require(
+	"$:/plugins/clerus/core2/flow-obligations.js"
 );
 var plannedReactions = require(
 	"$:/plugins/clerus/core2/planned-reaction.js"
@@ -38,6 +42,20 @@ function failed(phase, error, title) {
 	};
 }
 
+function messageEvent(message) {
+	var event = {
+		type: message.type,
+		id: message.id
+	};
+
+	if (message.type === "report") {
+		event.project = message.project;
+		event.role = message.role.slice();
+	}
+
+	return event;
+}
+
 function execute(options) {
 	schemas.assertPlatform(options.platform);
 
@@ -60,6 +78,12 @@ function execute(options) {
 		newId: options.newId
 	});
 
+	var flows = flowObligations.create({
+		store: options.store,
+		platform: options.platform,
+		newId: options.newId
+	});
+
 	var blockers = barriers.collect({
 		store: options.store
 	}).forJob(options.title);
@@ -71,6 +95,58 @@ function execute(options) {
 		};
 	}
 
+	var delivery = null;
+	var event = options.event;
+	var incoming = options.incoming;
+
+	if (options.flow !== undefined) {
+		if (
+			!options.flow ||
+			typeof options.flow.title !== "string" ||
+			typeof options.flow.messageId !== "string"
+		) {
+			throw new Error("Invalid flow delivery address");
+		}
+
+		try {
+			delivery = flows.pending(options.flow.title).find(
+				function (message) {
+					return message.id === options.flow.messageId;
+				}
+			);
+
+			if (!delivery) {
+				return {
+					status: "unavailable",
+					reason: "flow-message-not-pending"
+				};
+			}
+
+			var current = options.store.read(options.title);
+
+			if (
+				delivery.recipient.title !== options.title ||
+				current.kind !== "materialized" ||
+				current.fields["clerus-executor"] !==
+					delivery.recipient.executor
+			) {
+				return {
+					status: "unavailable",
+					reason: "flow-recipient-changed"
+				};
+			}
+
+			event = messageEvent(delivery);
+			incoming = delivery.registry;
+		} catch (error) {
+			return failed(
+				"preparation",
+				error,
+				options.flow.title
+			);
+		}
+	}
+
 	var proposal;
 	var invoked = false;
 
@@ -79,8 +155,12 @@ function execute(options) {
 			store: options.store,
 			title: options.title,
 			platform: options.platform,
-			event: options.event,
-			incoming: options.incoming,
+			event: event,
+			incoming: incoming,
+			newId: options.newId,
+			acknowledgeResumption:
+				options.acknowledgeResumption === true,
+
 			handler: function (event, operational, incoming) {
 				invoked = true;
 
@@ -89,27 +169,77 @@ function execute(options) {
 					operational,
 					incoming
 				);
-			},
-			acknowledgeResumption: options.acknowledgeResumption === true,
-			newId: options.newId
+			}
 		});
 	} catch (error) {
-		return failed(
+		var failure = failed(
 			invoked ? "reaction" : "preparation",
 			error,
-			null
+			delivery ? options.flow.title : null
 		);
+
+		/*
+			Only an actual failed reaction completes a branch
+			with an error. An unavailable preparation preserves
+			the pending message.
+		*/
+		if (delivery && invoked) {
+			try {
+				var rejected = flows.fail(
+					options.flow.title,
+					delivery.id,
+					delivery.recipient,
+					error
+				);
+
+				failure.pending = rejected.pending;
+			} catch (registrationError) {
+				var uncertain = failed(
+					"failure-registration",
+					registrationError,
+					options.flow.title
+				);
+
+				uncertain.reactionError = failure.error;
+				return uncertain;
+			}
+		}
+
+		return failure;
 	}
 
-	var title;
+	var title = null;
+	var flow = delivery !== null;
 
 	try {
-		title = manager.accept(proposal);
+		if (delivery) {
+			title = options.flow.title;
+
+			var accepted = flows.accept(
+				title,
+				delivery.id,
+				proposal
+			);
+
+			if (accepted !== "accepted") {
+				return {
+					status: "unavailable",
+					reason: "flow-message-already-completed"
+				};
+			}
+		} else if (proposal.plan.messages.length > 0) {
+			flow = true;
+			title = flows.register(proposal);
+		} else {
+			title = manager.accept(proposal);
+		}
 	} catch (error) {
 		return failed(
 			"acceptance",
 			error,
 			error && error.obligationTitle
+				? error.obligationTitle
+				: title
 		);
 	}
 
@@ -117,15 +247,26 @@ function execute(options) {
 		return {
 			status: "completed",
 			obligation: null,
-			results: []
+			results: [],
+			pending: []
 		};
 	}
 
 	try {
+		if (flow) {
+			return {
+				status: "completed",
+				obligation: title,
+				results: [],
+				pending: flows.resume(title)
+			};
+		}
+
 		return {
 			status: "completed",
 			obligation: title,
-			results: manager.resume(title)
+			results: manager.resume(title),
+			pending: []
 		};
 	} catch (error) {
 		return failed("materialization", error, title);

@@ -61,6 +61,7 @@ var SUITES = Object.freeze([
     "materialization",
     "materialization-barrier",
     "persistent-reaction",
+    "persistent-flow-reaction",
     "recovery",
     "runtime-persistent",
     "persistent-suspension",
