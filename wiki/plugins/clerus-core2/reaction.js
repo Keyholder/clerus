@@ -9,10 +9,11 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var scopes = require("$:/plugins/clerus/core2/scope.js");
 var transitions = require("$:/plugins/clerus/core2/store.js");
+var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
+
 var projectPerspectives = require(
 	"$:/plugins/clerus/core2/project-perspective.js"
 );
-var jobViews = require("$:/plugins/clerus/core2/job-view.js");
 var organizations = require(
 	"$:/plugins/clerus/core2/organization.js"
 );
@@ -22,6 +23,16 @@ var messageServices = require(
 var titleIssuers = require(
 	"$:/plugins/clerus/core2/title-issuer.js"
 );
+var jobViews = require("$:/plugins/clerus/core2/job-view.js");
+
+function define(record, key, value) {
+	Object.defineProperty(record, key, {
+		value: value,
+		enumerable: true,
+		writable: true,
+		configurable: true
+	});
+}
 
 function freezeTree(value) {
 	if (value !== null && typeof value === "object") {
@@ -35,25 +46,12 @@ function freezeTree(value) {
 	return value;
 }
 
-function define(record, key, value) {
-	Object.defineProperty(record, key, {
-		value: value,
-		enumerable: true,
-		writable: true,
-		configurable: true
-	});
-}
-
 function sameFields(left, right) {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function execute(options) {
+function run(options, establishing) {
 	schemas.assertPlatform(options.platform);
-
-	if (typeof options.handler !== "function") {
-		throw new Error("Reaction requires a handler");
-	}
 
 	var store = options.store;
 
@@ -65,52 +63,116 @@ function execute(options) {
 		throw new Error("Reaction requires a store");
 	}
 
-	if (
-		options.readJobs !== undefined &&
-		typeof options.readJobs !== "function"
-	) {
-		throw new Error("readJobs must be a function");
-	}
+	[
+		"readJobs",
+		"acceptMessage",
+		"checkMessage",
+		"newId"
+	].forEach(function (name) {
+		if (
+			options[name] !== undefined &&
+			typeof options[name] !== "function"
+		) {
+			throw new Error(name + " must be a function");
+		}
+	});
 
-	if (
-		options.acceptMessage !== undefined &&
-		typeof options.acceptMessage !== "function"
-	) {
-		throw new Error("acceptMessage must be a function");
-	}
-
-	if (
-		options.checkMessage !== undefined &&
-		typeof options.checkMessage !== "function"
-	) {
-		throw new Error("checkMessage must be a function");
-	}
-
-	if (
-		options.newId !== undefined &&
-		typeof options.newId !== "function"
-	) {
-		throw new Error("newId must be a function");
-	}
+	var incoming = options.incoming === undefined
+		? undefined
+		: schemas.registry(options.incoming, "incoming");
 
 	var initial = store.read(options.title);
+	var job;
+	var handler;
 
-	if (initial.kind !== "materialized") {
-		throw new Error("Reaction requires a materialized job");
+	if (establishing) {
+		var space = jobTitles.classify(options.title);
+
+		if (
+			!space ||
+			space.persistent ||
+			space.platform !== options.platform
+		) {
+			throw new Error(
+				"Establishment requires a local ephemeral title"
+			);
+		}
+
+		if (initial.kind !== "absent") {
+			throw new Error("Establishment target must be absent");
+		}
+
+		if (incoming === undefined) {
+			throw new Error("Establishment requires incoming documents");
+		}
+
+		var contracts = Object.keys(incoming).filter(function (key) {
+			return schemas.formOf(incoming[key]) === "contract";
+		});
+
+		if (contracts.length !== 1) {
+			throw new Error(
+				"Establishment requires exactly one incoming contract"
+			);
+		}
+
+		var contract = incoming[contracts[0]];
+
+		if (contract.temp === false) {
+			throw new Error("Contract forbids ephemeral establishment");
+		}
+
+		if (typeof options.resolveExecutor !== "function") {
+			throw new Error("Establishment requires an executor resolver");
+		}
+
+		handler = options.resolveExecutor(contract.executor);
+
+		job = {
+			title: options.title,
+			executor: contract.executor,
+			registry: null
+		};
+	} else {
+		if (initial.kind !== "materialized") {
+			throw new Error("Reaction requires a materialized job");
+		}
+
+		job = schemas.ephemeralJob(
+			initial.fields,
+			options.platform
+		);
+
+		handler = options.handler;
 	}
 
-	var job = schemas.ephemeralJob(
-		initial.fields,
-		options.platform
+	if (typeof handler !== "function") {
+		throw new Error("Reaction requires an available handler");
+	}
+
+	var event = schemas.copyJSON(
+		establishing
+			? { type: "order" }
+			: options.event
 	);
 
-	var titleIssuer = options.newId
-		? titleIssuers.create({
-			title: job.title,
-			store: store,
-			newId: options.newId
-		})
+	if (
+		!schemas.isRecord(event) ||
+		typeof event.type !== "string" ||
+		event.type.length === 0
+	) {
+		throw new Error("Reaction requires an event type");
+	}
+
+	define(event, "title", job.title);
+	define(event, "platform", options.platform);
+	freezeTree(event);
+
+	var expected = initial.kind === "materialized"
+		? schemas.copyJSON(initial.fields)
 		: null;
+
+	var scope = null;
 
 	var projectPerspective = options.readJobs
 		? projectPerspectives.create({
@@ -134,33 +196,24 @@ function execute(options) {
 			platform: options.platform,
 			readJobs: options.readJobs,
 			resolveReport: projectPerspective.resolveReport,
-			authorizeTransmission: projectPerspective.authorizeTransmission
+			authorizeTransmission:
+				projectPerspective.authorizeTransmission
 		})
 		: null;
 
-	var event = schemas.copyJSON(options.event);
-
-	if (
-		!schemas.isRecord(event) ||
-		typeof event.type !== "string" ||
-		event.type.length === 0
-	) {
-		throw new Error("Reaction requires an event type");
-	}
-
-	/*
-	The caller supplies event-specific data, but cannot override
-	the receiving identity or execution platform.
-	*/
-	define(event, "title", job.title);
-	define(event, "platform", options.platform);
-
-	freezeTree(event);
-
-	var expected = schemas.copyJSON(initial.fields);
-	var scope = null;
+	var titleIssuer = options.newId
+		? titleIssuers.create({
+			title: job.title,
+			store: store,
+			newId: options.newId
+		})
+		: null;
 
 	function currentWritable() {
+		if (expected === null) {
+			return false;
+		}
+
 		var current = store.read(job.title);
 
 		return current.kind === "materialized" &&
@@ -170,12 +223,33 @@ function execute(options) {
 			sameFields(current.fields, expected);
 	}
 
+	function establishOperational(registry) {
+		if (!establishing || expected !== null) {
+			throw new Error("Job cannot be established again");
+		}
+
+		if (store.read(job.title).kind !== "absent") {
+			throw new Error("Establishment target became occupied");
+		}
+
+		var normalized = schemas.registry(
+			registry,
+			"operational"
+		);
+
+		var effect = transitions.transition(job.title, null, {
+			title: job.title,
+			type: "application/json",
+			"clerus-custody": options.platform,
+			"clerus-executor": job.executor,
+			text: JSON.stringify(normalized)
+		});
+
+		store.apply(effect);
+		expected = effect.after;
+	}
+
 	function commitOperational(before, after) {
-		/*
-		Repeat the check at the write boundary.
-		The earlier scope check is not permission to overwrite
-		an intervening state.
-		*/
 		if (!currentWritable()) {
 			throw new Error(
 				"Operational registry write precondition failed"
@@ -197,60 +271,69 @@ function execute(options) {
 		}
 
 		var next = schemas.copyJSON(expected);
-
 		define(next, "text", JSON.stringify(after));
 
-		store.apply(transitions.transition(
+		var effect = transitions.transition(
 			job.title,
 			expected,
 			next
-		));
+		);
 
-		// Normalize field order exactly as Store does.
-		expected = transitions.transition(
-			job.title,
-			next,
-			next
-		).after;
+		store.apply(effect);
+		expected = effect.after;
 	}
 
 	try {
 		scope = scopes.open({
 			operational: job.registry,
-			incoming: options.incoming,
+			incoming: incoming,
+			eventType: event.type,
+
+			readTiddler: store.read.bind(store),
+
 			readJob: function (title) {
 				return jobViews.read(store, title);
 			},
-			readTiddler: store.read.bind(store),
-			canWriteOperational: currentWritable,
-			commitOperational: commitOperational,
+
 			readMission: projectPerspective
 				? projectPerspective.readMission
 				: undefined,
+
 			authorizeMission: projectPerspective
 				? projectPerspective.authorizeMutation
 				: undefined,
+
 			authorizeMissionMove: projectPerspective
 				? projectPerspective.authorizeMove
 				: undefined,
+
 			authorizeOrganization: organization
 				? organization.authorizeChange
 				: undefined,
+
 			prepareOrder: messageService
 				? messageService.prepareOrder
 				: undefined,
-			eventType: event.type,
+
 			prepareReport: messageService
 				? messageService.prepareReport
 				: undefined,
-			acceptMessage: options.acceptMessage,
-			checkMessage: options.checkMessage,
+
 			issueJobTitle: titleIssuer
 				? titleIssuer.issue
+				: undefined,
+
+			checkMessage: options.checkMessage,
+			acceptMessage: options.acceptMessage,
+			canWriteOperational: currentWritable,
+			commitOperational: commitOperational,
+
+			establishOperational: establishing
+				? establishOperational
 				: undefined
 		});
 
-		var returned = options.handler(
+		var returned = handler(
 			event,
 			scope.operational,
 			scope.incoming
@@ -261,9 +344,7 @@ function execute(options) {
 			returned !== undefined &&
 			typeof returned.then === "function"
 		) {
-			throw new Error(
-				"Executor reactions must be synchronous"
-			);
+			throw new Error("Executor reactions must be synchronous");
 		}
 
 		scope.assertResolved();
@@ -281,4 +362,10 @@ function execute(options) {
 	}
 }
 
-exports.execute = execute;
+exports.execute = function (options) {
+	return run(options, false);
+};
+
+exports.establish = function (options) {
+	return run(options, true);
+};

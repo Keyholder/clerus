@@ -38,3 +38,4 @@ runTests("scheduler");
 runTests("title-issuance");
 runTests("contracts");
 runTests("establishment-scope");
+runTests("establishment-reaction");
