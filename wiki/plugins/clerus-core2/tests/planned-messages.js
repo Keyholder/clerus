@@ -196,7 +196,7 @@ function testEnvelopeBoundaries() {
 
 	throws(function () {
 		effects.validate(establishing);
-	}, "Unsupported fields");
+	}, "exactly one contract");
 }
 
 exports.run = function () {

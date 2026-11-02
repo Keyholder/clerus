@@ -260,6 +260,16 @@ Scheduler.prototype.drain = function () {
 				continue;
 			}
 
+			if (message.establishing === true) {
+				report.unavailable.push({
+					title: selected.title,
+					messageId: selected.id,
+					reason: "flow-establishment-not-connected"
+				});
+
+				continue;
+			}
+
 			var recipient = this.options.store.read(
 				message.recipient.title
 			);

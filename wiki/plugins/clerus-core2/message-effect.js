@@ -57,7 +57,8 @@ function validate(value) {
 		"recipient",
 		"registry",
 		"project",
-		"role"
+		"role",
+		"establishing"
 	], "message effect");
 
 	schemas.assertPlatform(source.platform);
@@ -70,6 +71,13 @@ function validate(value) {
 		(source.type !== "order" && source.type !== "report")
 	) {
 		throw new Error("Invalid message effect");
+	}
+
+	if (
+		source.establishing !== undefined &&
+		source.establishing !== true
+	) {
+		throw new Error("Invalid establishment marker");
 	}
 
 	var sender = endpoint(source.source, source.platform);
@@ -89,6 +97,44 @@ function validate(value) {
 		recipient: recipient,
 		registry: schemas.registry(source.registry, "outgoing")
 	};
+
+	if (source.establishing === true) {
+		if (source.type !== "order") {
+			throw new Error("Establishment requires an order");
+		}
+
+		var contracts = Object.keys(result.registry).filter(
+			function (key) {
+				return schemas.formOf(result.registry[key]) === "contract";
+			}
+		);
+
+		if (contracts.length !== 1) {
+			throw new Error(
+				"Establishing message requires exactly one contract"
+			);
+		}
+
+		var contract = result.registry[contracts[0]];
+		var recipientSpace = jobTitles.classify(recipient.title);
+
+		if (contract.executor !== recipient.executor) {
+			throw new Error(
+				"Establishment executor does not match the contract"
+			);
+		}
+
+		if (
+			(contract.temp === true && recipientSpace.persistent) ||
+			(contract.temp === false && !recipientSpace.persistent)
+		) {
+			throw new Error(
+				"Contract does not permit the recipient durability"
+			);
+		}
+
+		result.establishing = true;
+	}
 
 	if (source.type === "report") {
 		if (

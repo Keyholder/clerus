@@ -69,6 +69,7 @@ var SUITES = Object.freeze([
     "ephemeral-acknowledgement",
     "mixed-egress",
     "delivery-availability",
+    "establishment-effects",
     "recovery",
     "runtime-persistent",
     "persistent-suspension",
