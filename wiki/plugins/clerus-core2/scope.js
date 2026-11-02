@@ -66,10 +66,14 @@ function validateTiddlerView(value, title) {
 function open(options) {
 	options = options || {};
 
-	var operational = schemas.registry(
-		options.operational,
-		"operational"
-	);
+	var unborn = options.operational === null;
+
+	var operational = unborn
+		? null
+		: schemas.registry(
+			options.operational,
+			"operational"
+		);
 
 	var incoming = options.incoming === undefined
 		? null
@@ -88,7 +92,8 @@ function open(options) {
 		"prepareOrder",
 		"prepareReport",
 		"acceptMessage",
-		"checkMessage"
+		"checkMessage",
+		"establishOperational"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -203,11 +208,38 @@ function open(options) {
 		});
 	}
 
-	addInitial("operational", "operational", operational);
+	if (!unborn) {
+		addInitial("operational", "operational", operational);
+	}
 
 	if (incoming !== null) {
 		addInitial("incoming", "incoming", incoming);
 	}
+
+	var establishingKey = null;
+
+	if (unborn) {
+		if (incoming === null) {
+			throw new Error("Establishment requires an incoming registry");
+		}
+
+		var contracts = Object.keys(incoming).filter(function (key) {
+			return schemas.formOf(incoming[key]) === "contract";
+		});
+
+		if (contracts.length !== 1) {
+			throw new Error(
+				"Establishment requires exactly one incoming contract"
+			);
+		}
+
+		establishingKey = contracts[0];
+	}
+
+	var establishingNode = unborn
+		? state.registries.get("incoming")
+			.entries.get(establishingKey)
+		: null;
 
 	function isPresent(node) {
 		var present = false;
@@ -282,7 +314,7 @@ function open(options) {
 
 		var previous = new Set();
 
-		Object.keys(before.operational).forEach(function (key) {
+		Object.keys(before.operational || {}).forEach(function (key) {
 			var document = before.operational[key];
 
 			if (jobTitles.isJobTitle(document)) {
@@ -290,7 +322,7 @@ function open(options) {
 			}
 		});
 
-		var added = Object.keys(after.operational).some(function (key) {
+		var added = Object.keys(after.operational || {}).some(function (key) {
 			var document = after.operational[key];
 
 			return jobTitles.isJobTitle(document) &&
@@ -311,20 +343,20 @@ function open(options) {
 	}
 
 	function materialize(candidate) {
-		var before = serialize(
-			state.registries.get("operational")
-		);
-
-		var after = serialize(
-			candidate.registries.get("operational"),
-			candidate
-		);
+		var before = operationalSnapshot();
+		var after = operationalSnapshot(candidate);
 
 		if (JSON.stringify(before) !== JSON.stringify(after)) {
-			options.commitOperational(
-				schemas.copyJSON(before),
-				schemas.copyJSON(after)
-			);
+			if (before === null) {
+				options.establishOperational(
+					schemas.copyJSON(after)
+				);
+			} else {
+				options.commitOperational(
+					schemas.copyJSON(before),
+					schemas.copyJSON(after)
+				);
+			}
 		}
 
 		for (
@@ -347,34 +379,27 @@ function open(options) {
 				validate(candidate);
 				authorizeOrganization(candidate);
 
-				var before = serialize(
-					state.registries.get("operational")
-				);
+				var before = operationalSnapshot();
+				var after = operationalSnapshot(candidate);
 
-				var after = serialize(
-					candidate.registries.get("operational"),
-					candidate
-				);
+				if (JSON.stringify(before) !== JSON.stringify(after)) {
+					if (before === null) {
+						if (typeof options.establishOperational !== "function") {
+							throw new Error("Establishment materializer is unavailable");
+						}
+					} else {
+						if (
+							typeof options.canWriteOperational !== "function" ||
+							options.canWriteOperational() !== true
+						) {
+							throw new Error("Operational registry is not writable");
+						}
 
-				if (
-					JSON.stringify(before) !==
-					JSON.stringify(after)
-				) {
-					if (
-						typeof options.canWriteOperational !== "function" ||
-						options.canWriteOperational() !== true
-					) {
-						throw new Error(
-							"Operational registry is not writable"
-						);
-					}
-
-					if (
-						typeof options.commitOperational !== "function"
-					) {
-						throw new Error(
-							"Operational registry writer is unavailable"
-						);
+						if (typeof options.commitOperational !== "function") {
+							throw new Error(
+								"Operational registry writer is unavailable"
+							);
+						}
 					}
 				}
 			},
@@ -398,7 +423,11 @@ function open(options) {
 		var registry = candidate.registries.get(id);
 
 		if (!registry) {
-			throw new Error("Registry is no longer available");
+			throw new Error(
+				id === "operational"
+					? "Job is not established"
+					: "Registry is no longer available"
+			);
 		}
 
 		return registry;
@@ -488,6 +517,15 @@ function open(options) {
 		return registryView(destinationId).get(key);
 	}
 
+	function operationalSnapshot(candidate) {
+		var source = candidate || state;
+		var registry = source.registries.get("operational");
+
+		return registry
+			? serialize(registry, source)
+			: null;
+	}
+
 	function registrySnapshot(candidate) {
 		var source = candidate || state;
 		var outgoing = [];
@@ -499,10 +537,7 @@ function open(options) {
 		});
 
 		return {
-			operational: serialize(
-				source.registries.get("operational"),
-				source
-			),
+			operational: operationalSnapshot(source),
 
 			incoming: incoming === null
 				? null
@@ -813,6 +848,70 @@ function open(options) {
 		return registryView(destinationId).get(key);
 	}
 
+	function acceptContract(node, key, status) {
+		run(function (candidate) {
+			assertPresent(node);
+			schemas.assertKey(key);
+
+			if (
+				!unborn ||
+				node !== establishingNode ||
+				candidate.registries.has("operational")
+			) {
+				throw new Error(
+					"Contract cannot establish this scope"
+				);
+			}
+
+			var charter = {
+				form: "charter",
+				status: schemas.copyJSON(status)
+			};
+
+			if (
+				Object.prototype.hasOwnProperty.call(
+					node.value,
+					"book"
+				)
+			) {
+				define(
+					charter,
+					"book",
+					schemas.copyJSON(node.value.book)
+				);
+			}
+
+			charter = schemas.document(charter);
+
+			/*
+			Consume the actual received contract node.
+			Equal but independently supplied contracts are not aliases.
+			*/
+			candidate.registries.forEach(function (registry) {
+				var removed = [];
+
+				registry.entries.forEach(function (entry, entryKey) {
+					if (entry === node) {
+						removed.push(entryKey);
+					}
+				});
+
+				removed.forEach(function (entryKey) {
+					registry.entries.delete(entryKey);
+				});
+			});
+
+			candidate.registries.set("operational", {
+				kind: "operational",
+				entries: new Map([
+					[key, newNode(charter)]
+				])
+			});
+		});
+
+		return registryView("operational").get(key);
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -948,6 +1047,10 @@ function open(options) {
 
 				createJobTitle: function (segment, destination, key) {
 					return createJobTitle(node, segment, destination, key);
+				},
+
+				acceptContract: function (key, status) {
+					return acceptContract(node, key, status);
 				}
 			})
 		);
@@ -1174,6 +1277,10 @@ function open(options) {
 
 		assertResolved: function () {
 			assertActive();
+
+			if (unborn && !state.registries.has("operational")) {
+				throw new Error("Establishment contract was not accepted");
+			}
 
 			if (
 				incoming !== null &&

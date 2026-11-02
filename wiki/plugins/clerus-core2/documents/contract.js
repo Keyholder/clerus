@@ -18,6 +18,10 @@ exports.create = function (access) {
 
 		temp: function () {
 			return access.read().temp;
+		},
+
+		accept: function (key, status) {
+			return access.acceptContract(key, status);
 		}
 	});
 };
