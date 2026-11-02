@@ -14,6 +14,9 @@ var stores = require("$:/plugins/clerus/core2/store.js");
 var materializer = require(
 	"$:/plugins/clerus/core2/materializer.js"
 );
+var barriers = require(
+	"$:/plugins/clerus/core2/materialization-barrier.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -46,6 +49,17 @@ function create(options) {
 
 		if (proposal.plan.effects.length === 0) {
 			return null;
+		}
+
+		var blockers = barriers.collect({
+			store: options.store
+		}).forJob(proposal.owner.title);
+
+		if (blockers.length > 0) {
+			throw new Error(
+				"Proposal owner has unfinished materialization: " +
+				blockers.join(", ")
+			);
 		}
 
 		if (
