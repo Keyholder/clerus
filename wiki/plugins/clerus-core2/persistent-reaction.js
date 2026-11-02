@@ -72,6 +72,7 @@ function execute(options) {
 	}
 
 	var proposal;
+	var invoked = false;
 
 	try {
 		proposal = plannedReactions.execute({
@@ -80,10 +81,22 @@ function execute(options) {
 			platform: options.platform,
 			event: options.event,
 			incoming: options.incoming,
-			handler: options.handler
+			handler: function (event, operational, incoming) {
+				invoked = true;
+
+				return options.handler(
+					event,
+					operational,
+					incoming
+				);
+			}
 		});
 	} catch (error) {
-		return failed("reaction", error, null);
+		return failed(
+			invoked ? "reaction" : "preparation",
+			error,
+			null
+		);
 	}
 
 	var title;

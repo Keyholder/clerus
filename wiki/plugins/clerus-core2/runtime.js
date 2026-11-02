@@ -18,6 +18,9 @@ var missions = require("$:/plugins/clerus/core2/missions.js");
 var obligations = require(
 	"$:/plugins/clerus/core2/obligations.js"
 );
+var persistentReactions = require(
+	"$:/plugins/clerus/core2/persistent-reaction.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -40,6 +43,9 @@ function Runtime(options) {
 
 	this.wiki = options.wiki;
 	this.platform = options.platform;
+	this.resolveExecutor = options.resolveExecutor;
+	this.newId = options.newId;
+	this.executing = false;
 
 	this.store = new Store({
 		wiki: options.wiki,
@@ -125,11 +131,74 @@ Runtime.prototype.readJobs = function () {
 };
 
 Runtime.prototype.dispatch = function (title, event, incoming) {
-	return this.scheduler.dispatch(title, event, incoming);
+	if (this.executing || this.scheduler.running) {
+		throw new Error("Cannot start a nested runtime dispatch");
+	}
+
+	var space = jobTitles.classify(title);
+
+	if (!space) {
+		throw new Error("Dispatch requires a job title");
+	}
+
+	this.executing = true;
+
+	try {
+		if (!space.persistent) {
+			return this.scheduler.dispatch(
+				title,
+				event,
+				incoming
+			);
+		}
+
+		var stored = this.store.read(title);
+
+		if (stored.kind !== "materialized") {
+			return {
+				status: "unavailable",
+				reason: "job-not-materialized"
+			};
+		}
+
+		if (
+			stored.fields.type !== "application/json" ||
+			typeof stored.fields["clerus-executor"] !== "string" ||
+			stored.fields["clerus-executor"].length === 0
+		) {
+			return {
+				status: "unavailable",
+				reason: "invalid-job-header"
+			};
+		}
+
+		var handler = this.resolveExecutor(
+			stored.fields["clerus-executor"]
+		);
+
+		if (typeof handler !== "function") {
+			return {
+				status: "unavailable",
+				reason: "executor-unavailable"
+			};
+		}
+
+		return persistentReactions.execute({
+			store: this.store,
+			title: title,
+			platform: this.platform,
+			event: event,
+			incoming: incoming,
+			handler: handler,
+			newId: this.newId
+		});
+	} finally {
+		this.executing = false;
+	}
 };
 
 Runtime.prototype.observe = function () {
-	if (this.scheduler.running) {
+	if (this.executing || this.scheduler.running) {
 		throw new Error("Cannot collect observations during a reaction");
 	}
 
@@ -185,7 +254,7 @@ Runtime.prototype.inspect = function () {
 };
 
 Runtime.prototype.recover = function () {
-	if (this.scheduler.running) {
+	if (this.executing || this.scheduler.running) {
 		throw new Error("Cannot recover obligations during a reaction");
 	}
 
