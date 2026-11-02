@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/establishment-scope.js
+title: $:/plugins/clerus/tests/core/establishment-scope.js
 type: application/javascript
 module-type: library
 \*/

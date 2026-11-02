@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/hierarchy.js
+title: $:/plugins/clerus/tests/core/hierarchy.js
 type: application/javascript
 module-type: library
 \*/

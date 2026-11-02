@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/scope.js
+title: $:/plugins/clerus/tests/core/scope.js
 type: application/javascript
 module-type: library
 \*/

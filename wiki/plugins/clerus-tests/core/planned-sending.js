@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/planned-sending.js
+title: $:/plugins/clerus/tests/core/planned-sending.js
 type: application/javascript
 module-type: library
 \*/

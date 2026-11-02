@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/message-policy.js
+title: $:/plugins/clerus/tests/core/message-policy.js
 type: application/javascript
 module-type: library
 \*/

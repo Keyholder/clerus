@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/recovery.js
+title: $:/plugins/clerus/tests/core/recovery.js
 type: application/javascript
 module-type: library
 \*/

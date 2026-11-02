@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/collection-obligations.js
+title: $:/plugins/clerus/tests/core/collection-obligations.js
 type: application/javascript
 module-type: library
 \*/

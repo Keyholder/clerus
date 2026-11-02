@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/obligation-acceptance.js
+title: $:/plugins/clerus/tests/core/obligation-acceptance.js
 type: application/javascript
 module-type: library
 \*/

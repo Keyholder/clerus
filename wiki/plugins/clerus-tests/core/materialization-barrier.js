@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/materialization-barrier.js
+title: $:/plugins/clerus/tests/core/materialization-barrier.js
 type: application/javascript
 module-type: library
 \*/

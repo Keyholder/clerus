@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/foundation.js
+title: $:/plugins/clerus/tests/core/foundation.js
 type: application/javascript
 module-type: library
 \*/

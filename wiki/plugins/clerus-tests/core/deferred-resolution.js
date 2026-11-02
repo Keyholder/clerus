@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/deferred-resolution.js
+title: $:/plugins/clerus/tests/core/deferred-resolution.js
 type: application/javascript
 module-type: library
 \*/

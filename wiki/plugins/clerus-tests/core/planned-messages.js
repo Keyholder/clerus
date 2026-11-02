@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/planned-messages.js
+title: $:/plugins/clerus/tests/core/planned-messages.js
 type: application/javascript
 module-type: library
 \*/

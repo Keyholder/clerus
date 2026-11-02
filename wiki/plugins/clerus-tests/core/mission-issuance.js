@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/mission-issuance.js
+title: $:/plugins/clerus/tests/core/mission-issuance.js
 type: application/javascript
 module-type: library
 \*/

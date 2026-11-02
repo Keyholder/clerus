@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/persistent-suspension.js
+title: $:/plugins/clerus/tests/core/persistent-suspension.js
 type: application/javascript
 module-type: library
 \*/

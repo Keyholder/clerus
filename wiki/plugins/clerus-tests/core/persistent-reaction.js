@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/persistent-reaction.js
+title: $:/plugins/clerus/tests/core/persistent-reaction.js
 type: application/javascript
 module-type: library
 \*/

@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/retention-integration.js
+title: $:/plugins/clerus/tests/core/retention-integration.js
 type: application/javascript
 module-type: library
 \*/

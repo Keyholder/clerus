@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/mission-delivery-boundaries.js
+title: $:/plugins/clerus/tests/core/mission-delivery-boundaries.js
 type: application/javascript
 module-type: library
 \*/

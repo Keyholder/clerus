@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/planned-reaction.js
+title: $:/plugins/clerus/tests/core/planned-reaction.js
 type: application/javascript
 module-type: library
 \*/

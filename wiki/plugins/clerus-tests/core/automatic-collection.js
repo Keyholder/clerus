@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/automatic-collection.js
+title: $:/plugins/clerus/tests/core/automatic-collection.js
 type: application/javascript
 module-type: library
 \*/

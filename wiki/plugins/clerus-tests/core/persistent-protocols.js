@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/persistent-protocols.js
+title: $:/plugins/clerus/tests/core/persistent-protocols.js
 type: application/javascript
 module-type: library
 \*/

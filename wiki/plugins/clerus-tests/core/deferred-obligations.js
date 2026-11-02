@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/deferred-obligations.js
+title: $:/plugins/clerus/tests/core/deferred-obligations.js
 type: application/javascript
 module-type: library
 \*/

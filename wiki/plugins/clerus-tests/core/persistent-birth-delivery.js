@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/persistent-birth-delivery.js
+title: $:/plugins/clerus/tests/core/persistent-birth-delivery.js
 type: application/javascript
 module-type: library
 \*/

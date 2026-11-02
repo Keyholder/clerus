@@ -1,0 +1,10 @@
+{
+  "title": "$:/plugins/clerus/tests",
+  "name": "Clerus Tests",
+  "description": "Clerus integration tests",
+  "author": "Clerus",
+  "version": "0.1.0",
+  "core-version": ">=5.3.0",
+  "plugin-type": "plugin",
+  "list": "readme"
+}

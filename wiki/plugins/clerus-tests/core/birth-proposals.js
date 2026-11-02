@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/birth-proposals.js
+title: $:/plugins/clerus/tests/core/birth-proposals.js
 type: application/javascript
 module-type: library
 \*/

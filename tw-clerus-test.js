@@ -2,7 +2,7 @@ const $tw = require('tiddlywiki').TiddlyWiki();
 $tw.boot.argv = ['wiki'];
 $tw.boot.boot();
 
-$tw.modules.execute("$:/plugins/clerus/core/tests.js")
+$tw.modules.execute("$:/plugins/clerus/tests/core.js")
 	.run($tw)
 	.then(function (report) {
 		console.log({

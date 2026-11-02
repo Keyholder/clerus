@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/materialization.js
+title: $:/plugins/clerus/tests/core/materialization.js
 type: application/javascript
 module-type: library
 \*/

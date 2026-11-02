@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/persistent-resumption.js
+title: $:/plugins/clerus/tests/core/persistent-resumption.js
 type: application/javascript
 module-type: library
 \*/

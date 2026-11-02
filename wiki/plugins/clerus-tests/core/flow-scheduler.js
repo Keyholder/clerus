@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/flow-scheduler.js
+title: $:/plugins/clerus/tests/core/flow-scheduler.js
 type: application/javascript
 module-type: library
 \*/

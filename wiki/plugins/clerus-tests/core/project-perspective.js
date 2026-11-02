@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/project-perspective.js
+title: $:/plugins/clerus/tests/core/project-perspective.js
 type: application/javascript
 module-type: library
 \*/

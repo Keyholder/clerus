@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/planned-defer.js
+title: $:/plugins/clerus/tests/core/planned-defer.js
 type: application/javascript
 module-type: library
 \*/

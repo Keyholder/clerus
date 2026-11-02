@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/ephemeral-acknowledgement.js
+title: $:/plugins/clerus/tests/core/ephemeral-acknowledgement.js
 type: application/javascript
 module-type: library
 \*/

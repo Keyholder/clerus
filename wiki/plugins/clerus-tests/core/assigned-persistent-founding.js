@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/assigned-persistent-founding.js
+title: $:/plugins/clerus/tests/core/assigned-persistent-founding.js
 type: application/javascript
 module-type: library
 \*/

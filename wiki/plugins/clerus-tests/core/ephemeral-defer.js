@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/ephemeral-defer.js
+title: $:/plugins/clerus/tests/core/ephemeral-defer.js
 type: application/javascript
 module-type: library
 \*/

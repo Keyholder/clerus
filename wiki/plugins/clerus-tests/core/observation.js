@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/observation.js
+title: $:/plugins/clerus/tests/core/observation.js
 type: application/javascript
 module-type: library
 \*/

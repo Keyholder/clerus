@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/establishment-effects.js
+title: $:/plugins/clerus/tests/core/establishment-effects.js
 type: application/javascript
 module-type: library
 \*/

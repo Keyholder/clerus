@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/runtime-defer.js
+title: $:/plugins/clerus/tests/core/runtime-defer.js
 type: application/javascript
 module-type: library
 \*/

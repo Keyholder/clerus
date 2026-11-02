@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/flow-schema.js
+title: $:/plugins/clerus/tests/core/flow-schema.js
 type: application/javascript
 module-type: library
 \*/

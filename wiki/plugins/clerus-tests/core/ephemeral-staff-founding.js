@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/ephemeral-staff-founding.js
+title: $:/plugins/clerus/tests/core/ephemeral-staff-founding.js
 type: application/javascript
 module-type: library
 \*/

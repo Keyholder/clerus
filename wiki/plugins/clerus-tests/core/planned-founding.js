@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/planned-founding.js
+title: $:/plugins/clerus/tests/core/planned-founding.js
 type: application/javascript
 module-type: library
 \*/

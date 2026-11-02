@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/persistent-tick.js
+title: $:/plugins/clerus/tests/core/persistent-tick.js
 type: application/javascript
 module-type: library
 \*/

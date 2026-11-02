@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/delivery-availability.js
+title: $:/plugins/clerus/tests/core/delivery-availability.js
 type: application/javascript
 module-type: library
 \*/

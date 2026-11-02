@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/mixed-egress.js
+title: $:/plugins/clerus/tests/core/mixed-egress.js
 type: application/javascript
 module-type: library
 \*/

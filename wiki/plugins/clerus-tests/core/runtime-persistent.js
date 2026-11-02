@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/runtime-persistent.js
+title: $:/plugins/clerus/tests/core/runtime-persistent.js
 type: application/javascript
 module-type: library
 \*/

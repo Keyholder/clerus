@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/core/tests/assigned-establishment.js
+title: $:/plugins/clerus/tests/core/assigned-establishment.js
 type: application/javascript
 module-type: library
 \*/
