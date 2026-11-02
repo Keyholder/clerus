@@ -808,7 +808,7 @@ function open(options) {
 		});
 	}
 
-	function createJobTitle(node, segment, destination, key) {
+	function createJobTitle(node, segment, destination, key, temporary) {
 		assertPresent(node);
 
 		if (node.form !== "charter") {
@@ -848,7 +848,7 @@ function open(options) {
 				);
 			}
 
-			var title = options.issueJobTitle(segment);
+			var title = options.issueJobTitle(segment, temporary);
 
 			if (!jobTitles.isJobTitle(title)) {
 				throw new Error("Issuer returned an invalid job title");
@@ -1057,8 +1057,14 @@ function open(options) {
 					sendReport(node, outgoing);
 				},
 
-				createJobTitle: function (segment, destination, key) {
-					return createJobTitle(node, segment, destination, key);
+				createJobTitle: function (segment, destination, key, temporary) {
+					return createJobTitle(
+						node,
+						segment,
+						destination,
+						key,
+						temporary
+					);
 				},
 
 				acceptContract: function (key, status) {

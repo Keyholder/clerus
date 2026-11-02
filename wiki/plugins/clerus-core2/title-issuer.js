@@ -24,10 +24,44 @@ function create(options) {
 	}
 
 	var used = new Set();
+	var ownerSpace = jobTitles.classify(options.title);
 
-	function issue(segment) {
+	function issue(segment, temporary) {
 		if (!roles.isSegment(segment)) {
 			throw new Error("Invalid subordinate title segment");
+		}
+
+		if (
+			temporary !== undefined &&
+			typeof temporary !== "boolean"
+		) {
+			throw new Error("Temporary title choice must be boolean");
+		}
+
+		var temp = temporary === undefined
+			? !ownerSpace.persistent
+			: temporary;
+
+		if (!ownerSpace.persistent && !temp) {
+			throw new Error(
+				"An ephemeral job cannot issue a persistent subordinate title"
+			);
+		}
+
+		var base = options.title;
+
+		if (ownerSpace.persistent && temp) {
+			if (
+				options.platform !== "browser" &&
+				options.platform !== "node"
+			) {
+				throw new Error(
+					"Temporary title issuance requires a platform"
+				);
+			}
+
+			base = "$:/temp/clerus/jobs/" + options.platform + "/" +
+				options.title.slice(ownerSpace.prefix.length);
 		}
 
 		var id = options.newId();
@@ -43,16 +77,11 @@ function create(options) {
 			throw new Error("Job identifier source repeated an identity");
 		}
 
-		/*
-		Consume the identifier even if a later check fails.
-		An aborted operation must not make an identifier reusable.
-		*/
 		used.add(id);
 
-		var title = options.title + "/" + segment + "-" + id;
-		var current = options.store.read(title);
+		var title = base + "/" + segment + "-" + id;
 
-		if (current.kind !== "absent") {
+		if (options.store.read(title).kind !== "absent") {
 			throw new Error("Generated job title is already occupied");
 		}
 

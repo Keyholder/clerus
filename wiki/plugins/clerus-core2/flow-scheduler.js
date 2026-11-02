@@ -291,19 +291,6 @@ Scheduler.prototype.drain = function () {
 				continue;
 			}
 
-			if (
-				message.establishing === true &&
-				!space.persistent
-			) {
-				report.unavailable.push({
-					title: selected.title,
-					messageId: selected.id,
-					reason: "ephemeral-flow-establishment-not-connected"
-				});
-
-				continue;
-			}
-
 			if (message.establishing === true) {
 				if (recipient.kind !== "absent") {
 					report.unavailable.push({

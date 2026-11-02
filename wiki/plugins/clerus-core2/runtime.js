@@ -302,29 +302,46 @@ Runtime.prototype.executeEphemeralDelivery = function (context) {
 		event.role = message.role.slice();
 	}
 
+	var execution = {
+		store: this.store,
+		title: message.recipient.title,
+		platform: this.platform,
+		event: event,
+		incoming: message.registry,
+		readJobs: this.readJobs,
+		newId: this.newId,
+		checkMessage: this.scheduler.checkMessage,
+		acceptMessage: this.scheduler.acceptMessage,
+		requireSentOutgoing: true
+	};
+
+	var wrappedHandler = function (event, operational, incoming) {
+		invoked = true;
+
+		return context.handler(
+			event,
+			operational,
+			incoming
+		);
+	};
+
 	try {
-		ephemeralReactions.execute({
-			store: this.store,
-			title: message.recipient.title,
-			platform: this.platform,
-			event: event,
-			incoming: message.registry,
-			readJobs: this.readJobs,
-			newId: this.newId,
-			checkMessage: this.scheduler.checkMessage,
-			acceptMessage: this.scheduler.acceptMessage,
-			requireSentOutgoing: true,
+		if (message.establishing === true) {
+			execution.resolveExecutor = function (name) {
+				if (name !== message.recipient.executor) {
+					throw new Error(
+						"Establishment executor does not match the message"
+					);
+				}
 
-			handler: function (event, operational, incoming) {
-				invoked = true;
+				return wrappedHandler;
+			};
 
-				return context.handler(
-					event,
-					operational,
-					incoming
-				);
-			}
-		});
+			ephemeralReactions.establish(execution);
+		} else {
+			execution.handler = wrappedHandler;
+			ephemeralReactions.execute(execution);
+		}
 
 		return {
 			status: "completed"

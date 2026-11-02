@@ -24,11 +24,12 @@ exports.create = function (access) {
 			return access.createMemo(data, destination, key);
 		},
 
-		createTitle: function (segment, destination, key) {
+		createTitle: function (segment, destination, key, temporary) {
 			return access.createJobTitle(
 				segment,
 				destination,
-				key
+				key,
+				temporary
 			);
 		}
 	});

@@ -112,7 +112,8 @@ function open(options) {
 		? titleIssuers.create({
 			title: options.title,
 			store: view,
-			newId: options.newId
+			newId: options.newId,
+			platform: options.platform
 		})
 		: null;
 

@@ -151,7 +151,7 @@ function run(options, establishing) {
 	}
 
 	var event = schemas.copyJSON(
-		establishing
+		establishing && options.event === undefined
 			? { type: "order" }
 			: options.event
 	);
@@ -159,9 +159,10 @@ function run(options, establishing) {
 	if (
 		!schemas.isRecord(event) ||
 		typeof event.type !== "string" ||
-		event.type.length === 0
+		event.type.length === 0 ||
+		(establishing && event.type !== "order")
 	) {
-		throw new Error("Reaction requires an event type");
+		throw new Error("Reaction requires a valid event type");
 	}
 
 	define(event, "title", job.title);
@@ -205,7 +206,8 @@ function run(options, establishing) {
 		? titleIssuers.create({
 			title: job.title,
 			store: store,
-			newId: options.newId
+			newId: options.newId,
+			platform: options.platform
 		})
 		: null;
 
