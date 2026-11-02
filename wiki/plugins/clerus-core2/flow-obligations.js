@@ -233,7 +233,10 @@ function create(options) {
 				record.active = null;
 			}
 
-			if (record.pending.length === 0) {
+			if (
+				record.pending.length === 0 &&
+				record.errors.length === 0
+			) {
 				options.store.apply(stores.transition(
 					title,
 					loaded.fields,
@@ -244,6 +247,9 @@ function create(options) {
 			}
 
 			var after = schemas.copyJSON(loaded.fields);
+			after["clerus-custody"] = record.pending.length === 0
+				? "user"
+				: options.platform;
 			after.text = JSON.stringify(record);
 
 			options.store.apply(stores.transition(
@@ -372,12 +378,93 @@ function create(options) {
 		return "accepted";
 	}
 
+	function fail(title, messageId, recipient, cause) {
+		var loaded = read(title);
+		var record = loaded.record;
+
+		if (record.active !== null) {
+			throw new Error(
+				"Cannot fail a message during active materialization"
+			);
+		}
+
+		var index = record.pending.findIndex(function (message) {
+			return message.id === messageId;
+		});
+
+		if (index === -1) {
+			if (hasOwn(record.seen, messageId)) {
+				return {
+					status: "already-completed",
+					pending: schemas.copyJSON(record.pending)
+				};
+			}
+
+			throw new Error("Unknown pending flow message");
+		}
+
+		var message = record.pending[index];
+
+		if (
+			!recipient ||
+			recipient.title !== message.recipient.title ||
+			recipient.executor !== message.recipient.executor
+		) {
+			throw new Error(
+				"Message failure belongs to another recipient"
+			);
+		}
+
+		record.pending.splice(index, 1);
+
+		record.errors.push({
+			message: message,
+			error: {
+				name: String(cause && cause.name || "Error"),
+				message: String(cause && cause.message || cause),
+				stack: cause && cause.stack
+					? String(cause.stack)
+					: null
+			}
+		});
+
+		record = flows.validate(record, options.platform);
+
+		var after = schemas.copyJSON(loaded.fields);
+		after.text = JSON.stringify(record);
+
+		try {
+			options.store.apply(stores.transition(
+				title,
+				loaded.fields,
+				after
+			));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "FlowFailureRegistrationError";
+			error.cause = cause;
+			error.obligationTitle = title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+
+		return {
+			status: "failed",
+			pending: resume(title)
+		};
+	}
+
 	return Object.freeze({
 		register: register,
 		read: read,
 		resume: resume,
 		pending: pending,
-		accept: accept
+		accept: accept,
+		fail: fail
 	});
 }
 

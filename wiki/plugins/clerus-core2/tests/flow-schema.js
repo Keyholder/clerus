@@ -164,11 +164,11 @@ function testOrdinaryWalStillRejectsMessages() {
 
 function testUnsupportedBranchErrors() {
 	var source = record();
-	source.errors.push({ error: "not yet supported" });
+	source.errors.push({ error: "invalid" });
 
 	throws(function () {
 		flows.validate(source, "browser");
-	}, "branch errors are not connected");
+	}, "branch diagnostic");
 }
 
 exports.run = function () {
@@ -178,7 +178,7 @@ exports.run = function () {
 		["flow schema: history does not create pending work", testHistoryDoesNotBecomePending],
 		["flow schema: conflicting identity is rejected", testActiveIdentityConflict],
 		["flow schema: ordinary WAL does not swallow messages", testOrdinaryWalStillRejectsMessages],
-		["flow schema: unsupported branch errors are rejected", testUnsupportedBranchErrors]
+		["flow schema: malformed branch diagnostic is rejected", testUnsupportedBranchErrors]
 	];
 
 	var results = cases.map(function (item) {

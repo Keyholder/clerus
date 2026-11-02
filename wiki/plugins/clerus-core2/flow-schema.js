@@ -113,13 +113,61 @@ function validate(value, platform) {
 		});
 	}
 
-	/*
-		The current execution layer cannot yet create branch failures.
-		Do not accept unsupported non-empty error records silently.
-	*/
-	if (record.errors.length !== 0) {
-		throw new Error("Flow branch errors are not connected yet");
-	}
+	var failedIds = new Set();
+
+	var errors = record.errors.map(function (entry) {
+		fieldsOnly(
+			entry,
+			["message", "error"],
+			"flow branch error"
+		);
+
+		fieldsOnly(
+			entry.error,
+			["name", "message", "stack"],
+			"branch diagnostic"
+		);
+
+		if (
+			typeof entry.error.name !== "string" ||
+			typeof entry.error.message !== "string" ||
+			(
+				entry.error.stack !== null &&
+				typeof entry.error.stack !== "string"
+			)
+		) {
+			throw new Error("Invalid branch diagnostic");
+		}
+
+		var message = messageEffects.validate(entry.message);
+
+		if (
+			message.platform !== platform ||
+			failedIds.has(message.id) ||
+			pendingIds.has(message.id)
+		) {
+			throw new Error("Invalid failed message identity");
+		}
+
+		if (
+			!hasOwn(record.seen, message.id) ||
+			record.seen[message.id] !==
+				messageEffects.fingerprint(message)
+		) {
+			throw new Error("Failed message identity is not registered");
+		}
+
+		failedIds.add(message.id);
+
+		return {
+			message: message,
+			error: {
+				name: entry.error.name,
+				message: entry.error.message,
+				stack: entry.error.stack
+			}
+		};
+	});
 
 	return {
 		version: 1,
@@ -128,7 +176,7 @@ function validate(value, platform) {
 		active: active,
 		pending: pending,
 		seen: record.seen,
-		errors: []
+		errors: errors
 	};
 }
 
