@@ -33,6 +33,9 @@ var ephemeralReactions = require(
 var MaterializationError = require(
 	"$:/plugins/clerus/core2/operation.js"
 ).MaterializationError;
+var deferredActivations = require(
+	"$:/plugins/clerus/core2/deferred.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -64,6 +67,14 @@ function Runtime(options) {
 		Tiddler: options.Tiddler
 	});
 
+	this.runningDeferred = false;
+
+	this.deferred = deferredActivations.create({
+		store: this.store,
+		platform: this.platform,
+		newId: this.newId
+	});
+
 	this.obligations = obligations.create({
 		store: this.store,
 		platform: this.platform,
@@ -93,9 +104,13 @@ function Runtime(options) {
 		resolveExecutor: options.resolveExecutor,
 		newId: options.newId,
 		lifecycle: this.lifecycle,
+
 		executePersistent: function (context) {
 			return this.executePersistentIngress(context);
-		}.bind(this)
+		}.bind(this),
+
+		checkDeferred: this.deferred.check,
+		acceptDeferred: this.deferred.request
 	});
 
 	this.flows = flowObligations.create({
@@ -312,7 +327,9 @@ Runtime.prototype.executeEphemeralDelivery = function (context) {
 		newId: this.newId,
 		checkMessage: this.scheduler.checkMessage,
 		acceptMessage: this.scheduler.acceptMessage,
-		requireSentOutgoing: true
+		requireSentOutgoing: true,
+		checkDeferred: this.deferred.check,
+		acceptDeferred: this.deferred.request
 	};
 
 	var wrappedHandler = function (event, operational, incoming) {
@@ -448,6 +465,27 @@ Runtime.prototype.drainOfficialWork = function () {
 	result.ephemeralRemaining = this.scheduler.queue.length;
 
 	return result;
+};
+
+Runtime.prototype.runDeferred = function () {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running ||
+		this.runningDeferred
+	) {
+		throw new Error("Cannot start a nested deferred pass");
+	}
+
+	this.runningDeferred = true;
+
+	try {
+		return this.deferred.drain(function (title, event) {
+			return this.dispatch(title, event);
+		}.bind(this));
+	} finally {
+		this.runningDeferred = false;
+	}
 };
 
 Runtime.prototype.dispatch = function (title, event, incoming) {

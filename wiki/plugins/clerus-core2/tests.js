@@ -76,6 +76,7 @@ var SUITES = Object.freeze([
     "planned-founding",
     "assigned-persistent-founding",
     "ephemeral-staff-founding",
+    "ephemeral-defer",
     "recovery",
     "runtime-persistent",
     "persistent-suspension",

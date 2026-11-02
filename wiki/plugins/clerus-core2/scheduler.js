@@ -534,7 +534,9 @@ Scheduler.prototype.drain = function () {
 						newId: this.options.newId,
 						checkMessage: this.checkMessage,
 						acceptMessage: this.acceptMessage,
-						requireSentOutgoing: true
+						requireSentOutgoing: true,
+						checkDeferred: this.options.checkDeferred,
+						acceptDeferred: this.options.acceptDeferred
 					};
 
 					if (work.establishing) {

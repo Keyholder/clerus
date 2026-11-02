@@ -94,7 +94,9 @@ function open(options) {
 		"acceptMessage",
 		"checkMessage",
 		"establishOperational",
-		"atomicMaterialization"
+		"atomicMaterialization",
+		"checkDeferred",
+		"acceptDeferred"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -110,7 +112,8 @@ function open(options) {
 		registries: new Map(),
 		nextOutgoing: 0,
 		updates: new Map(),
-		messages: []
+		messages: [],
+		deferred: false
 	};
 
 	var views = new Map();
@@ -287,7 +290,8 @@ function open(options) {
 			registries: new Map(),
 			nextOutgoing: state.nextOutgoing,
 			updates: new Map(),
-			messages: state.messages.slice()
+			messages: state.messages.slice(),
+			deferred: state.deferred
 		};
 
 		state.registries.forEach(function (registry, id) {
@@ -369,6 +373,10 @@ function open(options) {
 				options.acceptMessage(
 					schemas.copyJSON(candidate.messages[index])
 				);
+			}
+
+			if (candidate.deferred && !state.deferred) {
+				options.acceptDeferred();
 			}
 		}
 
@@ -924,6 +932,30 @@ function open(options) {
 		return registryView("operational").get(key);
 	}
 
+	function defer(node) {
+		run(function (candidate) {
+			assertPresent(node);
+
+			if (node.form !== "charter") {
+				throw new Error("Deferred activation requires a charter");
+			}
+
+			if (candidate.deferred) {
+				return;
+			}
+
+			if (
+				typeof options.checkDeferred !== "function" ||
+				typeof options.acceptDeferred !== "function"
+			) {
+				throw new Error("Deferred activation is unavailable");
+			}
+
+			options.checkDeferred();
+			candidate.deferred = true;
+		});
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -1069,6 +1101,10 @@ function open(options) {
 
 				acceptContract: function (key, status) {
 					return acceptContract(node, key, status);
+				},
+
+				defer: function () {
+					defer(node);
 				}
 			})
 		);

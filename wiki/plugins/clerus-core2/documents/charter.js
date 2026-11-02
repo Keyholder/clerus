@@ -31,6 +31,10 @@ exports.create = function (access) {
 				key,
 				temporary
 			);
-		}
+		},
+
+		defer: function () {
+			access.defer();
+		},
 	});
 };

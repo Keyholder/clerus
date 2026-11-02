@@ -67,7 +67,9 @@ function run(options, establishing) {
 		"readJobs",
 		"acceptMessage",
 		"checkMessage",
-		"newId"
+		"newId",
+		"checkDeferred",
+		"acceptDeferred"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -332,6 +334,18 @@ function run(options, establishing) {
 
 			establishOperational: establishing
 				? establishOperational
+				: undefined,
+
+			checkDeferred: typeof options.checkDeferred === "function"
+				? function () {
+					options.checkDeferred(job.title, job.executor);
+				}
+				: undefined,
+
+			acceptDeferred: typeof options.acceptDeferred === "function"
+				? function () {
+					options.acceptDeferred(job.title, job.executor);
+				}
 				: undefined
 		});
 
