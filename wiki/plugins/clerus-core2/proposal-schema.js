@@ -49,7 +49,7 @@ function validate(value) {
 
 	fieldsOnly(
 		proposal.plan,
-		["version", "effects"],
+		["version", "effects", "messages"],
 		"proposal plan"
 	);
 
@@ -64,6 +64,18 @@ function validate(value) {
 		!Array.isArray(proposal.plan.effects)
 	) {
 		throw new Error("Invalid work proposal");
+	}
+
+	if (
+		proposal.plan.messages !== undefined &&
+		(
+			!Array.isArray(proposal.plan.messages) ||
+			proposal.plan.messages.length !== 0
+		)
+	) {
+		throw new Error(
+			"Message-bearing proposal acceptance is not connected yet"
+		);
 	}
 
 	var state = normalizeFields(proposal.owner.state);

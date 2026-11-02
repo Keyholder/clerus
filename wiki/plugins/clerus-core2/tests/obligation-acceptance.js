@@ -198,7 +198,7 @@ function testRepeatedTargetsAreRejected(tw) {
 function testUnknownPlanFieldsAreRejected(tw) {
 	var f = fixture(tw);
 
-	f.proposal.plan.messages = [];
+	f.proposal.plan.subscriptions = [];
 
 	throws(function () {
 		f.service.accept(f.proposal);

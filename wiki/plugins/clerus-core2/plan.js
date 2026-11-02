@@ -8,6 +8,9 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var transitions = require("$:/plugins/clerus/core2/store.js");
+var messageEffects = require(
+	"$:/plugins/clerus/core2/message-effect.js"
+);
 
 function equal(left, right) {
 	return JSON.stringify(left) === JSON.stringify(right);
@@ -63,6 +66,7 @@ function Plan(snapshot) {
     this.revision = 0;
     this.parent = null;
     this.parentRevision = null;
+	this.messages = new Map();
 }
 
 Plan.prototype.assertOpen = function () {
@@ -188,7 +192,8 @@ Plan.prototype.export = function () {
 
 	return schemas.copyJSON({
 		version: 1,
-		effects: effects
+		effects: effects,
+		messages: Array.from(this.messages.values())
 	});
 };
 
@@ -205,6 +210,7 @@ Plan.prototype.fork = function () {
 	branch.current = new Map(this.current);
 	branch.shadows = new Map(this.shadows);
 	branch.touched = new Set(this.touched);
+	branch.messages = new Map(this.messages);
 
 	branch.state = "open";
 	branch.compiled = null;
@@ -238,9 +244,11 @@ Plan.prototype.accept = function (branch) {
 	*/
 	var current = new Map(branch.current);
 	var touched = new Set(branch.touched);
+	var messages = new Map(branch.messages);
 
 	this.current = current;
 	this.touched = touched;
+	this.messages = messages;
 	this.revision++;
 
 	branch.state = "accepted";
@@ -248,6 +256,32 @@ Plan.prototype.accept = function (branch) {
 	branch.current.clear();
 	branch.shadows.clear();
 	branch.touched.clear();
+	branch.messages.clear();
+};
+
+Plan.prototype.send = function (value) {
+	this.assertOpen();
+
+	var message = messageEffects.validate(value);
+	var previous = this.messages.get(message.id);
+
+	if (previous) {
+		if (
+			messageEffects.fingerprint(previous) !==
+			messageEffects.fingerprint(message)
+		) {
+			throw new Error(
+				"Message identity was reused for another effect"
+			);
+		}
+
+		return "already-recorded";
+	}
+
+	this.messages.set(message.id, message);
+	this.revision++;
+
+	return "recorded";
 };
 
 Plan.prototype.transact = function (prepare) {
@@ -296,6 +330,7 @@ Plan.prototype.seal = function () {
 	this.current.clear();
 	this.shadows.clear();
 	this.touched.clear();
+	this.messages.clear();
 
 	return schemas.copyJSON(this.compiled);
 };
@@ -314,6 +349,7 @@ Plan.prototype.abort = function () {
 	this.current.clear();
 	this.shadows.clear();
 	this.touched.clear();
+	this.messages.clear();
 };
 
 Plan.prototype.each = function (callback) {
