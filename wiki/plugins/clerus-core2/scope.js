@@ -93,7 +93,8 @@ function open(options) {
 		"prepareReport",
 		"acceptMessage",
 		"checkMessage",
-		"establishOperational"
+		"establishOperational",
+		"atomicMaterialization"
 	].forEach(function (name) {
 		if (
 			options[name] !== undefined &&
@@ -343,31 +344,39 @@ function open(options) {
 	}
 
 	function materialize(candidate) {
-		var before = operationalSnapshot();
-		var after = operationalSnapshot(candidate);
+		function perform() {
+			var before = operationalSnapshot();
+			var after = operationalSnapshot(candidate);
 
-		if (JSON.stringify(before) !== JSON.stringify(after)) {
-			if (before === null) {
-				options.establishOperational(
-					schemas.copyJSON(after)
-				);
-			} else {
-				options.commitOperational(
-					schemas.copyJSON(before),
-					schemas.copyJSON(after)
+			if (JSON.stringify(before) !== JSON.stringify(after)) {
+				if (before === null) {
+					options.establishOperational(
+						schemas.copyJSON(after)
+					);
+				} else {
+					options.commitOperational(
+						schemas.copyJSON(before),
+						schemas.copyJSON(after)
+					);
+				}
+			}
+
+			for (
+				var index = state.messages.length;
+				index < candidate.messages.length;
+				index++
+			) {
+				options.acceptMessage(
+					schemas.copyJSON(candidate.messages[index])
 				);
 			}
 		}
 
-		for (
-			var index = state.messages.length;
-			index < candidate.messages.length;
-			index++
-		) {
-			options.acceptMessage(
-				schemas.copyJSON(candidate.messages[index])
-			);
+		if (typeof options.atomicMaterialization === "function") {
+			return options.atomicMaterialization(perform);
 		}
+
+		return perform();
 	}
 
 	function run(prepare) {
@@ -415,7 +424,10 @@ function open(options) {
 				state = candidate;
 			},
 
-			invalidate: close
+			invalidate: close,
+
+			atomicMaterialization:
+				typeof options.atomicMaterialization === "function"
 		}, prepare);
 	}
 

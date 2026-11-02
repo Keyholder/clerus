@@ -316,4 +316,29 @@ Plan.prototype.abort = function () {
 	this.touched.clear();
 };
 
+Plan.prototype.each = function (callback) {
+	this.assertOpen();
+
+	if (typeof callback !== "function") {
+		throw new Error("Plan enumeration requires a callback");
+	}
+
+	var entries = Array.from(this.current.entries());
+
+	entries.sort(function (left, right) {
+		return left[0] < right[0]
+			? -1
+			: left[0] > right[0] ? 1 : 0;
+	});
+
+	entries.forEach(function (entry) {
+		this.assertOpen();
+
+		callback(
+			schemas.copyJSON(entry[1]),
+			entry[0]
+		);
+	}, this);
+};
+
 exports.Plan = Plan;

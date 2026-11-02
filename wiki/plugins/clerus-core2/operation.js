@@ -31,6 +31,10 @@ exports.run = function (options, prepare) {
 	try {
 		options.materialize(candidate);
 	} catch (error) {
+		if (options.atomicMaterialization === true) {
+			throw error;
+		}
+
 		options.invalidate();
 
 		if (error instanceof MaterializationError) {
