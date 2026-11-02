@@ -12,6 +12,9 @@ var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
 var messageEffects = require(
 	"$:/plugins/clerus/core2/message-effect.js"
 );
+var deferredEffects = require(
+	"$:/plugins/clerus/core2/deferred-effect.js"
+);
 
 function fieldsOnly(record, allowed, description) {
 	if (
@@ -50,7 +53,7 @@ function validate(value, options) {
 	], "proposal owner");
 
 	fieldsOnly(proposal.plan, [
-		"version", "effects", "messages"
+		"version", "effects", "messages", "deferred"
 	], "proposal plan");
 
 	var space = jobTitles.classify(proposal.owner.title);
@@ -175,6 +178,51 @@ function validate(value, options) {
 		});
 	}
 
+	var deferred = [];
+
+	if (proposal.plan.deferred !== undefined) {
+		if (!Array.isArray(proposal.plan.deferred)) {
+			throw new Error("Proposal deferred effects must be an array");
+		}
+
+		if (
+			proposal.plan.deferred.length > 0 &&
+			options.allowDeferred !== true
+		) {
+			throw new Error(
+				"Deferred proposal requires deferred-obligation support"
+			);
+		}
+
+		var deferredRecipients = new Set();
+		var deferredIds = new Set();
+
+		deferred = proposal.plan.deferred.map(function (value) {
+			var effect = deferredEffects.validate(value);
+
+			if (
+				effect.recipient.title !== proposal.owner.title ||
+				effect.recipient.executor !== proposal.owner.executor
+			) {
+				throw new Error(
+					"Deferred effect must address the reacting owner"
+				);
+			}
+
+			if (
+				deferredRecipients.has(effect.recipient.title) ||
+				deferredIds.has(effect.id)
+			) {
+				throw new Error("Repeated proposal deferred effect");
+			}
+
+			deferredRecipients.add(effect.recipient.title);
+			deferredIds.add(effect.id);
+
+			return effect;
+		});
+	}
+
 	var result = {
 		version: 1,
 		owner: {
@@ -190,6 +238,10 @@ function validate(value, options) {
 
 	if (options.allowMessages === true) {
 		result.plan.messages = messages;
+	}
+
+	if (options.allowDeferred === true) {
+		result.plan.deferred = deferred;
 	}
 
 	return schemas.copyJSON(result);

@@ -11,6 +11,9 @@ var transitions = require("$:/plugins/clerus/core2/store.js");
 var messageEffects = require(
 	"$:/plugins/clerus/core2/message-effect.js"
 );
+var deferredEffects = require(
+	"$:/plugins/clerus/core2/deferred-effect.js"
+);
 
 function equal(left, right) {
 	return JSON.stringify(left) === JSON.stringify(right);
@@ -67,6 +70,7 @@ function Plan(snapshot) {
     this.parent = null;
     this.parentRevision = null;
 	this.messages = new Map();
+	this.deferred = new Map();
 }
 
 Plan.prototype.assertOpen = function () {
@@ -159,6 +163,45 @@ Plan.prototype.apply = function (value) {
 	return "applied";
 };
 
+Plan.prototype.defer = function (value) {
+	this.assertOpen();
+
+	var effect = deferredEffects.validate(value);
+	var title = effect.recipient.title;
+	var previous = this.deferred.get(title);
+
+	if (previous) {
+		if (
+			previous.platform !== effect.platform ||
+			previous.recipient.executor !==
+				effect.recipient.executor
+		) {
+			throw new Error(
+				"Deferred recipient changed inside the plan"
+			);
+		}
+
+		return "already-recorded";
+	}
+
+	var reused = Array.from(this.deferred.values()).some(
+		function (candidate) {
+			return candidate.id === effect.id;
+		}
+	);
+
+	if (reused) {
+		throw new Error(
+			"Deferred identity was reused for another recipient"
+		);
+	}
+
+	this.deferred.set(title, effect);
+	this.revision++;
+
+	return "recorded";
+};
+
 Plan.prototype.export = function () {
 	if (this.state === "aborted") {
 		throw new Error("Cannot export an aborted plan");
@@ -193,7 +236,8 @@ Plan.prototype.export = function () {
 	return schemas.copyJSON({
 		version: 1,
 		effects: effects,
-		messages: Array.from(this.messages.values())
+		messages: Array.from(this.messages.values()),
+		deferred: Array.from(this.deferred.values())
 	});
 };
 
@@ -218,6 +262,8 @@ Plan.prototype.fork = function () {
 
 	branch.parent = this;
 	branch.parentRevision = this.revision;
+
+	branch.deferred = new Map(this.deferred);
 
 	return branch;
 };
@@ -245,10 +291,12 @@ Plan.prototype.accept = function (branch) {
 	var current = new Map(branch.current);
 	var touched = new Set(branch.touched);
 	var messages = new Map(branch.messages);
+	var deferred = new Map(branch.deferred);
 
 	this.current = current;
 	this.touched = touched;
 	this.messages = messages;
+	this.deferred = deferred;
 	this.revision++;
 
 	branch.state = "accepted";
@@ -257,6 +305,7 @@ Plan.prototype.accept = function (branch) {
 	branch.shadows.clear();
 	branch.touched.clear();
 	branch.messages.clear();
+	branch.deferred.clear();
 };
 
 Plan.prototype.send = function (value) {
@@ -331,6 +380,7 @@ Plan.prototype.seal = function () {
 	this.shadows.clear();
 	this.touched.clear();
 	this.messages.clear();
+	this.deferred.clear();
 
 	return schemas.copyJSON(this.compiled);
 };
@@ -350,6 +400,7 @@ Plan.prototype.abort = function () {
 	this.shadows.clear();
 	this.touched.clear();
 	this.messages.clear();
+	this.deferred.clear();
 };
 
 Plan.prototype.each = function (callback) {
