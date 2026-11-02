@@ -48,7 +48,8 @@ var SUITES = Object.freeze([
 	"runtime",
     "plan",
     "plan-operations",
-    "planned-scope"
+    "planned-scope",
+    "planned-reaction"
 ]);
 
 function describe(error) {
