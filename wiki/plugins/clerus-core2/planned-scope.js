@@ -24,6 +24,9 @@ var messageEffects = require(
 var titleIssuers = require(
 	"$:/plugins/clerus/core2/title-issuer.js"
 );
+var deferredEffects = require(
+	"$:/plugins/clerus/core2/deferred-effect.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -273,7 +276,7 @@ function open(options) {
 		authorizeTransmission: project.authorizeTransmission
 	});
 
-	var usedMessageIds = new Set();
+	var usedEffectIds = new Set();
 
 	return scopes.open({
 		operational: registry,
@@ -357,7 +360,7 @@ function open(options) {
 
 			var effect = messageEffect(draft, id);
 
-			if (usedMessageIds.has(id)) {
+			if (usedEffectIds.has(id)) {
 				throw new Error("Message identity source repeated an identity");
 			}
 
@@ -365,7 +368,7 @@ function open(options) {
 				An allocated identity remains consumed even if this
 				operation's branch is subsequently discarded.
 			*/
-			usedMessageIds.add(id);
+			usedEffectIds.add(id);
 
 			activePlan.send(effect);
 		},
@@ -397,7 +400,43 @@ function open(options) {
 
 		issueJobTitle: titleIssuer
 			? titleIssuer.issue
-			: undefined
+			: undefined,
+
+		checkDeferred: function () {
+			if (typeof options.newId !== "function") {
+				throw new Error("Planned deferral requires an identity source");
+			}
+
+			var current = activePlan.read(options.title);
+
+			if (
+				current.kind !== "materialized" ||
+				current.fields["clerus-executor"] !== executor
+			) {
+				throw new Error("Deferred recipient has changed");
+			}
+		},
+
+		acceptDeferred: function () {
+			var effect = deferredEffects.validate({
+				version: 1,
+				kind: "deferred-event",
+				id: options.newId(),
+				platform: options.platform,
+
+				recipient: {
+					title: options.title,
+					executor: executor
+				}
+			});
+
+			if (usedEffectIds.has(effect.id)) {
+				throw new Error("Effect identity source repeated an identity");
+			}
+
+			usedEffectIds.add(effect.id);
+			activePlan.defer(effect);
+		}
 	});
 }
 

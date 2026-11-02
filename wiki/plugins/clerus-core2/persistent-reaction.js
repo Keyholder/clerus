@@ -21,6 +21,9 @@ var flowObligations = require(
 var plannedReactions = require(
 	"$:/plugins/clerus/core2/planned-reaction.js"
 );
+var deferredObligations = require(
+	"$:/plugins/clerus/core2/deferred-obligations.js"
+);
 
 function describe(error) {
 	return {
@@ -84,6 +87,20 @@ function execute(options) {
 		newId: options.newId
 	});
 
+	var deferred = deferredObligations.create({
+		store: options.store,
+		platform: options.platform
+	});
+
+	if (
+		options.flow !== undefined &&
+		options.deferred !== undefined
+	) {
+		throw new Error(
+			"A reaction cannot consume both a message and a deferred event"
+		);
+	}
+
 	var blockers = barriers.collect({
 		store: options.store
 	}).forJob(options.title);
@@ -96,6 +113,8 @@ function execute(options) {
 	}
 
 	var delivery = null;
+	var deferredDelivery = false;
+	var incomingObligation = null;
 	var event = options.event;
 	var incoming = options.incoming;
 
@@ -108,6 +127,8 @@ function execute(options) {
 			throw new Error("Invalid flow delivery address");
 		}
 
+		incomingObligation = options.flow.title;
+		
 		try {
 			delivery = flows.pending(options.flow.title).find(
 				function (message) {
@@ -150,6 +171,53 @@ function execute(options) {
 				"preparation",
 				error,
 				options.flow.title
+			);
+		}
+	}
+
+	if (options.deferred !== undefined) {
+		if (
+			!options.deferred ||
+			typeof options.deferred.title !== "string" ||
+			typeof options.deferred.id !== "string"
+		) {
+			throw new Error("Invalid deferred delivery address");
+		}
+
+		incomingObligation = options.deferred.title;
+
+		try {
+			var loadedDeferred = deferred.read(incomingObligation);
+			var effect = loadedDeferred.effect;
+			var deferredOwner = options.store.read(options.title);
+
+			if (
+				effect.id !== options.deferred.id ||
+				effect.recipient.title !== options.title ||
+				deferredOwner.kind !== "materialized" ||
+				deferredOwner.fields["clerus-executor"] !==
+					effect.recipient.executor
+			) {
+				return {
+					status: "unavailable",
+					reason: "deferred-recipient-changed"
+				};
+			}
+
+			delivery = effect;
+			deferredDelivery = true;
+
+			event = {
+				type: "tick",
+				id: effect.id
+			};
+
+			incoming = undefined;
+		} catch (error) {
+			return failed(
+				"preparation",
+				error,
+				incomingObligation
 			);
 		}
 	}
@@ -199,29 +267,35 @@ function execute(options) {
 		var failure = failed(
 			invoked ? "reaction" : "preparation",
 			error,
-			delivery ? options.flow.title : null
+			delivery ? incomingObligation : null
 		);
 
-		/*
-			Only an actual failed reaction completes a branch
-			with an error. An unavailable preparation preserves
-			the pending message.
-		*/
 		if (delivery && invoked) {
 			try {
-				var rejected = flows.fail(
-					options.flow.title,
-					delivery.id,
-					delivery.recipient,
-					error
-				);
+				if (deferredDelivery) {
+					deferred.fail(
+						incomingObligation,
+						delivery.id,
+						delivery.recipient,
+						error
+					);
 
-				failure.pending = rejected.pending;
+					failure.pending = [];
+				} else {
+					var rejected = flows.fail(
+						incomingObligation,
+						delivery.id,
+						delivery.recipient,
+						error
+					);
+
+					failure.pending = rejected.pending;
+				}
 			} catch (registrationError) {
 				var uncertain = failed(
 					"failure-registration",
 					registrationError,
-					options.flow.title
+					incomingObligation
 				);
 
 				uncertain.reactionError = failure.error;
@@ -237,21 +311,30 @@ function execute(options) {
 
 	try {
 		if (delivery) {
-			title = options.flow.title;
+			title = incomingObligation;
 
-			var accepted = flows.accept(
-				title,
-				delivery.id,
-				proposal
-			);
+			var accepted = deferredDelivery
+				? deferred.accept(
+					title,
+					delivery.id,
+					proposal
+				)
+				: flows.accept(
+					title,
+					delivery.id,
+					proposal
+				);
 
 			if (accepted !== "accepted") {
 				return {
 					status: "unavailable",
-					reason: "flow-message-already-completed"
+					reason: "incoming-obligation-already-completed"
 				};
 			}
-		} else if (proposal.plan.messages.length > 0) {
+		} else if (
+			proposal.plan.messages.length > 0 ||
+			proposal.plan.deferred.length > 0
+		) {
 			flow = true;
 			title = flows.register(proposal);
 		} else {
