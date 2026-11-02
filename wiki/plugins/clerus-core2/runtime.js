@@ -27,6 +27,12 @@ var flowObligations = require(
 var FlowScheduler = require(
 	"$:/plugins/clerus/core2/flow-scheduler.js"
 ).Scheduler;
+var ephemeralReactions = require(
+	"$:/plugins/clerus/core2/reaction.js"
+);
+var MaterializationError = require(
+	"$:/plugins/clerus/core2/operation.js"
+).MaterializationError;
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -104,14 +110,12 @@ function Runtime(options) {
 		newId: this.newId,
 		resolveExecutor: this.resolveExecutor,
 
+		executeEphemeral: function (context) {
+			return this.executeEphemeralDelivery(context);
+		}.bind(this),
+
 		onResult: function (context) {
-			this.handlePersistentResult(
-				context.title,
-				context.executor,
-				context.handler,
-				context.event,
-				context.result
-			);
+			this.handleFlowResult(context);
 		}.bind(this)
 	});
 }
@@ -284,6 +288,151 @@ Runtime.prototype.executePersistentIngress = function (context) {
 	return result;
 };
 
+Runtime.prototype.executeEphemeralDelivery = function (context) {
+	var message = context.message;
+	var invoked = false;
+
+	var event = {
+		type: message.type,
+		id: message.id
+	};
+
+	if (message.type === "report") {
+		event.project = message.project;
+		event.role = message.role.slice();
+	}
+
+	try {
+		ephemeralReactions.execute({
+			store: this.store,
+			title: message.recipient.title,
+			platform: this.platform,
+			event: event,
+			incoming: message.registry,
+			readJobs: this.readJobs,
+			newId: this.newId,
+			checkMessage: this.scheduler.checkMessage,
+			acceptMessage: this.scheduler.acceptMessage,
+			requireSentOutgoing: true,
+
+			handler: function (event, operational, incoming) {
+				invoked = true;
+
+				return context.handler(
+					event,
+					operational,
+					incoming
+				);
+			}
+		});
+
+		return {
+			status: "completed"
+		};
+	} catch (error) {
+		return {
+			status: "failed",
+
+			phase: error instanceof MaterializationError
+				? "materialization"
+				: invoked ? "reaction" : "preparation",
+
+			error: lifecycle.describeError(error)
+		};
+	}
+};
+
+Runtime.prototype.handleFlowResult = function (context) {
+	var space = jobTitles.classify(context.title);
+
+	if (space.persistent) {
+		this.handlePersistentResult(
+			context.title,
+			context.executor,
+			context.handler,
+			context.event,
+			context.result
+		);
+
+		return;
+	}
+
+	if (
+		context.result.status !== "failed" ||
+		context.result.phase !== "reaction"
+	) {
+		return;
+	}
+
+	var policy = { errors: [] };
+
+	this.scheduler.handleFailure({
+		title: context.title,
+		executor: context.executor,
+		event: context.event
+	}, context.result.error, policy);
+
+	if (policy.errors.length > 0) {
+		var diagnostic = policy.errors[0];
+
+		if (diagnostic.lifecycle) {
+			context.result.lifecycle = diagnostic.lifecycle;
+		}
+
+		if (diagnostic.lifecycleError) {
+			context.result.lifecycleError =
+				diagnostic.lifecycleError;
+		}
+	}
+};
+
+Runtime.prototype.drainOfficialWork = function () {
+	var result = {
+		completed: [],
+		blocked: [],
+		unavailable: [],
+		errors: [],
+		ephemeral: [],
+		remaining: 0,
+		ephemeralRemaining: 0
+	};
+
+	while (true) {
+		if (this.scheduler.queue.length > 0) {
+			result.ephemeral.push(this.scheduler.drain());
+		}
+
+		var existing = new Set(this.scheduler.queue);
+		var flow = this.flowScheduler.drain();
+
+		[
+			"completed",
+			"blocked",
+			"unavailable",
+			"errors"
+		].forEach(function (name) {
+			result[name] = result[name].concat(flow[name]);
+		});
+
+		/*
+			Continue only if flow delivery accepted new ephemeral
+			work. Merely unavailable old work must not cause a spin.
+		*/
+		var added = this.scheduler.queue.some(function (work) {
+			return !existing.has(work);
+		});
+
+		if (!added) {
+			break;
+		}
+	}
+
+	result.remaining = this.flowScheduler.queue.size;
+	result.ephemeralRemaining = this.scheduler.queue.length;
+
+	return result;
+};
+
 Runtime.prototype.dispatch = function (title, event, incoming) {
 	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
 		throw new Error("Cannot start a nested runtime dispatch");
@@ -305,7 +454,7 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 				incoming
 			);
 
-			ephemeralResult.flow = this.flowScheduler.drain();
+			ephemeralResult.flow = this.drainOfficialWork();
 
 			return ephemeralResult;
 		}
@@ -403,7 +552,7 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			}
 		}
 
-		result.flow = this.flowScheduler.drain();
+		result.flow = this.drainOfficialWork();
 
 		return result;
 	} finally {
@@ -476,7 +625,7 @@ Runtime.prototype.drainFlows = function () {
 	this.executing = true;
 
 	try {
-		return this.flowScheduler.drain();
+		return this.drainOfficialWork();
 	} finally {
 		this.executing = false;
 	}

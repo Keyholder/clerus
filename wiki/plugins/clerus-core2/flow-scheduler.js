@@ -47,6 +47,13 @@ function Scheduler(options) {
         throw new Error("onResult must be a function");
     }
 
+	if (
+		options.executeEphemeral !== undefined &&
+		typeof options.executeEphemeral !== "function"
+	) {
+		throw new Error("executeEphemeral must be a function");
+	}
+
 	this.options = options;
 	this.queue = new Map();
 	this.running = false;
@@ -101,6 +108,87 @@ Scheduler.prototype.track = function (title) {
 			id: message.id
 		});
 	}, this);
+};
+
+Scheduler.prototype.deliverEphemeral = function (
+	title,
+	message,
+	handler
+) {
+	if (typeof this.options.executeEphemeral !== "function") {
+		return {
+			status: "unavailable",
+			reason: "ephemeral-delivery-unavailable"
+		};
+	}
+
+	var result;
+
+	try {
+		result = this.options.executeEphemeral({
+			message: schemas.copyJSON(message),
+			handler: handler
+		});
+	} catch (error) {
+		return {
+			status: "failed",
+			phase: "materialization",
+			obligation: title,
+			error: describe(error)
+		};
+	}
+
+	if (result.status === "completed") {
+		try {
+			var completed = this.flows.completeEphemeral(
+				title,
+				message.id,
+				message.recipient
+			);
+
+			return {
+				status: "completed",
+				obligation: title,
+				pending: completed.pending
+			};
+		} catch (error) {
+			return {
+				status: "failed",
+				phase: "acknowledgement",
+				obligation: title,
+				acceptanceUncertain: !!error.acceptanceUncertain,
+				error: describe(error)
+			};
+		}
+	}
+
+	if (
+		result.status === "failed" &&
+		result.phase === "reaction"
+	) {
+		try {
+			var failed = this.flows.fail(
+				title,
+				message.id,
+				message.recipient,
+				result.error
+			);
+
+			result.obligation = title;
+			result.pending = failed.pending;
+		} catch (error) {
+			return {
+				status: "failed",
+				phase: "failure-registration",
+				obligation: title,
+				acceptanceUncertain: !!error.acceptanceUncertain,
+				error: describe(error),
+				reactionError: result.error
+			};
+		}
+	}
+
+	return result;
 };
 
 Scheduler.prototype.drain = function () {
@@ -180,11 +268,24 @@ Scheduler.prototype.drain = function () {
 				message.recipient.title
 			);
 
-			if (!space || !space.persistent) {
+			if (!space) {
 				report.unavailable.push({
 					title: selected.title,
 					messageId: selected.id,
-					reason: "recipient-mode-not-supported"
+					reason: "invalid-recipient-title"
+				});
+
+				continue;
+			}
+
+			if (
+				!space.persistent &&
+				space.platform !== this.options.platform
+			) {
+				report.unavailable.push({
+					title: selected.title,
+					messageId: selected.id,
+					reason: "foreign-ephemeral-recipient"
 				});
 
 				continue;
@@ -206,9 +307,9 @@ Scheduler.prototype.drain = function () {
 			}
 
 			if (
+				space.persistent &&
 				recipient.fields["clerus-suspended"] === "yes" &&
-				recipient.fields["clerus-custody"] ===
-					this.options.platform
+				recipient.fields["clerus-custody"] === this.options.platform
 			) {
 				report.blocked.push({
 					title: selected.title,
@@ -233,18 +334,28 @@ Scheduler.prototype.drain = function () {
 				continue;
 			}
 
-			var result = persistent.execute({
-				store: this.options.store,
-				title: message.recipient.title,
-				platform: this.options.platform,
-				handler: handler,
-				newId: this.options.newId,
+			var result;
 
-				flow: {
-					title: selected.title,
-					messageId: selected.id
-				}
-			});
+			if (space.persistent) {
+				result = persistent.execute({
+					store: this.options.store,
+					title: message.recipient.title,
+					platform: this.options.platform,
+					handler: handler,
+					newId: this.options.newId,
+
+					flow: {
+						title: selected.title,
+						messageId: selected.id
+					}
+				});
+			} else {
+				result = this.deliverEphemeral(
+					selected.title,
+					message,
+					handler
+				);
+			}
 
             if (typeof this.options.onResult === "function") {
                 var deliveredEvent = {
