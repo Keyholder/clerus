@@ -6,6 +6,19 @@ module-type: library
 
 "use strict";
 
+function MaterializationError(cause) {
+	this.name = "MaterializationError";
+	this.message = String(cause && cause.message || cause);
+	this.cause = cause;
+
+	var diagnostic = new Error(this.message);
+
+	this.stack = diagnostic.stack;
+}
+
+MaterializationError.prototype = Object.create(Error.prototype);
+MaterializationError.prototype.constructor = MaterializationError;
+
 exports.run = function (options, prepare) {
 	options.assertActive();
 
@@ -19,10 +32,17 @@ exports.run = function (options, prepare) {
 		options.materialize(candidate);
 	} catch (error) {
 		options.invalidate();
-		throw error;
+
+		if (error instanceof MaterializationError) {
+			throw error;
+		}
+
+		throw new MaterializationError(error);
 	}
 
 	options.publish(candidate);
 
 	return result;
 };
+
+exports.MaterializationError = MaterializationError;

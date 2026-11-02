@@ -10,6 +10,9 @@ var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
 var reactions = require("$:/plugins/clerus/core2/reaction.js");
 var roles = require("$:/plugins/clerus/core2/roles.js");
+var MaterializationError = require(
+	"$:/plugins/clerus/core2/operation.js"
+).MaterializationError;
 
 function describe(error) {
 	return {
@@ -37,6 +40,16 @@ function Scheduler(options) {
 		typeof options.newId !== "function"
 	) {
 		throw new Error("newId must be a function");
+	}
+
+	if (
+		options.lifecycle !== undefined &&
+		(
+			!options.lifecycle ||
+			typeof options.lifecycle.dismiss !== "function"
+		)
+	) {
+		throw new Error("lifecycle must provide dismiss()");
 	}
 
 	this.options = options;
@@ -238,6 +251,70 @@ Scheduler.prototype.dispatch = function (title, event, incoming) {
 	return this.drain();
 };
 
+Scheduler.prototype.handleFailure = function (work, error, result) {
+	if (work.ignoreErrors) {
+		return;
+	}
+
+	var lifecycle = this.options.lifecycle;
+	var infrastructure = error instanceof MaterializationError;
+
+	/*
+		With lifecycle enabled, subsequent executor errors of a job
+		already under user custody are ignored. Infrastructure
+		failures remain visible.
+	*/
+	if (lifecycle && !infrastructure) {
+		var current = this.options.store.read(work.title);
+
+		if (
+			current.kind === "materialized" &&
+			current.fields["clerus-executor"] === work.executor &&
+			current.fields["clerus-custody"] === "user"
+		) {
+			return;
+		}
+	}
+
+	var diagnostic = {
+		title: work.title,
+		type: work.event.type,
+		phase: infrastructure ? "materialization" : "reaction",
+		error: describe(error)
+	};
+
+	result.errors.push(diagnostic);
+
+	if (!lifecycle || infrastructure) {
+		return;
+	}
+
+	try {
+		diagnostic.lifecycle = lifecycle.dismiss({
+			title: work.title,
+			executor: work.executor,
+			event: work.event,
+			error: error
+		});
+
+		if (diagnostic.lifecycle.dismissed) {
+			/*
+				The failed reaction has already closed its scope.
+				The dismissal notification is separate queued work.
+			*/
+			this.queue.unshift({
+				title: work.title,
+				executor: work.executor,
+				event: { type: "dismissed" },
+				incoming: undefined,
+				ignoreErrors: true
+			});
+		}
+	} catch (transitionError) {
+		diagnostic.lifecycleError = describe(transitionError);
+	}
+};
+
 Scheduler.prototype.drain = function () {
 	if (this.running) {
 		throw new Error("Cannot drain a running scheduler");
@@ -338,11 +415,7 @@ Scheduler.prototype.drain = function () {
 						type: work.event.type
 					});
 				} catch (error) {
-					result.errors.push({
-						title: work.title,
-						type: work.event.type,
-						error: describe(error)
-					});
+					this.handleFailure(work, error, result);
 				}
 			} finally {
 				if (work.establishing) {

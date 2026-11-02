@@ -13,7 +13,6 @@ function runTests(name) {
 
 runTests("foundation");
 runTests("scope");
-runTests("operations");
 runTests("document-updates");
 runTests("reaction");
 runTests("observation");
@@ -32,13 +31,15 @@ runTests("mission-delivery");
 runTests("mission-delivery-boundaries");
 runTests("job-titles");
 runTests("organization");
+runTests("operations");
 runTests("orders");
-runTests("message-policy");
 runTests("scheduler");
+runTests("lifecycle");
+runTests("scheduler-lifecycle");
+runTests("message-policy");
 runTests("establishment-reaction");
 runTests("establishment-delivery");
 runTests("assigned-establishment");
 runTests("title-issuance");
 runTests("contracts");
 runTests("establishment-scope");
-runTests("lifecycle");
