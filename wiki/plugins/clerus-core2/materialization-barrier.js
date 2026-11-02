@@ -14,6 +14,9 @@ var materializer = require(
 var flowSchema = require(
 	"$:/plugins/clerus/core2/flow-schema.js"
 );
+var deferredObligations = require(
+	"$:/plugins/clerus/core2/deferred-obligations.js"
+);
 
 function walPlatform(title) {
 	if (title.indexOf("$:/clerus/wal/browser/") === 0) {
@@ -87,6 +90,26 @@ function collect(options) {
 					blocked.get(flowOwner).push(fields.title);
 				}
 
+				return;
+			}
+
+			if (kind === "deferred") {
+				var deferredRecord = deferredObligations.validate(
+					record,
+					platform
+				);
+
+				if (
+					fields.title !==
+						"$:/clerus/wal/" + platform +
+						"/deferred-" + deferredRecord.effect.id ||
+					fields["clerus-deferred-effect"] !==
+						JSON.stringify(deferredRecord.effect)
+				) {
+					throw new Error("Deferred obligation identity mismatch");
+				}
+
+				// Waiting for an event is not active materialization.
 				return;
 			}
 

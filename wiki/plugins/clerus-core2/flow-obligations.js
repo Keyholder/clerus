@@ -18,6 +18,9 @@ var stores = require("$:/plugins/clerus/core2/store.js");
 var jobTitles = require(
 	"$:/plugins/clerus/core2/job-titles.js"
 );
+var deferredObligations = require(
+	"$:/plugins/clerus/core2/deferred-obligations.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -55,6 +58,11 @@ function create(options) {
 
 	var walPrefix = "$:/clerus/wal/" + options.platform + "/";
 	var used = new Set();
+
+	var deferred = deferredObligations.create({
+		store: options.store,
+		platform: options.platform
+	});
 
 	function read(title) {
 		if (
@@ -193,7 +201,8 @@ function create(options) {
 
 	function register(value) {
 		var proposal = proposals.validate(value, {
-			allowMessages: true
+			allowMessages: true,
+			allowDeferred: true
 		});
 
 		if (proposal.owner.state === null) {
@@ -204,7 +213,8 @@ function create(options) {
 
 		if (
 			proposal.plan.effects.length === 0 &&
-			proposal.plan.messages.length === 0
+			proposal.plan.messages.length === 0 &&
+			proposal.plan.deferred.length === 0
 		) {
 			throw new Error("Cannot register an empty flow");
 		}
@@ -301,6 +311,10 @@ function create(options) {
 					allowEmpty: true
 				});
 
+				record.active.plan.deferred.forEach(function (effect) {
+					deferred.record(effect);
+				});
+
 				record.active.plan.messages.forEach(function (message) {
 					if (hasOwn(record.seen, message.id)) {
 						return;
@@ -391,7 +405,8 @@ function create(options) {
 		var incoming = record.pending[index];
 
 		var proposal = proposals.validate(value, {
-			allowMessages: true
+			allowMessages: true,
+			allowDeferred: true
 		});
 
 		if (

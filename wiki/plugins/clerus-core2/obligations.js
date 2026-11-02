@@ -313,11 +313,11 @@ function create(options) {
 					return;
 				}
 
-				if (kind === "flow") {
+				if (kind === "flow" || kind === "deferred") {
 					entries.push({
 						title: title,
 						status: "delegated",
-						kind: "flow"
+						kind: kind
 					});
 
 					return;

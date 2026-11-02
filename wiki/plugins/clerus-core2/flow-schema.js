@@ -13,6 +13,9 @@ var proposals = require(
 var messageEffects = require(
 	"$:/plugins/clerus/core2/message-effect.js"
 );
+var deferredEffects = require(
+	"$:/plugins/clerus/core2/deferred-effect.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -94,7 +97,8 @@ function validate(value, platform) {
 	var active = record.active === null
 		? null
 		: proposals.validate(record.active, {
-			allowMessages: true
+			allowMessages: true,
+			allowDeferred: true
 		});
 
 	if (active !== null) {
@@ -109,6 +113,14 @@ function validate(value, platform) {
 					messageEffects.fingerprint(message)
 			) {
 				throw new Error("Flow message identity was reused");
+			}
+		});
+
+		active.plan.deferred.forEach(function (effect) {
+			var checked = deferredEffects.validate(effect);
+
+			if (checked.platform !== platform) {
+				throw new Error("Active plan emits a foreign deferred event");
 			}
 		});
 	}

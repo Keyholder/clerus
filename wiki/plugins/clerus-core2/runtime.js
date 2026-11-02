@@ -709,7 +709,10 @@ Runtime.prototype.recover = function () {
 
 		return {
 			entries: ordinary.entries.filter(function (entry) {
-				return entry.status !== "delegated";
+				return !(
+					entry.status === "delegated" &&
+					entry.kind === "flow"
+				);
 			}).concat(flow.entries),
 
 			pendingFlowAttempts: this.flowScheduler.queue.size
