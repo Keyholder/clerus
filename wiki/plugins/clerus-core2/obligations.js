@@ -11,6 +11,9 @@ var proposals = require(
 	"$:/plugins/clerus/core2/proposal-schema.js"
 );
 var stores = require("$:/plugins/clerus/core2/store.js");
+var materializer = require(
+	"$:/plugins/clerus/core2/materializer.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -125,8 +128,112 @@ function create(options) {
 		return title;
 	}
 
+	function read(title) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf(prefix) !== 0
+		) {
+			throw new Error("Cannot read a foreign plan obligation");
+		}
+
+		var journal = options.store.read(title);
+
+		if (
+			journal.kind !== "materialized" ||
+			journal.fields.type !== "application/json" ||
+			journal.fields["clerus-wal-kind"] !== "plan" ||
+			journal.fields["clerus-custody"] !== options.platform
+		) {
+			throw new Error("Plan obligation is not locally owned");
+		}
+
+		var record = materializer.validate(
+			JSON.parse(journal.fields.text),
+			options.platform
+		);
+
+		return {
+			fields: journal.fields,
+			record: record
+		};
+	}
+
+	function pause(title, error) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf(prefix) !== 0
+		) {
+			return;
+		}
+
+		var current = options.store.read(title);
+
+		if (
+			current.kind !== "materialized" ||
+			current.fields["clerus-custody"] !== options.platform
+		) {
+			return;
+		}
+
+		var after = schemas.copyJSON(current.fields);
+
+		after["clerus-custody"] = "user";
+		after["clerus-wal-error"] = JSON.stringify({
+			name: String(error && error.name || "Error"),
+			message: String(error && error.message || error),
+			stack: error && error.stack ? String(error.stack) : null
+		});
+
+		/*
+			Preserve the body, including a malformed one.
+		*/
+		options.store.apply(stores.transition(
+			title,
+			current.fields,
+			after
+		));
+	}
+
+	function resume(title) {
+		try {
+			var loaded = read(title);
+
+			var results = materializer.execute({
+				store: options.store,
+				platform: options.platform,
+				record: loaded.record
+			});
+
+			options.store.apply(stores.transition(
+				title,
+				loaded.fields,
+				null
+			));
+
+			return results;
+		} catch (error) {
+			try {
+				pause(title, error);
+			} catch (pauseError) {
+				/*
+					Do not hide the original failure if writing
+					the pause diagnostic also fails.
+				*/
+				if (error && typeof error === "object") {
+					error.pauseError = String(
+						pauseError && pauseError.message || pauseError
+					);
+				}
+			}
+
+			throw error;
+		}
+	}
+
 	return Object.freeze({
-		accept: accept
+		accept: accept,
+		read: read,
+		resume: resume
 	});
 }
 

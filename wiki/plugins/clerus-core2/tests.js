@@ -51,7 +51,8 @@ var SUITES = Object.freeze([
     "plan-operations",
     "planned-scope",
     "planned-reaction",
-    "obligation-acceptance"
+    "obligation-acceptance",
+    "materialization"
 ]);
 
 function describe(error) {
