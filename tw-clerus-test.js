@@ -30,6 +30,7 @@ runTests("mission-scope");
 runTests("message-policy");
 runTests("reports");
 runTests("mission-delivery");
+runTests("mission-delivery-boundaries");
 runTests("job-titles");
 runTests("organization");
 runTests("orders");
