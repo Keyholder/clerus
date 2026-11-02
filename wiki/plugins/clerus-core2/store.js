@@ -180,6 +180,37 @@ Store.prototype.apply = function (value) {
 	return "applied";
 };
 
+Store.prototype.snapshot = function () {
+	if (typeof this.wiki.eachShadow !== "function") {
+		throw new Error("Store snapshot requires shadow enumeration");
+	}
+
+	var materialized = [];
+	var shadows = [];
+
+	this.wiki.each(function (tiddler) {
+		materialized.push(capture(tiddler));
+	});
+
+	this.wiki.eachShadow(function (tiddler) {
+		shadows.push(capture(tiddler));
+	});
+
+	function compare(left, right) {
+		return left.title < right.title
+			? -1
+			: left.title > right.title ? 1 : 0;
+	}
+
+	materialized.sort(compare);
+	shadows.sort(compare);
+
+	return {
+		materialized: materialized,
+		shadows: shadows
+	};
+};
+
 exports.Store = Store;
 exports.capture = capture;
 exports.transition = transition;

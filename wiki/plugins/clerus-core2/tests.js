@@ -45,7 +45,8 @@ var SUITES = Object.freeze([
 
 	"lifecycle",
 	"scheduler-lifecycle",
-	"runtime"
+	"runtime",
+    "plan"
 ]);
 
 function describe(error) {
