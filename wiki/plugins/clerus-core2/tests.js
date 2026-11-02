@@ -54,6 +54,7 @@ var SUITES = Object.freeze([
     "deferred-obligations",
     "deferred-resolution",
     "persistent-tick",
+    "runtime-defer",
     "flow-schema",
     "flow-materialization",
     "flow-acceptance",

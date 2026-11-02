@@ -36,6 +36,9 @@ var MaterializationError = require(
 var deferredActivations = require(
 	"$:/plugins/clerus/core2/deferred.js"
 );
+var deferredObligations = require(
+	"$:/plugins/clerus/core2/deferred-obligations.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -73,6 +76,11 @@ function Runtime(options) {
 		store: this.store,
 		platform: this.platform,
 		newId: this.newId
+	});
+
+	this.persistentDeferred = deferredObligations.create({
+		store: this.store,
+		platform: this.platform
 	});
 
 	this.obligations = obligations.create({
@@ -467,6 +475,101 @@ Runtime.prototype.drainOfficialWork = function () {
 	return result;
 };
 
+Runtime.prototype.dispatchDeferred = function (title) {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running
+	) {
+		throw new Error("Cannot start a nested deferred delivery");
+	}
+
+	this.executing = true;
+
+	try {
+		var loaded = this.persistentDeferred.read(title);
+		var effect = loaded.effect;
+
+		var owner = this.store.read(effect.recipient.title);
+
+		if (
+			owner.kind !== "materialized" ||
+			owner.fields["clerus-executor"] !==
+				effect.recipient.executor
+		) {
+			return {
+				status: "unavailable",
+				reason: "deferred-recipient-changed"
+			};
+		}
+
+		if (
+			owner.fields["clerus-suspended"] === "yes" &&
+			owner.fields["clerus-custody"] === this.platform
+		) {
+			return {
+				status: "blocked",
+				reason: "resumption-required",
+				obligations: []
+			};
+		}
+
+		var handler = this.resolveExecutor(
+			effect.recipient.executor
+		);
+
+		if (typeof handler !== "function") {
+			return {
+				status: "unavailable",
+				reason: "executor-unavailable"
+			};
+		}
+
+		var event = {
+			type: "tick",
+			id: effect.id
+		};
+
+		var result = persistentReactions.execute({
+			store: this.store,
+			title: effect.recipient.title,
+			platform: this.platform,
+			handler: handler,
+			newId: this.newId,
+
+			deferred: {
+				title: title,
+				id: effect.id
+			}
+		});
+
+		this.handlePersistentResult(
+			effect.recipient.title,
+			effect.recipient.executor,
+			handler,
+			event,
+			result
+		);
+
+		if (result.obligation) {
+			var journal = this.store.read(result.obligation);
+
+			if (
+				journal.kind === "materialized" &&
+				journal.fields["clerus-wal-kind"] === "flow"
+			) {
+				this.flowScheduler.track(result.obligation);
+			}
+		}
+
+		result.flow = this.drainOfficialWork();
+
+		return result;
+	} finally {
+		this.executing = false;
+	}
+};
+
 Runtime.prototype.runDeferred = function () {
 	if (
 		this.executing ||
@@ -477,12 +580,67 @@ Runtime.prototype.runDeferred = function () {
 		throw new Error("Cannot start a nested deferred pass");
 	}
 
+	var prefix = "$:/clerus/wal/" + this.platform + "/";
+
+	/*
+		Capture before running any tick, including ephemeral ones.
+	*/
+	var persistentBatch = this.store.snapshot().materialized.filter(
+		function (fields) {
+			return fields.title.indexOf(prefix) === 0 &&
+				fields["clerus-wal-kind"] === "deferred" &&
+				fields["clerus-custody"] === this.platform;
+		},
+		this
+	).map(function (fields) {
+		return fields.title;
+	}).sort();
+
 	this.runningDeferred = true;
 
 	try {
-		return this.deferred.drain(function (title, event) {
+		var report = this.deferred.drain(function (title, event) {
 			return this.dispatch(title, event);
 		}.bind(this));
+
+		report.persistent = [];
+
+		persistentBatch.forEach(function (title) {
+			var current = this.store.read(title);
+
+			/*
+				An earlier reaction may have resolved or paused it.
+			*/
+			if (
+				current.kind !== "materialized" ||
+				current.fields["clerus-wal-kind"] !== "deferred" ||
+				current.fields["clerus-custody"] !== this.platform
+			) {
+				return;
+			}
+
+			try {
+				report.persistent.push({
+					title: title,
+					result: this.dispatchDeferred(title)
+				});
+			} catch (error) {
+				report.errors.push({
+					title: title,
+					phase: "persistent-deferred-delivery",
+					error: lifecycle.describeError(error)
+				});
+			}
+		}, this);
+
+		report.persistentRemaining =
+			this.store.snapshot().materialized.filter(function (fields) {
+				return fields.title.indexOf(prefix) === 0 &&
+					fields["clerus-wal-kind"] === "deferred" &&
+					fields["clerus-custody"] === this.platform;
+			}, this).length;
+
+		return report;
 	} finally {
 		this.runningDeferred = false;
 	}
