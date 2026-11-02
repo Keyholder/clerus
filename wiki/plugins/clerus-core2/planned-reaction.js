@@ -88,6 +88,17 @@ function execute(options) {
 
 		var executor = initial.fields["clerus-executor"];
 
+		if (
+			options.acknowledgeResumption === true &&
+			(
+				initial.fields["clerus-suspended"] !== "yes" ||
+				initial.fields["clerus-custody"] !== options.platform ||
+				event.type !== "resumed"
+			)
+		) {
+			throw new Error("Persistent resumption is not authorized");
+		}
+
 		scope = plannedScopes.open({
 			plan: plan,
 			title: options.title,
@@ -113,12 +124,33 @@ function execute(options) {
 		}
 
 		scope.assertResolved();
-
-		/*
-			The current plan format cannot retain unsent registries.
-			Do not silently discard them when closing the scope.
-		*/
 		scope.assertOutgoingResolved();
+
+		if (options.acknowledgeResumption === true) {
+			var current = plan.read(options.title);
+
+			if (
+				current.kind !== "materialized" ||
+				current.fields["clerus-custody"] !== options.platform ||
+				current.fields["clerus-executor"] !== executor ||
+				current.fields["clerus-suspended"] !== "yes"
+			) {
+				throw new Error("Resumption state changed inside the plan");
+			}
+
+			var resumedFields = schemas.copyJSON(current.fields);
+
+			delete resumedFields["clerus-suspended"];
+
+			plan.apply(
+				require("$:/plugins/clerus/core2/store.js")
+					.transition(
+						options.title,
+						current.fields,
+						resumedFields
+					)
+			);
+		}
 
 		var ownerState = plan.initial(options.title);
 

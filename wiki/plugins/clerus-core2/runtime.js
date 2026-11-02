@@ -183,6 +183,36 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			};
 		}
 
+		var resumptionPending =
+			stored.fields["clerus-suspended"] === "yes" &&
+			stored.fields["clerus-custody"] === this.platform;
+
+		var resumedEvent =
+			schemas.isRecord(event) &&
+			event.type === "resumed";
+
+		if (resumptionPending && !resumedEvent) {
+			return {
+				status: "blocked",
+				reason: "resumption-required",
+				obligations: []
+			};
+		}
+
+		if (resumedEvent && !resumptionPending) {
+			return {
+				status: "unavailable",
+				reason: "resumption-not-pending"
+			};
+		}
+
+		if (resumedEvent && incoming !== undefined) {
+			return {
+				status: "unavailable",
+				reason: "resumption-cannot-carry-incoming-documents"
+			};
+		}
+		
 		var executor = stored.fields["clerus-executor"];
 
 		var result = persistentReactions.execute({
@@ -192,7 +222,8 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			event: event,
 			incoming: incoming,
 			handler: handler,
-			newId: this.newId
+			newId: this.newId,
+			acknowledgeResumption: resumptionPending && resumedEvent
 		});
 
 		if (
@@ -297,6 +328,18 @@ Runtime.prototype.recover = function () {
 	}
 
 	return this.obligations.recover();
+};
+
+Runtime.prototype.resume = function (title) {
+	var space = jobTitles.classify(title);
+
+	if (!space || !space.persistent) {
+		throw new Error("Resumption requires a persistent job");
+	}
+
+	return this.dispatch(title, {
+		type: "resumed"
+	});
 };
 
 exports.Runtime = Runtime;

@@ -89,7 +89,8 @@ function execute(options) {
 					operational,
 					incoming
 				);
-			}
+			},
+			acknowledgeResumption: options.acknowledgeResumption === true
 		});
 	} catch (error) {
 		return failed(
