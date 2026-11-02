@@ -59,6 +59,7 @@ var SUITES = Object.freeze([
     "retention-integration",
     "collection",
     "collection-obligations",
+    "automatic-collection",
     "flow-schema",
     "flow-materialization",
     "flow-acceptance",

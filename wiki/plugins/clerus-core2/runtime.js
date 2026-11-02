@@ -61,6 +61,17 @@ function Runtime(options) {
 		);
 	}
 
+	if (
+		options.autoCollectJobs !== undefined &&
+		typeof options.autoCollectJobs !== "boolean"
+	) {
+		throw new Error("autoCollectJobs must be boolean");
+	}
+
+	this.autoCollectJobs = options.autoCollectJobs === true;
+	this.passDepth = 0;
+	this.lastCollection = null;
+
 	this.wiki = options.wiki;
 	this.platform = options.platform;
 	this.resolveExecutor = options.resolveExecutor;
@@ -828,7 +839,10 @@ Runtime.prototype.inspect = function () {
 		retention: retention.evaluate({
 			jobs: jobs,
 			tiddlers: this.store.snapshot().materialized
-		})
+		}),
+		collection: this.lastCollection === null
+			? null
+			: schemas.copyJSON(this.lastCollection)
 	};
 };
 
@@ -932,5 +946,65 @@ Runtime.prototype.collect = function () {
 		guard: this.collectionBarriers.bind(this)
 	});
 };
+
+function wrapExternalPass(name, allowCollection) {
+	var implementation = Runtime.prototype[name];
+
+	if (typeof implementation !== "function") {
+		throw new Error("Missing runtime pass: " + name);
+	}
+
+	Runtime.prototype[name] = function () {
+		this.passDepth++;
+
+		var completed = false;
+
+		try {
+			var result = implementation.apply(this, arguments);
+
+			completed = true;
+			return result;
+		} finally {
+			this.passDepth--;
+
+			if (
+				completed &&
+				allowCollection &&
+				this.passDepth === 0 &&
+				this.autoCollectJobs
+			) {
+				try {
+					this.lastCollection = this.collect();
+				} catch (error) {
+					/*
+						Collection diagnostics must not replace
+						the completed execution result.
+					*/
+					this.lastCollection = {
+						removed: [],
+						skipped: [],
+						blocked: ["collection-error"],
+						failures: [{
+							error: lifecycle.describeError(error)
+						}]
+					};
+				}
+			}
+		}
+	};
+}
+
+[
+	"dispatch",
+	"observe",
+	"runDeferred",
+	"drainFlows",
+	"resume",
+	"dispatchDeferred"
+].forEach(function (name) {
+	wrapExternalPass(name, true);
+});
+
+wrapExternalPass("recover", false);
 
 exports.Runtime = Runtime;
