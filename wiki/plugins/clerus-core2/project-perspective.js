@@ -68,10 +68,12 @@ function create(options) {
 			throw new Error("Invalid document scope snapshot");
 		}
 
-		var operational = schemas.registry(
-			scope.operational,
-			"operational"
-		);
+		var operational = scope.operational === null
+			? null
+			: schemas.registry(
+				scope.operational,
+				"operational"
+			);
 
 		var transactional = [];
 
@@ -90,7 +92,9 @@ function create(options) {
 		return {
 			operational: operational,
 			transactional: transactional,
-			available: [operational].concat(transactional)
+			available: operational === null
+				? transactional.slice()
+				: [operational].concat(transactional)
 		};
 	}
 
@@ -189,6 +193,15 @@ function create(options) {
 				evaluation: null,
 				active: false,
 				reason: "Mission is not available in this scope"
+			};
+		}
+
+		if (context.operational === null) {
+			return {
+				document: document,
+				evaluation: null,
+				active: false,
+				reason: "Mission owner is not established in this scope"
 			};
 		}
 

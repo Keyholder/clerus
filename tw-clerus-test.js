@@ -37,6 +37,7 @@ runTests("message-policy");
 runTests("scheduler");
 runTests("establishment-reaction");
 runTests("establishment-delivery");
+runTests("assigned-establishment");
 runTests("title-issuance");
 runTests("contracts");
 runTests("establishment-scope");

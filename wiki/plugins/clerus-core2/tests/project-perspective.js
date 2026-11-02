@@ -299,6 +299,28 @@ function testReadAndReportShareRevocation(tw) {
 	assert(caught.message === view.reason);
 }
 
+function testUnestablishedScopeHasNoAuthority(tw) {
+	var f = fixture(tw);
+	var scope = f.scope();
+
+	scope.operational = null;
+
+	var beforeJobs = JSON.stringify(f.jobs);
+	var beforeScope = JSON.stringify(scope);
+
+	var view = f.service.readMission(f.child, scope);
+
+	assert(!view.active);
+	assert(!view.readable);
+	assert(
+		view.reason ===
+			"Mission owner is not established in this scope"
+	);
+
+	assert(JSON.stringify(f.jobs) === beforeJobs);
+	assert(JSON.stringify(scope) === beforeScope);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["project perspective: incoming mission provides authority", testIncomingAuthority],
@@ -311,6 +333,7 @@ exports.run = function (tw) {
 		["project perspective: report does not require project availability", testReportAddressWithoutProject],
 		["project perspective: report uses transactional parent authority", testReportUsesTransactionalParent],
 		["project perspective: reading and reporting share revocation", testReadAndReportShareRevocation],
+		["project perspective: unestablished scope provides no authority", testUnestablishedScopeHasNoAuthority]
 	];
 
 	var results = cases.map(function (item) {
