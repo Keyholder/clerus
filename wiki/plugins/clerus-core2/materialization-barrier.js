@@ -11,6 +11,9 @@ var jobTitles = require("$:/plugins/clerus/core2/job-titles.js");
 var materializer = require(
 	"$:/plugins/clerus/core2/materializer.js"
 );
+var flowSchema = require(
+	"$:/plugins/clerus/core2/flow-schema.js"
+);
 
 function walPlatform(title) {
 	if (title.indexOf("$:/clerus/wal/browser/") === 0) {
@@ -68,6 +71,22 @@ function collect(options) {
 				}
 
 				// Diagnostic history is not unfinished materialization.
+				return;
+			}
+
+			if (kind === "flow") {
+				var flow = flowSchema.validate(record, platform);
+
+				if (flow.active !== null) {
+					var flowOwner = flow.active.owner.title;
+
+					if (!blocked.has(flowOwner)) {
+						blocked.set(flowOwner, []);
+					}
+
+					blocked.get(flowOwner).push(fields.title);
+				}
+
 				return;
 			}
 

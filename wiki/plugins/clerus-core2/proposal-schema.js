@@ -8,6 +8,9 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core2/schemas.js");
 var stores = require("$:/plugins/clerus/core2/store.js");
+var messageEffects = require(
+	"$:/plugins/clerus/core2/message-effect.js"
+);
 
 function fieldsOnly(record, allowed, description) {
 	if (
@@ -32,7 +35,9 @@ function normalizeFields(fields) {
 	).after;
 }
 
-function validate(value) {
+function validate(value, options) {
+	options = options || {};
+
 	var proposal = schemas.copyJSON(value);
 
 	fieldsOnly(
@@ -66,16 +71,42 @@ function validate(value) {
 		throw new Error("Invalid work proposal");
 	}
 
-	if (
-		proposal.plan.messages !== undefined &&
-		(
-			!Array.isArray(proposal.plan.messages) ||
-			proposal.plan.messages.length !== 0
-		)
-	) {
-		throw new Error(
-			"Message-bearing proposal acceptance is not connected yet"
-		);
+	var messages = [];
+
+	if (proposal.plan.messages !== undefined) {
+		if (!Array.isArray(proposal.plan.messages)) {
+			throw new Error("Proposal messages must be an array");
+		}
+
+		if (
+			proposal.plan.messages.length > 0 &&
+			options.allowMessages !== true
+		) {
+			throw new Error(
+				"Message-bearing proposal requires a transactional flow"
+			);
+		}
+
+		var messageIds = new Set();
+
+		messages = proposal.plan.messages.map(function (value) {
+			var message = messageEffects.validate(value);
+
+			if (messageIds.has(message.id)) {
+				throw new Error("Repeated proposal message identity");
+			}
+
+			messageIds.add(message.id);
+
+			if (
+				message.source.title !== proposal.owner.title ||
+				message.source.executor !== proposal.owner.executor
+			) {
+				throw new Error("Proposal message has another sender");
+			}
+
+			return message;
+		});
 	}
 
 	var state = normalizeFields(proposal.owner.state);
@@ -139,7 +170,7 @@ function validate(value) {
 		return effect;
 	});
 
-	return schemas.copyJSON({
+	var result = {
 		version: 1,
 		owner: {
 			title: proposal.owner.title,
@@ -150,7 +181,13 @@ function validate(value) {
 			version: 1,
 			effects: effects
 		}
-	});
+	};
+
+	if (options.allowMessages === true) {
+		result.plan.messages = messages;
+	}
+
+	return schemas.copyJSON(result);
 }
 
 exports.validate = validate;
