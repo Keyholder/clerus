@@ -276,11 +276,108 @@ function create(options) {
 			: [];
 	}
 
+	function accept(title, messageId, value) {
+		var loaded = read(title);
+		var record = loaded.record;
+
+		if (record.active !== null) {
+			throw new Error("Flow already has active materialization");
+		}
+
+		var index = record.pending.findIndex(function (message) {
+			return message.id === messageId;
+		});
+
+		if (index === -1) {
+			if (hasOwn(record.seen, messageId)) {
+				return "already-completed";
+			}
+
+			throw new Error("Unknown pending flow message");
+		}
+
+		var incoming = record.pending[index];
+
+		var proposal = proposals.validate(value, {
+			allowMessages: true
+		});
+
+		if (
+			proposal.owner.title !== incoming.recipient.title ||
+			proposal.owner.executor !== incoming.recipient.executor
+		) {
+			throw new Error(
+				"Flow message was accepted by another recipient"
+			);
+		}
+
+		var owner = options.store.read(proposal.owner.title);
+
+		if (
+			owner.kind !== "materialized" ||
+			JSON.stringify(owner.fields) !==
+				JSON.stringify(proposal.owner.state)
+		) {
+			throw new Error("Recipient proposal owner state has changed");
+		}
+
+		var blockers = barriers.collect({
+			store: options.store
+		}).forJob(proposal.owner.title);
+
+		if (blockers.length > 0) {
+			throw new Error(
+				"Recipient has unfinished materialization"
+			);
+		}
+
+		/*
+			Build and validate the entire replacement before writing.
+			The pending message remains authoritative until this write.
+		*/
+		record.pending.splice(index, 1);
+		record.active = proposal;
+
+		record = flows.validate(record, options.platform);
+
+		materializer.check({
+			store: options.store,
+			platform: options.platform,
+			record: stateRecord(record),
+			allowEmpty: true
+		});
+
+		var after = schemas.copyJSON(loaded.fields);
+		after.text = JSON.stringify(record);
+
+		try {
+			options.store.apply(stores.transition(
+				title,
+				loaded.fields,
+				after
+			));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "FlowAcceptanceError";
+			error.cause = cause;
+			error.obligationTitle = title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+
+		return "accepted";
+	}
+
 	return Object.freeze({
 		register: register,
 		read: read,
 		resume: resume,
-		pending: pending
+		pending: pending,
+		accept: accept
 	});
 }
 
