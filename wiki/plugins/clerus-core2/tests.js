@@ -52,6 +52,7 @@ var SUITES = Object.freeze([
     "planned-messages",
     "planned-defer",
     "deferred-obligations",
+    "deferred-resolution",
     "flow-schema",
     "flow-materialization",
     "flow-acceptance",

@@ -128,11 +128,9 @@ function validate(value, platform) {
 	var failedIds = new Set();
 
 	var errors = record.errors.map(function (entry) {
-		fieldsOnly(
-			entry,
-			["message", "error"],
-			"flow branch error"
-		);
+		if (!schemas.isRecord(entry)) {
+			throw new Error("Invalid flow branch error");
+		}
 
 		fieldsOnly(
 			entry.error,
@@ -151,33 +149,91 @@ function validate(value, platform) {
 			throw new Error("Invalid branch diagnostic");
 		}
 
-		var message = messageEffects.validate(entry.message);
+		var diagnostic = {
+			name: entry.error.name,
+			message: entry.error.message,
+			stack: entry.error.stack
+		};
 
-		if (
-			message.platform !== platform ||
-			failedIds.has(message.id) ||
-			pendingIds.has(message.id)
-		) {
-			throw new Error("Invalid failed message identity");
+		if (hasOwn(entry, "message")) {
+			fieldsOnly(
+				entry,
+				["message", "error"],
+				"flow message failure"
+			);
+
+			var message = messageEffects.validate(entry.message);
+
+			if (
+				message.platform !== platform ||
+				failedIds.has(message.id) ||
+				pendingIds.has(message.id)
+			) {
+				throw new Error("Invalid failed message identity");
+			}
+
+			if (
+				!hasOwn(record.seen, message.id) ||
+				record.seen[message.id] !==
+					messageEffects.fingerprint(message)
+			) {
+				throw new Error("Failed message identity is not registered");
+			}
+
+			failedIds.add(message.id);
+
+			return {
+				message: message,
+				error: diagnostic
+			};
 		}
 
-		if (
-			!hasOwn(record.seen, message.id) ||
-			record.seen[message.id] !==
-				messageEffects.fingerprint(message)
-		) {
-			throw new Error("Failed message identity is not registered");
+		fieldsOnly(
+			entry,
+			["event", "owner", "error"],
+			"flow event failure"
+		);
+
+		fieldsOnly(
+			entry.event,
+			["type", "id"],
+			"failed deferred event"
+		);
+
+		fieldsOnly(
+			entry.owner,
+			["title", "executor"],
+			"failed deferred owner"
+		);
+
+		if (entry.event.type !== "tick") {
+			throw new Error("Unsupported failed event");
 		}
 
-		failedIds.add(message.id);
+		var deferred = deferredEffects.validate({
+			version: 1,
+			kind: "deferred-event",
+			id: entry.event.id,
+			platform: platform,
+			recipient: entry.owner
+		});
+
+		if (
+			failedIds.has(deferred.id) ||
+			pendingIds.has(deferred.id)
+		) {
+			throw new Error("Repeated failed event identity");
+		}
+
+		failedIds.add(deferred.id);
 
 		return {
-			message: message,
-			error: {
-				name: entry.error.name,
-				message: entry.error.message,
-				stack: entry.error.stack
-			}
+			event: {
+				type: "tick",
+				id: deferred.id
+			},
+			owner: deferred.recipient,
+			error: diagnostic
 		};
 	});
 

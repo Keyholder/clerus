@@ -11,6 +11,14 @@ var effects = require("$:/plugins/clerus/core2/deferred-effect.js");
 var flowSchema = require("$:/plugins/clerus/core2/flow-schema.js");
 var stores = require("$:/plugins/clerus/core2/store.js");
 
+var proposals = require(
+	"$:/plugins/clerus/core2/proposal-schema.js"
+);
+
+var materializer = require(
+	"$:/plugins/clerus/core2/materializer.js"
+);
+
 function validate(value, platform) {
 	schemas.assertPlatform(platform);
 
@@ -152,9 +160,171 @@ function create(options) {
 		};
 	}
 
+	function checkRecipient(effect, id, recipient) {
+		if (
+			effect.id !== id ||
+			!recipient ||
+			recipient.title !== effect.recipient.title ||
+			recipient.executor !== effect.recipient.executor
+		) {
+			throw new Error("Deferred event belongs to another recipient");
+		}
+	}
+
+	function convert(loaded, record, custody) {
+		var normalized = flowSchema.validate(
+			record,
+			options.platform
+		);
+
+		var after = schemas.copyJSON(loaded.fields);
+
+		after["clerus-wal-kind"] = "flow";
+		after["clerus-custody"] = custody;
+		after.text = JSON.stringify(normalized);
+
+		/*
+			Keep clerus-deferred-effect as the durable receipt
+			of the original registration.
+		*/
+		try {
+			options.store.apply(stores.transition(
+				loaded.fields.title,
+				loaded.fields,
+				after
+			));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "DeferredResolutionError";
+			error.cause = cause;
+			error.obligationTitle = loaded.fields.title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+	}
+
+	function accept(title, id, value) {
+		var loaded = read(title);
+
+		var proposal = proposals.validate(value, {
+			allowMessages: true,
+			allowDeferred: true
+		});
+
+		checkRecipient(
+			loaded.effect,
+			id,
+			{
+				title: proposal.owner.title,
+				executor: proposal.owner.executor
+			}
+		);
+
+		if (proposal.owner.state === null) {
+			throw new Error("Deferred reaction cannot establish its owner");
+		}
+
+		var owner = options.store.read(proposal.owner.title);
+
+		if (
+			owner.kind !== "materialized" ||
+			JSON.stringify(owner.fields) !==
+				JSON.stringify(proposal.owner.state)
+		) {
+			throw new Error("Deferred proposal owner state has changed");
+		}
+
+		/*
+			Lazy loading avoids the module initialization cycle:
+			the barrier also recognizes deferred obligations.
+		*/
+		var blockers = require(
+			"$:/plugins/clerus/core2/materialization-barrier.js"
+		).collect({
+			store: options.store
+		}).forJob(proposal.owner.title);
+
+		if (blockers.length > 0) {
+			throw new Error("Deferred recipient has unfinished materialization");
+		}
+
+		materializer.check({
+			store: options.store,
+			platform: options.platform,
+			allowEmpty: true,
+
+			record: {
+				version: 1,
+				kind: "plan",
+				platform: options.platform,
+
+				proposal: {
+					version: 1,
+					owner: proposal.owner,
+					plan: {
+						version: 1,
+						effects: proposal.plan.effects
+					}
+				}
+			}
+		});
+
+		convert(loaded, {
+			version: 1,
+			kind: "flow",
+			platform: options.platform,
+			active: proposal,
+			pending: [],
+			seen: {},
+			errors: []
+		}, options.platform);
+
+		return "accepted";
+	}
+
+	function fail(title, id, recipient, cause) {
+		var loaded = read(title);
+
+		checkRecipient(loaded.effect, id, recipient);
+
+		convert(loaded, {
+			version: 1,
+			kind: "flow",
+			platform: options.platform,
+			active: null,
+			pending: [],
+			seen: {},
+
+			errors: [{
+				event: {
+					type: "tick",
+					id: loaded.effect.id
+				},
+
+				owner: loaded.effect.recipient,
+
+				error: {
+					name: String(cause && cause.name || "Error"),
+					message: String(cause && cause.message || cause),
+					stack: cause && cause.stack
+						? String(cause.stack)
+						: null
+				}
+			}]
+		}, "user");
+
+		return "failed";
+	}
+
 	return Object.freeze({
 		record: record,
-		read: read
+		read: read,
+		accept: accept,
+		fail: fail
 	});
 }
 
