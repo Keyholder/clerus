@@ -45,6 +45,8 @@ function Scheduler(options) {
 
 	this.checkMessage = this.checkMessage.bind(this);
 	this.acceptMessage = this.acceptMessage.bind(this);
+
+	this.pendingBirths = new Set();
 }
 
 Scheduler.prototype.recipient = function (title) {
@@ -102,23 +104,88 @@ Scheduler.prototype.prepareMessage = function (value) {
 		"incoming"
 	);
 
+	var event = { type: message.type };
+
+	if (message.type === "report") {
+		if (
+			typeof message.project !== "string" ||
+			message.project.length === 0 ||
+			!roles.isRole(message.role) ||
+			message.role.length === 0
+		) {
+			throw new Error("Queued report requires a role signature");
+		}
+
+		event.project = message.project;
+		event.role = message.role.slice();
+	}
+
+	if (message.establishing === true) {
+		var space = jobTitles.classify(message.recipient);
+
+		if (
+			message.type !== "order" ||
+			space.persistent ||
+			space.platform !== this.options.platform
+		) {
+			throw new Error(
+				"This scheduler supports only local ephemeral establishment"
+			);
+		}
+
+		if (
+			this.options.store.read(message.recipient).kind !==
+			"absent"
+		) {
+			throw new Error("Establishment target must be absent");
+		}
+
+		if (this.pendingBirths.has(message.recipient)) {
+			throw new Error("Recipient already has a pending establishment");
+		}
+
+		var contracts = Object.keys(message.registry).filter(
+			function (key) {
+				return schemas.formOf(message.registry[key]) === "contract";
+			}
+		);
+
+		if (contracts.length !== 1) {
+			throw new Error(
+				"Establishing order requires exactly one contract"
+			);
+		}
+
+		var contract = message.registry[contracts[0]];
+
+		if (
+			contract.temp === false ||
+			message.executor !== contract.executor
+		) {
+			throw new Error("Invalid establishment executor or durability");
+		}
+
+		if (
+			typeof this.options.resolveExecutor(contract.executor) !==
+			"function"
+		) {
+			throw new Error("Establishment executor is unavailable");
+		}
+
+		return {
+			title: message.recipient,
+			executor: contract.executor,
+			event: event,
+			incoming: message.registry,
+			establishing: true
+		};
+	}
+
+	if (message.establishing !== undefined) {
+		throw new Error("Invalid establishment marker");
+	}
+
 	var recipient = this.recipient(message.recipient);
-
-    var event = { type: message.type };
-
-    if (message.type === "report") {
-        if (
-            typeof message.project !== "string" ||
-            message.project.length === 0 ||
-            !roles.isRole(message.role) ||
-            message.role.length === 0
-        ) {
-            throw new Error("Queued report requires a role signature");
-        }
-
-        event.project = message.project;
-        event.role = message.role.slice();
-    }
 
 	return {
 		title: recipient.job.title,
@@ -135,9 +202,10 @@ Scheduler.prototype.checkMessage = function (message) {
 Scheduler.prototype.acceptMessage = function (message) {
 	var work = this.prepareMessage(message);
 
-	/*
-	Acceptance only appends work. Never invoke an executor here.
-	*/
+	if (work.establishing) {
+		this.pendingBirths.add(work.title);
+	}
+
 	this.queue.push(work);
 };
 
@@ -186,48 +254,100 @@ Scheduler.prototype.drain = function () {
 	try {
 		while (this.queue.length > 0) {
 			var work = this.queue.shift();
-			var recipient;
 
 			try {
-				recipient = this.recipient(work.title);
+				var handler;
 
-				if (recipient.job.executor !== work.executor) {
-					throw new Error("Recipient executor has changed");
+				try {
+					if (work.establishing) {
+						if (
+							this.options.store.read(work.title).kind !==
+							"absent"
+						) {
+							throw new Error(
+								"Establishment target became occupied"
+							);
+						}
+
+						handler = this.options.resolveExecutor(
+							work.executor
+						);
+
+						if (typeof handler !== "function") {
+							throw new Error(
+								"Establishment executor is unavailable"
+							);
+						}
+					} else {
+						var recipient = this.recipient(work.title);
+
+						if (recipient.job.executor !== work.executor) {
+							throw new Error(
+								"Recipient executor has changed"
+							);
+						}
+
+						handler = recipient.handler;
+					}
+				} catch (error) {
+					result.skipped.push({
+						title: work.title,
+						type: work.event.type,
+						error: describe(error)
+					});
+
+					continue;
 				}
-			} catch (error) {
-				result.skipped.push({
-					title: work.title,
-					type: work.event.type,
-					error: describe(error)
-				});
 
-				continue;
-			}
+				try {
+					var execution = {
+						store: this.options.store,
+						title: work.title,
+						platform: this.options.platform,
+						event: work.event,
+						incoming: work.incoming,
+						readJobs: this.options.readJobs,
+						newId: this.options.newId,
+						checkMessage: this.checkMessage,
+						acceptMessage: this.acceptMessage
+					};
 
-			try {
-				reactions.execute({
-					store: this.options.store,
-					title: work.title,
-					platform: this.options.platform,
-					event: work.event,
-					incoming: work.incoming,
-					readJobs: this.options.readJobs,
-					handler: recipient.handler,
-					checkMessage: this.checkMessage,
-					acceptMessage: this.acceptMessage,
-					newId: this.options.newId
-				});
+					if (work.establishing) {
+						/*
+						Use the handler selected for this delivery.
+						reaction.establish() still checks the contract.
+						*/
+						execution.resolveExecutor = function (name) {
+							if (name !== work.executor) {
+								throw new Error(
+									"Establishment executor mismatch"
+								);
+							}
 
-				result.delivered.push({
-					title: work.title,
-					type: work.event.type
-				});
-			} catch (error) {
-				result.errors.push({
-					title: work.title,
-					type: work.event.type,
-					error: describe(error)
-				});
+							return handler;
+						};
+
+						reactions.establish(execution);
+					} else {
+						execution.handler = handler;
+						reactions.execute(execution);
+					}
+
+					result.delivered.push({
+						title: work.title,
+						type: work.event.type
+					});
+				} catch (error) {
+					result.errors.push({
+						title: work.title,
+						type: work.event.type,
+						error: describe(error)
+					});
+				}
+			} finally {
+				if (work.establishing) {
+					this.pendingBirths.delete(work.title);
+				}
 			}
 		}
 	} finally {

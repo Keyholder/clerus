@@ -77,11 +77,31 @@ function check(options) {
 		byTitle.set(job.title, job);
 	});
 
+	var registry = schemas.registry(
+		options.registry,
+		"outgoing"
+	);
+
+	var contracts = Object.keys(registry).filter(function (key) {
+		return schemas.formOf(registry[key]) === "contract";
+	});
+
+	var establishing = !byTitle.has(options.recipient);
+
+	if (!byTitle.has(options.source)) {
+		throw new Error("Message source must be materialized");
+	}
+
 	if (
-		!byTitle.has(options.source) ||
-		!byTitle.has(options.recipient)
+		establishing &&
+		(
+			options.type !== "order" ||
+			contracts.length !== 1
+		)
 	) {
-		throw new Error("Ordinary message endpoints must be materialized");
+		throw new Error(
+			"Absent recipient requires an order with exactly one contract"
+		);
 	}
 
 	[
@@ -137,22 +157,24 @@ function check(options) {
 		throw new Error("Report requires a project and non-root role");
 	}
 
-	var registry = schemas.registry(
-		options.registry,
-		"outgoing"
-	);
-
 	var recipientSpace = jobTitles.classify(options.recipient);
+
+	if (establishing) {
+		var contract = registry[contracts[0]];
+
+		if (
+			(contract.temp === true && recipientSpace.persistent) ||
+			(contract.temp === false && !recipientSpace.persistent)
+		) {
+			throw new Error(
+				"Contract does not permit the recipient durability"
+			);
+		}
+	}
 
 	Object.keys(registry).sort().forEach(function (key) {
 		var document = registry[key];
 		var form = schemas.formOf(document);
-
-		if (form === "contract") {
-			throw new Error(
-				"Establishing message handling is not connected yet"
-			);
-		}
 
 		if (form !== "job-title" || options.type !== "order") {
 			return;
@@ -191,6 +213,11 @@ function check(options) {
 	if (options.type === "report") {
 		result.project = options.project;
 		result.role = options.role.slice();
+	}
+
+	if (establishing) {
+		result.establishing = true;
+		result.executor = registry[contracts[0]].executor;
 	}
 
 	return result;
