@@ -15,6 +15,9 @@ var barriers = require(
 	"$:/plugins/clerus/core2/materialization-barrier.js"
 );
 var stores = require("$:/plugins/clerus/core2/store.js");
+var jobTitles = require(
+	"$:/plugins/clerus/core2/job-titles.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -522,6 +525,82 @@ function create(options) {
 		};
 	}
 
+	function completeEphemeral(title, messageId, recipient) {
+		var loaded = read(title);
+		var record = loaded.record;
+
+		if (record.active !== null) {
+			throw new Error(
+				"Cannot acknowledge delivery during active materialization"
+			);
+		}
+
+		var index = record.pending.findIndex(function (message) {
+			return message.id === messageId;
+		});
+
+		if (index === -1) {
+			if (hasOwn(record.seen, messageId)) {
+				return {
+					status: "already-completed",
+					pending: schemas.copyJSON(record.pending)
+				};
+			}
+
+			throw new Error("Unknown pending flow message");
+		}
+
+		var message = record.pending[index];
+		var space = jobTitles.classify(message.recipient.title);
+
+		if (
+			!space ||
+			space.persistent ||
+			space.platform !== options.platform ||
+			!recipient ||
+			recipient.title !== message.recipient.title ||
+			recipient.executor !== message.recipient.executor
+		) {
+			throw new Error(
+				"Ephemeral acknowledgement belongs to another recipient"
+			);
+		}
+
+		/*
+			Only completion is recorded. No persistent plan is invented
+			for effects that were already performed ephemerally.
+		*/
+		record.pending.splice(index, 1);
+		record = flows.validate(record, options.platform);
+
+		var after = schemas.copyJSON(loaded.fields);
+		after.text = JSON.stringify(record);
+
+		try {
+			options.store.apply(stores.transition(
+				title,
+				loaded.fields,
+				after
+			));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "EphemeralAcknowledgementError";
+			error.cause = cause;
+			error.obligationTitle = title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+
+		return {
+			status: "completed",
+			pending: resume(title)
+		};
+	}
+
 	return Object.freeze({
 		register: register,
 		read: read,
@@ -529,7 +608,8 @@ function create(options) {
 		pending: pending,
 		accept: accept,
 		fail: fail,
-		recover: recover
+		recover: recover,
+		completeEphemeral: completeEphemeral,
 	});
 }
 

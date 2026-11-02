@@ -66,6 +66,7 @@ var SUITES = Object.freeze([
     "runtime-flows",
     "persistent-protocols",
     "mixed-ingress",
+    "ephemeral-acknowledgement",
     "recovery",
     "runtime-persistent",
     "persistent-suspension",
