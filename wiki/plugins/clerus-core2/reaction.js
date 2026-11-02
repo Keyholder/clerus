@@ -19,6 +19,9 @@ var organizations = require(
 var messageServices = require(
 	"$:/plugins/clerus/core2/message-service.js"
 );
+var titleIssuers = require(
+	"$:/plugins/clerus/core2/title-issuer.js"
+);
 
 function freezeTree(value) {
 	if (value !== null && typeof value === "object") {
@@ -83,6 +86,13 @@ function execute(options) {
 		throw new Error("checkMessage must be a function");
 	}
 
+	if (
+		options.newId !== undefined &&
+		typeof options.newId !== "function"
+	) {
+		throw new Error("newId must be a function");
+	}
+
 	var initial = store.read(options.title);
 
 	if (initial.kind !== "materialized") {
@@ -93,6 +103,14 @@ function execute(options) {
 		initial.fields,
 		options.platform
 	);
+
+	var titleIssuer = options.newId
+		? titleIssuers.create({
+			title: job.title,
+			store: store,
+			newId: options.newId
+		})
+		: null;
 
 	var projectPerspective = options.readJobs
 		? projectPerspectives.create({
@@ -226,7 +244,10 @@ function execute(options) {
 				? messageService.prepareReport
 				: undefined,
 			acceptMessage: options.acceptMessage,
-			checkMessage: options.checkMessage
+			checkMessage: options.checkMessage,
+			issueJobTitle: titleIssuer
+				? titleIssuer.issue
+				: undefined
 		});
 
 		var returned = options.handler(

@@ -32,6 +32,13 @@ function Scheduler(options) {
 		throw new Error("Scheduler requires state and executor services");
 	}
 
+	if (
+		options.newId !== undefined &&
+		typeof options.newId !== "function"
+	) {
+		throw new Error("newId must be a function");
+	}
+
 	this.options = options;
 	this.queue = [];
 	this.running = false;
@@ -207,7 +214,8 @@ Scheduler.prototype.drain = function () {
 					readJobs: this.options.readJobs,
 					handler: recipient.handler,
 					checkMessage: this.checkMessage,
-					acceptMessage: this.acceptMessage
+					acceptMessage: this.acceptMessage,
+					newId: this.options.newId
 				});
 
 				result.delivered.push({

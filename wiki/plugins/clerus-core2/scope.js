@@ -84,6 +84,7 @@ function open(options) {
 		"authorizeMission",
 		"authorizeMissionMove",
 		"authorizeOrganization",
+		"issueJobTitle",
 		"prepareOrder",
 		"prepareReport",
 		"acceptMessage",
@@ -760,6 +761,58 @@ function open(options) {
 		});
 	}
 
+	function createJobTitle(node, segment, destination, key) {
+		assertPresent(node);
+
+		if (node.form !== "charter") {
+			throw new Error("Only charter can issue job titles");
+		}
+
+		var destinationId = resolveDestination(destination);
+
+		run(function (candidate) {
+			assertPresent(node);
+			schemas.assertKey(key);
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error("Document key already exists: " + key);
+			}
+
+			if (typeof options.issueJobTitle !== "function") {
+				throw new Error("Job title issuance is unavailable");
+			}
+
+			/*
+			Initial organizational ownership is explicit:
+			the new subordinate title must first enter the
+			issuing job's operational registry.
+			*/
+			if (target.kind !== "operational") {
+				throw new Error(
+					"New job title must be issued operationally"
+				);
+			}
+
+			var title = options.issueJobTitle(segment);
+
+			if (!jobTitles.isJobTitle(title)) {
+				throw new Error("Issuer returned an invalid job title");
+			}
+
+			target.entries.set(key, nodeFor(candidate, title));
+		});
+
+		return registryView(destinationId).get(key);
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -891,6 +944,10 @@ function open(options) {
 
 				sendReport: function (outgoing) {
 					sendReport(node, outgoing);
+				},
+
+				createJobTitle: function (segment, destination, key) {
+					return createJobTitle(node, segment, destination, key);
 				}
 			})
 		);

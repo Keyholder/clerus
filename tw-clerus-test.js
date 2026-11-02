@@ -35,3 +35,4 @@ runTests("job-titles");
 runTests("organization");
 runTests("orders");
 runTests("scheduler");
+runTests("title-issuance");

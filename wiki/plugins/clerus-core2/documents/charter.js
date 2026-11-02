@@ -22,6 +22,14 @@ exports.create = function (access) {
 
 		createMemo: function (data, destination, key) {
 			return access.createMemo(data, destination, key);
+		},
+
+		createTitle: function (segment, destination, key) {
+			return access.createJobTitle(
+				segment,
+				destination,
+				key
+			);
 		}
 	});
 };
