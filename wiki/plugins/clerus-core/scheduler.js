@@ -13,6 +13,7 @@ var roles = require("$:/plugins/clerus/core/roles.js");
 var MaterializationError = require(
 	"$:/plugins/clerus/core/operation.js"
 ).MaterializationError;
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 function describe(error) {
 	return {
@@ -94,11 +95,7 @@ Scheduler.prototype.recipient = function (title, allowPersistent) {
 	var job;
 
 	if (space.persistent) {
-		if (
-			stored.fields.type !== "application/json" ||
-			typeof stored.fields["clerus-executor"] !== "string" ||
-			stored.fields["clerus-executor"].length === 0
-		) {
+		if (!jobState.hasExecutionHeader(stored.fields)) {
 			throw new Error("Invalid persistent recipient");
 		}
 

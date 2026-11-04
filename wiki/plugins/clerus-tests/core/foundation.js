@@ -8,6 +8,9 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var stores = require("$:/plugins/clerus/core/store.js");
+var jobState = require("$:/plugins/clerus/core/job-state.js");
+var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
+var jobViews = require("$:/plugins/clerus/core/job-view.js");
 
 function assert(condition, message) {
 	if (!condition) {
@@ -222,6 +225,351 @@ function testSnapshotIsolation(tw) {
 	);
 }
 
+function testJobRegistryReading() {
+	assert(jobState.readRegistry({
+		type: "text/plain",
+		text: "{}"
+	}).kind === "unsupported");
+
+	["null", "[]", "{broken"].forEach(function (text) {
+		var result = jobState.readRegistry({
+			type: "application/json",
+			text: text
+		});
+
+		assert(result.kind === "unreadable");
+		assert(result.registry === null);
+	});
+
+	assert(jobState.readRegistry({
+		type: "application/json"
+	}).kind === "unreadable");
+
+	var structural = jobState.readRegistry({
+		type: "application/json",
+		text: JSON.stringify({
+			future: { form: "future-document" }
+		})
+	});
+
+	assert(structural.kind === "ready");
+	assert(structural.registry.future.form === "future-document");
+
+	// Structural readability does not imply an executable registry.
+	throws(function () {
+		schemas.registry(structural.registry, "operational");
+	});
+}
+
+function testJobProjection() {
+	var first = "$:/clerus/jobs/projection-a";
+	var second = "$:/clerus/jobs/projection-b";
+
+	var rows = [
+		{
+			title: second,
+			type: "application/json",
+			text: "null"
+		},
+		{
+			title: "Ordinary",
+			text: "ignored"
+		},
+		{
+			title: first,
+			type: "application/json",
+			text: JSON.stringify({
+				child: second,
+				future: { form: "future-document" }
+			})
+		}
+	];
+
+	var before = JSON.stringify(rows);
+
+	function read() {
+		return jobState.readJobs(function (visit) {
+			rows.forEach(function (fields) {
+				visit(fields, fields.title);
+			});
+		});
+	}
+
+	var jobs = read();
+
+	assert(jobs.length === 2);
+	assert(jobs[0].title === first);
+	assert(jobs[0].custody === "user");
+	assert(jobs[0].executor === null);
+	assert(jobs[0].registry.child === second);
+	assert(jobs[1].registry === null);
+
+	jobs[0].registry.future.form = "local";
+	assert(read()[0].registry.future.form === "future-document");
+	assert(JSON.stringify(rows) === before);
+
+	var failure = new Error("enumeration failed");
+	var caught;
+
+	try {
+		jobState.readJobs(function () {
+			throw failure;
+		});
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught === failure, "Enumeration failure was hidden");
+}
+
+function testJobProjectionBranches() {
+	var title = "$:/clerus/jobs/projection-branch";
+	var fields = {
+		title: title,
+		type: "application/json",
+		text: JSON.stringify({ value: "initial" })
+	};
+
+	var plan = new Plan({
+		materialized: [fields],
+		shadows: []
+	});
+
+	var active = plan;
+
+	function read() {
+		return jobState.readJobs(function (visit) {
+			active.each(visit);
+		});
+	}
+
+	try {
+		var branch = plan.fork();
+		var next = schemas.copyJSON(fields);
+		next.text = JSON.stringify({ value: "proposed" });
+
+		branch.apply(stores.transition(title, fields, next));
+
+		active = branch;
+		assert(read()[0].registry.value === "proposed");
+
+		active = plan;
+		assert(read()[0].registry.value === "initial");
+
+		branch.abort();
+		assert(read()[0].registry.value === "initial");
+	} finally {
+		plan.abort();
+	}
+}
+
+function testExecutionHeader() {
+	var fields = {
+		type: "application/json",
+		"clerus-executor": "test"
+	};
+
+	assert(jobState.hasExecutionHeader(fields));
+
+	// Header readiness does not require custody or registry data.
+	assert(!Object.prototype.hasOwnProperty.call(fields, "text"));
+
+	[null, {}, {
+		type: "text/plain",
+		"clerus-executor": "test"
+	}, {
+		type: "application/json",
+		"clerus-executor": ""
+	}, {
+		type: "application/json",
+		"clerus-executor": 1
+	}].forEach(function (value) {
+		assert(!jobState.hasExecutionHeader(value));
+	});
+}
+
+function testAddressedJobReading() {
+	var title = "$:/clerus/jobs/addressed-reading";
+	var stored = { kind: "absent", fields: null };
+
+	var source = {
+		read: function (requested) {
+			assert(requested === title);
+			return stored;
+		}
+	};
+
+	assert(jobState.read(source, title).kind === "absent");
+
+	stored = {
+		kind: "shadow",
+		fields: {
+			title: title,
+			type: "application/json",
+			text: "{}"
+		}
+	};
+
+	var shadow = jobState.read(source, title);
+	assert(shadow.kind === "unsupported");
+	assert(shadow.storage === "shadow");
+
+	stored.kind = "materialized";
+	stored.fields.text = "null";
+	assert(jobState.read(source, title).kind === "unreadable");
+
+	stored.fields.text = JSON.stringify({
+		charter: { form: "charter", status: { value: 1 } }
+	});
+
+	var ready = jobState.read(source, title);
+	assert(ready.kind === "ready");
+
+	ready.fields.text = "local";
+	ready.registry.charter.status.value = 2;
+
+	assert(stored.fields.text !== "local");
+	assert(
+		jobState.read(source, title).registry.charter.status.value === 1
+	);
+
+	stored.fields.title = title + "-other";
+
+	throws(function () {
+		jobState.read(source, title);
+	}, "identity mismatch");
+
+	var failure = new Error("addressed source failure");
+	var caught;
+
+	try {
+		jobViews.read({
+			read: function () {
+				throw failure;
+			}
+		}, title);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught === failure, "Source failure became unreadability");
+}
+
+function testPartialStatusReading() {
+	var title = "$:/clerus/jobs/partial-status-reading";
+
+	var source = {
+		read: function () {
+			return {
+				kind: "materialized",
+				fields: {
+					title: title,
+					type: "application/json",
+					text: JSON.stringify({
+						charter: {
+							form: "charter",
+							status: { phase: "available" }
+						},
+						future: { form: "future-document" }
+					})
+				}
+			};
+		}
+	};
+
+	var view = jobViews.read(source, title);
+
+	assert(view.exists && view.readable);
+	assert(view.status.phase === "available");
+
+	view.status.phase = "local";
+	assert(
+		jobViews.read(source, title).status.phase === "available"
+	);
+}
+
+function testOwnerOverlayIsolation() {
+	var owner = "$:/clerus/jobs/overlay-owner";
+	var other = "$:/clerus/jobs/overlay-other";
+
+	var jobs = [
+		{
+			title: owner,
+			custody: "user",
+			executor: "owner",
+			registry: {
+				charter: charter(),
+				old: { form: "memo", data: "stored" }
+			}
+		},
+		{
+			title: other,
+			registry: {
+				charter: charter(),
+				note: { form: "memo", data: { value: 1 } }
+			}
+		}
+	];
+
+	var local = {
+		charter: charter(),
+		fresh: { form: "memo", data: { value: 2 } }
+	};
+
+	var beforeJobs = JSON.stringify(jobs);
+	var beforeLocal = JSON.stringify(local);
+
+	var perspective = jobState.overlayOwner(jobs, owner, local);
+
+	assert(perspective.owner === perspective.jobs[0]);
+	assert(perspective.owner.custody === "user");
+	assert(perspective.owner.executor === "owner");
+	assert(!perspective.owner.registry.old);
+	assert(perspective.owner.registry.fresh.data.value === 2);
+
+	perspective.owner.registry.fresh.data.value = 3;
+	perspective.jobs[1].registry.note.data.value = 4;
+
+	assert(JSON.stringify(jobs) === beforeJobs);
+	assert(JSON.stringify(local) === beforeLocal);
+}
+
+function testOwnerOverlayBoundaries() {
+	var title = "$:/clerus/jobs/overlay-boundaries";
+	var jobs = [{ title: title, registry: null }];
+
+	// Structural projection does not require a valid charter.
+	var structural = jobState.overlayOwner(jobs, title, {
+		future: { form: "future-document" }
+	});
+
+	assert(
+		structural.owner.registry.future.form === "future-document"
+	);
+
+	var unestablished = jobState.overlayOwner(jobs, title, null);
+	assert(unestablished.owner.registry === null);
+
+	throws(function () {
+		jobState.overlayOwner([], title, {});
+	}, "exactly one owner snapshot");
+
+	throws(function () {
+		jobState.overlayOwner([
+			{ title: title, registry: {} },
+			{ title: title, registry: {} }
+		], title, {});
+	}, "exactly one owner snapshot");
+
+	throws(function () {
+		jobState.overlayOwner([null], title, {});
+	}, "job records");
+
+	throws(function () {
+		jobState.overlayOwner(jobs, title, []);
+	}, "operational record or null");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -232,7 +580,15 @@ exports.run = function (tw) {
 		}],
 		["store: snapshot isolation", function () {
 			testSnapshotIsolation(tw);
-		}]
+		}],
+		["job state: structural registry reading", testJobRegistryReading],
+		["job state: conservative isolated projection", testJobProjection],
+		["job state: projection follows the active branch", testJobProjectionBranches],
+		["job state: execution header is not authorization", testExecutionHeader],
+		["job state: addressed reading preserves source failures", testAddressedJobReading],
+		["job state: public status permits partial interpretation", testPartialStatusReading],
+		["job state: owner overlay isolates both inputs", testOwnerOverlayIsolation],
+		["job state: owner overlay enforces structural boundaries", testOwnerOverlayBoundaries]
 	];
 
 	var results = cases.map(function (item) {

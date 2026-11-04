@@ -27,10 +27,7 @@ var titleIssuers = require(
 var deferredEffects = require(
 	"$:/plugins/clerus/core/deferred-effect.js"
 );
-
-var hasOwn = Function.call.bind(
-	Object.prototype.hasOwnProperty
-);
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 function open(options) {
 	schemas.assertPlatform(options.platform);
@@ -88,9 +85,7 @@ function open(options) {
 	} else {
 		if (
 			initial.kind !== "materialized" ||
-			initial.fields.type !== "application/json" ||
-			typeof initial.fields["clerus-executor"] !== "string" ||
-			initial.fields["clerus-executor"].length === 0
+			!jobState.hasExecutionHeader(initial.fields)
 		) {
 			throw new Error("Planned scope requires an existing JSON job");
 		}
@@ -121,40 +116,9 @@ function open(options) {
 		: null;
 
 	function readJobs() {
-		var jobs = [];
-
-		activePlan.each(function (fields, title) {
-			if (!jobTitles.isJobTitle(title)) {
-				return;
-			}
-
-			var parsed = null;
-
-			if (fields.type === "application/json") {
-				try {
-					var value = JSON.parse(fields.text);
-
-					if (schemas.isRecord(value)) {
-						parsed = value;
-					}
-				} catch (error) {
-					// Keep the uninspectable node.
-				}
-			}
-
-			jobs.push({
-				title: title,
-				custody: hasOwn(fields, "clerus-custody")
-					? fields["clerus-custody"]
-					: "user",
-				executor: fields["clerus-executor"] === undefined
-					? null
-					: fields["clerus-executor"],
-				registry: parsed
-			});
+		return jobState.readJobs(function (visit) {
+			activePlan.each(visit);
 		});
-
-		return jobs;
 	}
 
 	function writable() {
@@ -212,9 +176,7 @@ function open(options) {
 
 			if (
 				recipient.kind !== "materialized" ||
-				recipient.fields.type !== "application/json" ||
-				typeof recipient.fields["clerus-executor"] !== "string" ||
-				recipient.fields["clerus-executor"].length === 0
+				!jobState.hasExecutionHeader(recipient.fields)
 			) {
 				throw new Error(
 					"Planned message requires a materialized recipient"

@@ -9,6 +9,7 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 function create(options) {
 	if (
@@ -30,25 +31,13 @@ function create(options) {
 			"operational"
 		);
 
-		var jobs = schemas.copyJSON(options.readJobs());
+		var perspective = jobState.overlayOwner(
+			options.readJobs(),
+			options.title,
+			proposed
+		);
 
-		if (!Array.isArray(jobs)) {
-			throw new Error("Job reader must return an array");
-		}
-
-		var owners = jobs.filter(function (job) {
-			return job.title === options.title;
-		});
-
-		if (owners.length !== 1) {
-			throw new Error(
-				"Organization requires exactly one owner snapshot"
-			);
-		}
-
-		owners[0].registry = proposed;
-
-		var graph = hierarchy.evaluate(jobs);
+		var graph = hierarchy.evaluate(perspective.jobs);
 
 		if (!graph.complete) {
 			throw new Error(

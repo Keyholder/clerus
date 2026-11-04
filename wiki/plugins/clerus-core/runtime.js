@@ -41,10 +41,7 @@ var deferredObligations = require(
 );
 var retention = require("$:/plugins/clerus/core/retention.js");
 var collection = require("$:/plugins/clerus/core/collection.js");
-
-var hasOwn = Function.call.bind(
-	Object.prototype.hasOwnProperty
-);
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -157,49 +154,13 @@ function Runtime(options) {
 }
 
 Runtime.prototype.readJobs = function () {
-	var jobs = [];
+	var wiki = this.wiki;
 
-	this.wiki.each(function (tiddler, title) {
-		if (!jobTitles.isJobTitle(title)) {
-			return;
-		}
-
-		var registry = null;
-
-		if (tiddler.fields.type === "application/json") {
-			try {
-				var parsed = JSON.parse(tiddler.fields.text);
-
-				if (schemas.isRecord(parsed)) {
-					registry = parsed;
-				}
-			} catch (error) {
-				// Preserve the uninspectable job in the projection.
-			}
-		}
-
-		jobs.push({
-			title: title,
-
-			custody: hasOwn(tiddler.fields, "clerus-custody")
-				? tiddler.fields["clerus-custody"]
-				: "user",
-
-			executor: tiddler.fields["clerus-executor"] === undefined
-				? null
-				: tiddler.fields["clerus-executor"],
-
-			registry: registry
+	return jobState.readJobs(function (visit) {
+		wiki.each(function (tiddler, title) {
+			visit(tiddler.fields, title);
 		});
 	});
-
-	jobs.sort(function (left, right) {
-		return left.title < right.title
-			? -1
-			: left.title > right.title ? 1 : 0;
-	});
-
-	return schemas.copyJSON(jobs);
 };
 
 Runtime.prototype.handlePersistentResult = function (
@@ -694,11 +655,7 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 			};
 		}
 
-		if (
-			stored.fields.type !== "application/json" ||
-			typeof stored.fields["clerus-executor"] !== "string" ||
-			stored.fields["clerus-executor"].length === 0
-		) {
+		if (!jobState.hasExecutionHeader(stored.fields)) {
 			return {
 				status: "unavailable",
 				reason: "invalid-job-header"

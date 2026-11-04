@@ -13,6 +13,7 @@ var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
 var plannedScopes = require(
 	"$:/plugins/clerus/core/planned-scope.js"
 );
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -135,9 +136,7 @@ function run(options, establishing) {
 		} else {
 			if (
 				initial.kind !== "materialized" ||
-				initial.fields.type !== "application/json" ||
-				typeof initial.fields["clerus-executor"] !== "string" ||
-				initial.fields["clerus-executor"].length === 0
+				!jobState.hasExecutionHeader(initial.fields)
 			) {
 				throw new Error(
 					"Planned reaction requires a materialized JSON job"

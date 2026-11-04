@@ -7,54 +7,29 @@ module-type: library
 "use strict";
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
-var jobTitles = require(
-	"$:/plugins/clerus/core/job-titles.js"
-);
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 function read(store, title) {
-	if (!jobTitles.isJobTitle(title)) {
-		throw new Error("Invalid job title");
-	}
-
 	/*
-	Infrastructure failures are not malformed job data.
-	Do not hide a store.read() exception as unreadability.
+	Source failures and source contract violations must propagate.
+	They are not malformed job data.
 	*/
-	var stored = store.read(title);
-
-	if (stored.kind === "absent") {
-		return {
-			exists: false,
-			readable: false,
-			status: null,
-			reason: "Job does not exist"
-		};
-	}
+	var state = jobState.read(store, title);
 
 	var result = {
-		exists: true,
+		exists: state.kind !== "absent",
 		readable: false,
 		status: null,
-		reason: null
+		reason: state.reason
 	};
 
+	if (state.kind !== "ready") {
+		return result;
+	}
+
 	try {
-		if (stored.kind !== "materialized") {
-			throw new Error("Job must be materialized");
-		}
-
-		if (stored.fields.type !== "application/json") {
-			throw new Error("Job must have type application/json");
-		}
-
-		var registry = JSON.parse(stored.fields.text);
-
-		if (!schemas.isRecord(registry)) {
-			throw new Error("Job registry must be a JSON record");
-		}
-
-		var charters = Object.keys(registry).map(function (key) {
-			return registry[key];
+		var charters = Object.keys(state.registry).map(function (key) {
+			return state.registry[key];
 		}).filter(function (document) {
 			return schemas.isRecord(document) &&
 				document.form === "charter";
@@ -68,6 +43,7 @@ function read(store, title) {
 
 		result.status = charter.status;
 		result.readable = true;
+		result.reason = null;
 	} catch (error) {
 		result.reason = String(error.message);
 	}

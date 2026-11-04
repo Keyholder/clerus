@@ -16,6 +16,7 @@ var roles = require("$:/plugins/clerus/core/roles.js");
 var jobTitles = require(
 	"$:/plugins/clerus/core/job-titles.js"
 );
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -121,32 +122,18 @@ function create(options) {
 			return null;
 		}
 
-		var jobs = schemas.copyJSON(options.readJobs());
+		var perspective = jobState.overlayOwner(
+			options.readJobs(),
+			options.title,
+			context.operational
+		);
 
-		if (
-			!Array.isArray(jobs) ||
-			!jobs.every(schemas.isRecord)
-		) {
-			throw new Error("Job reader must return job records");
-		}
-
-		var owners = jobs.filter(function (job) {
-			return job.title === options.title;
-		});
-
-		if (owners.length !== 1) {
-			throw new Error(
-				"Perspective requires exactly one owner snapshot"
-			);
-		}
-
-		var owner = owners[0];
+		var owner = perspective.owner;
 
 		/*
 		Keep the available registries intact. Synthetic entries
 		belong only to the evaluator's private owner projection.
 		*/
-		owner.registry = schemas.copyJSON(context.operational);
 
 		owner.custody = hasOwn(stored.fields, "clerus-custody")
 			? stored.fields["clerus-custody"]
@@ -180,7 +167,7 @@ function create(options) {
 			});
 		});
 
-		return missions.evaluate(jobs);
+		return missions.evaluate(perspective.jobs);
 	}
 
 	function inspectAssignment(value, scope) {

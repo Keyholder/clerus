@@ -10,6 +10,7 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var retention = require("$:/plugins/clerus/core/retention.js");
 var stores = require("$:/plugins/clerus/core/store.js");
+var jobState = require("$:/plugins/clerus/core/job-state.js");
 
 var PASSIVE_FORMS = [
 	"charter",
@@ -159,11 +160,7 @@ function collect(options) {
 		var registry;
 
 		try {
-			if (
-				stored.fields.type !== "application/json" ||
-				typeof stored.fields["clerus-executor"] !== "string" ||
-				stored.fields["clerus-executor"].length === 0
-			) {
+			if (!jobState.hasExecutionHeader(stored.fields)) {
 				throw new Error("Invalid job header");
 			}
 
