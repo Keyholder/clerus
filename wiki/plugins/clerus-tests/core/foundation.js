@@ -11,6 +11,9 @@ var stores = require("$:/plugins/clerus/core/store.js");
 var jobState = require("$:/plugins/clerus/core/job-state.js");
 var Plan = require("$:/plugins/clerus/core/plan.js").Plan;
 var jobViews = require("$:/plugins/clerus/core/job-view.js");
+var reactionServices = require(
+	"$:/plugins/clerus/core/reaction-services.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -570,6 +573,90 @@ function testOwnerOverlayBoundaries() {
 	}, "operational record or null");
 }
 
+function testReactionServiceAssembly() {
+	var title = "$:/clerus/jobs/service-assembly";
+	var reads = 0;
+	var enumerations = 0;
+	var identities = 0;
+
+	var source = {
+		read: function () {
+			assert(this === source, "State reader lost its receiver");
+			reads++;
+
+			return {
+				kind: "absent",
+				fields: null
+			};
+		}
+	};
+
+	var basic = reactionServices.create({
+		title: title,
+		platform: "browser",
+		store: source
+	});
+
+	assert(Object.isFrozen(basic));
+	assert(typeof basic.readTiddler === "function");
+	assert(typeof basic.readJob === "function");
+	assert(basic.readMission === undefined);
+	assert(basic.prepareOrder === undefined);
+	assert(basic.issueJobTitle === undefined);
+
+	assert(reads === 0, "Service assembly performed state reads");
+
+	assert(basic.readTiddler("Ordinary").kind === "absent");
+	assert(!basic.readJob(title).exists);
+	assert(reads === 2);
+
+	var complete = reactionServices.create({
+		title: title,
+		platform: "browser",
+		store: source,
+
+		readJobs: function () {
+			enumerations++;
+			return [];
+		},
+
+		newId: function () {
+			identities++;
+			return "service-assembly-identity";
+		}
+	});
+
+	[
+		"readTiddler",
+		"readJob",
+		"readMission",
+		"authorizeMission",
+		"authorizeMissionMove",
+		"authorizeOrganization",
+		"prepareOrder",
+		"prepareReport",
+		"issueJobTitle"
+	].forEach(function (name) {
+		assert(
+			typeof complete[name] === "function",
+			"Missing reaction service: " + name
+		);
+	});
+
+	assert(reads === 2, "Service assembly performed state reads");
+	assert(enumerations === 0, "Service assembly enumerated jobs");
+	assert(identities === 0, "Service assembly allocated an identity");
+
+	throws(function () {
+		reactionServices.create({
+			title: title,
+			platform: "browser",
+			store: source,
+			readJobs: null
+		});
+	}, "readJobs must be a function");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -588,7 +675,8 @@ exports.run = function (tw) {
 		["job state: addressed reading preserves source failures", testAddressedJobReading],
 		["job state: public status permits partial interpretation", testPartialStatusReading],
 		["job state: owner overlay isolates both inputs", testOwnerOverlayIsolation],
-		["job state: owner overlay enforces structural boundaries", testOwnerOverlayBoundaries]
+		["job state: owner overlay enforces structural boundaries", testOwnerOverlayBoundaries],
+		["reaction services: shared lazy assembly", testReactionServiceAssembly]
 	];
 
 	var results = cases.map(function (item) {
