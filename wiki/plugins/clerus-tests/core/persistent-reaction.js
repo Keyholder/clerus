@@ -9,8 +9,8 @@ module-type: library
 var persistent = require(
 	"$:/plugins/clerus/core/persistent-reaction.js"
 );
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var Store = require("$:/plugins/clerus/core/store.js").Store;
 
@@ -70,7 +70,7 @@ function fixture(tw) {
 		},
 
 		manager: function () {
-			return obligations.create({
+			return continuations.create({
 				store: store,
 				platform: platform,
 				newId: newId
@@ -199,7 +199,7 @@ function testRegistrationOutcomeMayBeUncertain(tw) {
 
 		if (
 			effect.after &&
-			effect.after["clerus-wal-kind"] === "plan" &&
+			effect.after["clerus-wal-kind"] === "continuation" &&
 			!injected
 		) {
 			injected = true;
@@ -272,6 +272,127 @@ function testEmptyPass(tw) {
 	assert(f.phase() === "initial");
 }
 
+function testMaterialReactionUsesContinuation(tw) {
+	var f = fixture(tw);
+	var originalApply = f.store.apply;
+	var injected = false;
+
+	f.store.apply = function (effect) {
+		if (effect.title === f.title && !injected) {
+			injected = true;
+			throw new Error("Stopped before materialization");
+		}
+
+		return originalApply.call(this, effect);
+	};
+
+	var result;
+
+	try {
+		result = f.execute(proposeCompletion);
+	} finally {
+		f.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(result.status === "failed");
+	assert(result.phase === "materialization");
+	assert(f.phase() === "initial");
+
+	var journal = f.wiki.getTiddler(result.obligation);
+	var record = JSON.parse(journal.fields.text);
+
+	assert(journal.fields["clerus-wal-kind"] === "continuation");
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work);
+	assert(record.work.id);
+	assert(record.work.blocks.indexOf(f.title) !== -1);
+	assert(record.work.transitions.length === 1);
+	assert(record.work.transitions[0].title === f.title);
+	assert(record.work.checks.length === 0);
+
+	assert(
+		!Object.prototype.hasOwnProperty.call(
+			record.work,
+			"owner"
+		)
+	);
+
+	var called = false;
+
+	var next = f.execute(function () {
+		called = true;
+	});
+
+	assert(next.status === "blocked");
+	assert(!called);
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		journal,
+		{ "clerus-custody": f.platform }
+	));
+
+	f.manager().resume(result.obligation);
+
+	assert(f.phase() === "completed");
+	assert(!f.wiki.getTiddler(result.obligation));
+}
+
+function testCompletionWriteFailureDoesNotReplayHandler(tw) {
+	var f = fixture(tw);
+	var originalApply = f.store.apply;
+	var injected = false;
+	var calls = 0;
+
+	f.store.apply = function (effect) {
+		if (
+			effect.after === null &&
+			effect.before &&
+			effect.before["clerus-wal-kind"] === "continuation" &&
+			!injected
+		) {
+			injected = true;
+			throw new Error("Stopped before journal deletion");
+		}
+
+		return originalApply.call(this, effect);
+	};
+
+	var result;
+
+	try {
+		result = f.execute(function (event, operational) {
+			calls++;
+			proposeCompletion(event, operational);
+		});
+	} finally {
+		f.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(result.status === "failed");
+	assert(result.phase === "materialization");
+	assert(f.phase() === "completed");
+	assert(calls === 1);
+
+	var journal = f.wiki.getTiddler(result.obligation);
+
+	assert(journal);
+	assert(journal.fields["clerus-custody"] === "user");
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		journal,
+		{ "clerus-custody": f.platform }
+	));
+
+	var recovered = f.manager().resume(result.obligation);
+
+	assert(recovered[0] === "already-applied");
+	assert(calls === 1);
+	assert(!f.wiki.getTiddler(result.obligation));
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["persistent reaction: complete pass calls handler once", testSuccessfulPass],
@@ -279,7 +400,15 @@ exports.run = function (tw) {
 		["persistent reaction: recovery does not repeat handler", testMaterializationFailureAndRecovery],
 		["persistent reaction: uncertain registration preserves possible obligation", testRegistrationOutcomeMayBeUncertain],
 		["persistent reaction: acceptance conflict protects intervention", testAcceptanceConflict],
-		["persistent reaction: empty result needs no obligation", testEmptyPass]
+		["persistent reaction: empty result needs no obligation", testEmptyPass],
+		[
+			"persistent reaction: material result uses continuation v2",
+			testMaterialReactionUsesContinuation
+		],
+		[
+			"persistent reaction: completion failure does not replay handler",
+			testCompletionWriteFailureDoesNotReplayHandler
+		]
 	];
 
 	var results = cases.map(function (item) {

@@ -12,8 +12,11 @@ var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
+);
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
 );
 var flowObligations = require(
 	"$:/plugins/clerus/core/flow-obligations.js"
@@ -75,7 +78,7 @@ function execute(options) {
 		);
 	}
 
-	var manager = obligations.create({
+	var manager = continuations.create({
 		store: options.store,
 		platform: options.platform,
 		newId: options.newId
@@ -337,8 +340,19 @@ function execute(options) {
 		) {
 			flow = true;
 			title = flows.register(proposal);
+		} else if (proposal.plan.effects.length === 0) {
+			/*
+				A root reaction without effects creates no
+				obligation and consumes no work identity.
+			*/
+			title = null;
 		} else {
-			title = manager.accept(proposal);
+			var work = proposalWork.convert(
+				proposal,
+				options.newId()
+			);
+
+			title = manager.accept(work);
 		}
 	} catch (error) {
 		return failed(
