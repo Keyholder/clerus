@@ -321,6 +321,50 @@ function testPublicEntryKeepsRuntimeGuards(tw) {
 	assert(f.runtime.recover().entries.length === 0);
 }
 
+function testRecoveryDoesNotRediscoverRejectedFlows(tw) {
+	var f = fixture(tw, function () {}, true);
+
+	["user", f.platform].forEach(function (custody, index) {
+		var title =
+			"$:/clerus/wal/" + f.platform +
+			"/runtime-future-flow-" + index;
+
+		var body = JSON.stringify({
+			version: 2,
+			kind: "flow",
+			platform: f.platform
+		});
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: title,
+			type: "application/json",
+			"clerus-custody": custody,
+			"clerus-wal-kind": "flow",
+			text: body
+		}));
+	});
+
+	var report = f.runtime.recover();
+
+	assert(report.entries.length === 2);
+	assert(report.pendingFlowAttempts === 0);
+
+	var seen = new Set();
+
+	report.entries.forEach(function (entry) {
+		assert(!seen.has(entry.title), "Journal was reported twice");
+		seen.add(entry.title);
+
+		assert(entry.status === "unsupported");
+		assert(entry.error.indexOf("Unsupported WAL version") !== -1);
+
+		var current = f.wiki.getTiddler(entry.title);
+
+		assert(current.fields["clerus-custody"] === "user");
+		assert(JSON.parse(current.fields.text).version === 2);
+	});
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime: incident survives outside the registry", testPersistentIncidentAndUntouchedRegistry],
@@ -329,7 +373,8 @@ exports.run = function (tw) {
 		["runtime: inspection exposes isolated data", testInspectionIsIsolated],
 		["public runtime: explicit frozen management surface", testPublicManagementSurface],
 		["public runtime: detached dispatch and isolated inspection", testPublicDispatchAndInspection],
-		["public runtime: internal entry guards remain effective", testPublicEntryKeepsRuntimeGuards]
+		["public runtime: internal entry guards remain effective", testPublicEntryKeepsRuntimeGuards],
+		["public runtime: recovery does not rediscover rejected flows", testRecoveryDoesNotRediscoverRejectedFlows]
 	];
 
 	var results = cases.map(function (item) {

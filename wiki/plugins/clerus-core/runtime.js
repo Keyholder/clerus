@@ -868,7 +868,17 @@ function recoverPass() {
 
 	try {
 		var ordinary = this.obligations.recover();
-		var flow = this.flows.recover();
+
+		var flowTitles = ordinary.entries.filter(function (entry) {
+			return entry.status === "delegated" &&
+				entry.kind === "flow";
+		}).map(function (entry) {
+			return entry.title;
+		});
+
+		var flow = this.flows.recover({
+			titles: flowTitles
+		});
 
 		flow.entries.forEach(function (entry) {
 			if (entry.status === "pending") {

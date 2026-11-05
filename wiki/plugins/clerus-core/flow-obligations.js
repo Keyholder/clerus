@@ -582,15 +582,51 @@ function create(options) {
 		};
 	}
 
-	function recover() {
-		var walTitles = options.store.snapshot().materialized.filter(
-			function (fields) {
-				return fields.title.indexOf(walPrefix) === 0 &&
-					fields["clerus-wal-kind"] === "flow";
+	function recover(selection) {
+		var walTitles;
+
+		if (selection === undefined) {
+			/*
+			Standalone infrastructure entry: discover candidates.
+			Addressed reading still validates each selected journal.
+			*/
+			walTitles = options.store.snapshot().materialized.filter(
+				function (fields) {
+					return fields.title.indexOf(walPrefix) === 0 &&
+						fields["clerus-wal-kind"] === "flow";
+				}
+			).map(function (fields) {
+				return fields.title;
+			}).sort();
+		} else {
+			if (
+				!schemas.isRecord(selection) ||
+				Object.keys(selection).some(function (key) {
+					return key !== "titles";
+				}) ||
+				!Array.isArray(selection.titles)
+			) {
+				throw new Error(
+					"Flow recovery selection requires a titles array"
+				);
 			}
-		).map(function (fields) {
-			return fields.title;
-		}).sort();
+
+			walTitles = selection.titles.slice();
+
+			if (
+				!walTitles.every(function (title) {
+					return typeof title === "string" &&
+						title.indexOf(walPrefix) === 0;
+				}) ||
+				new Set(walTitles).size !== walTitles.length
+			) {
+				throw new Error(
+					"Flow recovery titles must be unique local WAL addresses"
+				);
+			}
+
+			walTitles.sort();
+		}
 
 		var entries = [];
 
