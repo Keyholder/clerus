@@ -10,6 +10,11 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var effects = require("$:/plugins/clerus/core/deferred-effect.js");
 var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
 var stores = require("$:/plugins/clerus/core/store.js");
+var deferredSchema = require(
+	"$:/plugins/clerus/core/deferred-schema.js"
+);
+
+var validate = deferredSchema.validate;
 
 var proposals = require(
 	"$:/plugins/clerus/core/proposal-schema.js"
@@ -18,39 +23,6 @@ var proposals = require(
 var materializer = require(
 	"$:/plugins/clerus/core/materializer.js"
 );
-
-function validate(value, platform) {
-	schemas.assertPlatform(platform);
-
-	var record = schemas.copyJSON(value);
-
-	if (
-		!schemas.isRecord(record) ||
-		Object.keys(record).some(function (key) {
-			return [
-				"version", "kind", "platform", "effect"
-			].indexOf(key) === -1;
-		}) ||
-		record.version !== 1 ||
-		record.kind !== "deferred" ||
-		record.platform !== platform
-	) {
-		throw new Error("Invalid deferred obligation");
-	}
-
-	var effect = effects.validate(record.effect);
-
-	if (effect.platform !== platform) {
-		throw new Error("Deferred obligation belongs to another platform");
-	}
-
-	return {
-		version: 1,
-		kind: "deferred",
-		platform: platform,
-		effect: effect
-	};
-}
 
 function create(options) {
 	schemas.assertPlatform(options.platform);

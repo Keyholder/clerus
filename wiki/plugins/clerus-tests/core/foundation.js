@@ -29,6 +29,9 @@ var PassCoordinator = require(
 var acceptedPlans = require(
 	"$:/plugins/clerus/core/accepted-plan-schema.js"
 );
+var deferredSchema = require(
+	"$:/plugins/clerus/core/deferred-schema.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -1171,6 +1174,64 @@ function testAcceptedPlanProtocol() {
 	}, "Invalid accepted target authority");
 }
 
+function testDeferredProtocol() {
+	var record = {
+		version: 1,
+		kind: "deferred",
+		platform: "browser",
+		effect: {
+			version: 1,
+			kind: "deferred-event",
+			id: "deferred-schema-identity",
+			platform: "browser",
+			recipient: {
+				title: "$:/clerus/jobs/deferred-schema-owner",
+				executor: "test"
+			}
+		}
+	};
+
+	var before = JSON.stringify(record);
+	var result = deferredSchema.validate(record, "browser");
+
+	assert(result.effect.id === record.effect.id);
+
+	result.effect.recipient.executor = "local";
+	assert(JSON.stringify(record) === before);
+
+	var future = schemas.copyJSON(record);
+	future.version = 2;
+
+	throws(function () {
+		deferredSchema.validate(future, "browser");
+	}, "Invalid deferred obligation");
+
+	var extended = schemas.copyJSON(record);
+	extended.future = {};
+
+	throws(function () {
+		deferredSchema.validate(extended, "browser");
+	}, "Invalid deferred obligation");
+
+	var foreign = schemas.copyJSON(record);
+	foreign.effect.platform = "node";
+
+	throws(function () {
+		deferredSchema.validate(foreign, "browser");
+	}, "another platform");
+
+	var futureEffect = schemas.copyJSON(record);
+	futureEffect.effect.version = 2;
+
+	throws(function () {
+		deferredSchema.validate(futureEffect, "browser");
+	}, "Invalid persistent deferred effect");
+
+	throws(function () {
+		deferredSchema.validate(record, "node");
+	}, "Invalid deferred obligation");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -1198,7 +1259,8 @@ exports.run = function (tw) {
 		["establishment input: unique isolated mandate and durability", testEstablishmentInput],
 		["external pass: outer boundary owns collection", testExternalPassBoundaries],
 		["external pass: execution and collection failures stay distinct", testExternalPassFailures],
-		["accepted-plan protocol: version, isolation and accepted authority", testAcceptedPlanProtocol]
+		["accepted-plan protocol: version, isolation and accepted authority", testAcceptedPlanProtocol],
+		["deferred protocol: body version and platform binding", testDeferredProtocol]
 	];
 
 	var results = cases.map(function (item) {

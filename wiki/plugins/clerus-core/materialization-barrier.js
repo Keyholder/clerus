@@ -8,14 +8,14 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
-var materializer = require(
-	"$:/plugins/clerus/core/materializer.js"
+var acceptedPlans = require(
+	"$:/plugins/clerus/core/accepted-plan-schema.js"
 );
 var flowSchema = require(
 	"$:/plugins/clerus/core/flow-schema.js"
 );
-var deferredObligations = require(
-	"$:/plugins/clerus/core/deferred-obligations.js"
+var deferredSchema = require(
+	"$:/plugins/clerus/core/deferred-schema.js"
 );
 
 function walPlatform(title) {
@@ -94,7 +94,7 @@ function collect(options) {
 			}
 
 			if (kind === "deferred") {
-				var deferredRecord = deferredObligations.validate(
+				var deferredRecord = deferredSchema.validate(
 					record,
 					platform
 				);
@@ -117,7 +117,7 @@ function collect(options) {
 				throw new Error("Unsupported WAL kind");
 			}
 
-			var accepted = materializer.validate(record, platform);
+			var accepted = acceptedPlans.validate(record, platform);
 			var owner = accepted.proposal.owner.title;
 
 			if (!blocked.has(owner)) {

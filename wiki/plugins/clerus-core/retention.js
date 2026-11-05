@@ -14,8 +14,8 @@ var acceptedPlans = require(
 	"$:/plugins/clerus/core/accepted-plan-schema.js"
 );
 var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
-var deferred = require(
-	"$:/plugins/clerus/core/deferred-obligations.js"
+var deferredSchema = require(
+	"$:/plugins/clerus/core/deferred-schema.js"
 );
 
 var hasOwn = Function.call.bind(
@@ -231,7 +231,7 @@ function evaluate(options) {
 			}
 
 			if (kind === "deferred") {
-				var waiting = deferred.validate(record, platform);
+				var waiting = deferredSchema.validate(record, platform);
 
 				if (
 					fields.title !==
