@@ -14,6 +14,9 @@ var plannedScopes = require(
 	"$:/plugins/clerus/core/planned-scope.js"
 );
 var jobState = require("$:/plugins/clerus/core/job-state.js");
+var executionContract = require(
+	"$:/plugins/clerus/core/execution-contract.js"
+);
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -173,22 +176,12 @@ function run(options, establishing) {
 			establishing: establishing
 		});
 
-		var returned = handler(
-			event,
-			scope.operational,
-			scope.incoming
-		);
-
-		if (
-			returned !== null &&
-			returned !== undefined &&
-			typeof returned.then === "function"
-		) {
-			throw new Error("Executor reactions must be synchronous");
-		}
-
-		scope.assertResolved();
-		scope.assertOutgoingResolved();
+		executionContract.invoke({
+			handler: handler,
+			event: event,
+			scope: scope,
+			requireSentOutgoing: true
+		});
 
 		if (options.acknowledgeResumption === true) {
 			var current = plan.read(options.title);

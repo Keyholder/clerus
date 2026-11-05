@@ -15,6 +15,10 @@ var reactionServices = require(
 	"$:/plugins/clerus/core/reaction-services.js"
 );
 
+var executionContract = require(
+	"$:/plugins/clerus/core/execution-contract.js"
+);
+
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
 		value: value,
@@ -277,25 +281,12 @@ function run(options, establishing) {
 				: undefined
 		}));
 
-		var returned = handler(
-			event,
-			scope.operational,
-			scope.incoming
-		);
-
-		if (
-			returned !== null &&
-			returned !== undefined &&
-			typeof returned.then === "function"
-		) {
-			throw new Error("Executor reactions must be synchronous");
-		}
-
-		scope.assertResolved();
-
-		if (options.requireSentOutgoing === true) {
-			scope.assertOutgoingResolved();
-		}
+		executionContract.invoke({
+			handler: handler,
+			event: event,
+			scope: scope,
+			requireSentOutgoing: options.requireSentOutgoing
+		});
 
 		var snapshot = scope.snapshot();
 

@@ -14,6 +14,9 @@ var jobViews = require("$:/plugins/clerus/core/job-view.js");
 var reactionServices = require(
 	"$:/plugins/clerus/core/reaction-services.js"
 );
+var executionContract = require(
+	"$:/plugins/clerus/core/execution-contract.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -657,6 +660,117 @@ function testReactionServiceAssembly() {
 	}, "readJobs must be a function");
 }
 
+function testExecutionCompletionContract() {
+	var event = { type: "test" };
+	var operational = {};
+	var incoming = {};
+	var calls = [];
+
+	var scope = {
+		operational: operational,
+		incoming: incoming,
+
+		assertResolved: function () {
+			calls.push("incoming");
+		},
+
+		assertOutgoingResolved: function () {
+			calls.push("outgoing");
+		}
+	};
+
+	function handler(receivedEvent, receivedOperational, receivedIncoming) {
+		assert(this === undefined, "Executor received an adapter receiver");
+		assert(receivedEvent === event);
+		assert(receivedOperational === operational);
+		assert(receivedIncoming === incoming);
+
+		calls.push("handler");
+
+		// A non-thenable return value has no execution significance.
+		return { value: 1 };
+	}
+
+	executionContract.invoke({
+		handler: handler,
+		event: event,
+		scope: scope,
+		requireSentOutgoing: true
+	});
+
+	assert(calls.join(",") === "handler,incoming,outgoing");
+
+	calls = [];
+
+	executionContract.invoke({
+		handler: handler,
+		event: event,
+		scope: scope
+	});
+
+	assert(calls.join(",") === "handler,incoming");
+}
+
+function testExecutionCompletionFailures() {
+	var calls = [];
+	var thenCalled = false;
+
+	var scope = {
+		operational: {},
+		incoming: null,
+
+		assertResolved: function () {
+			calls.push("incoming");
+		},
+
+		assertOutgoingResolved: function () {
+			calls.push("outgoing");
+		}
+	};
+
+	throws(function () {
+		executionContract.invoke({
+			handler: function () {
+				return {
+					then: function () {
+						thenCalled = true;
+					}
+				};
+			},
+			event: { type: "test" },
+			scope: scope,
+			requireSentOutgoing: true
+		});
+	}, "must be synchronous");
+
+	assert(!thenCalled, "Execution contract invoked a thenable");
+	assert(calls.length === 0);
+
+	var failure = new Error("unresolved input");
+	var caught;
+
+	scope.assertResolved = function () {
+		calls.push("incoming");
+		throw failure;
+	};
+
+	try {
+		executionContract.invoke({
+			handler: function () {
+				calls.push("handler");
+			},
+			event: { type: "test" },
+			scope: scope,
+			requireSentOutgoing: true
+		});
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught === failure, "Completion failure was replaced");
+	assert(calls.join(",") === "handler,incoming");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -676,7 +790,9 @@ exports.run = function (tw) {
 		["job state: public status permits partial interpretation", testPartialStatusReading],
 		["job state: owner overlay isolates both inputs", testOwnerOverlayIsolation],
 		["job state: owner overlay enforces structural boundaries", testOwnerOverlayBoundaries],
-		["reaction services: shared lazy assembly", testReactionServiceAssembly]
+		["reaction services: shared lazy assembly", testReactionServiceAssembly],
+		["execution contract: ordered completion checks", testExecutionCompletionContract],
+		["execution contract: failure stops completion", testExecutionCompletionFailures]
 	];
 
 	var results = cases.map(function (item) {
