@@ -21,6 +21,9 @@ var jobTitles = require(
 var deferredObligations = require(
 	"$:/plugins/clerus/core/deferred-obligations.js"
 );
+var walEnvelope = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -86,7 +89,11 @@ function create(options) {
 		return {
 			fields: stored.fields,
 			record: flows.validate(
-				JSON.parse(stored.fields.text),
+				walEnvelope.requireRecord(
+					stored.fields,
+					options.platform,
+					"flow"
+				),
 				options.platform
 			)
 		};
@@ -164,7 +171,11 @@ function create(options) {
 				An unreadable flow prevents proving that an address is free.
 			*/
 			var record = flows.validate(
-				JSON.parse(fields.text),
+				walEnvelope.requireRecord(
+					fields,
+					options.platform,
+					"flow"
+				),
 				options.platform
 			);
 

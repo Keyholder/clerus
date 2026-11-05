@@ -24,6 +24,10 @@ var materializer = require(
 	"$:/plugins/clerus/core/materializer.js"
 );
 
+var walEnvelope = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
+);
+
 function create(options) {
 	schemas.assertPlatform(options.platform);
 
@@ -61,17 +65,30 @@ function create(options) {
 				throw new Error("Deferred identity is already occupied");
 			}
 
-			var body = JSON.parse(current.fields.text);
 			var kind = current.fields["clerus-wal-kind"];
 
 			if (kind === "deferred") {
-				var previous = validate(body, options.platform);
+				var previous = validate(
+					walEnvelope.requireRecord(
+						current.fields,
+						options.platform,
+						"deferred"
+					),
+					options.platform
+				);
 
 				if (JSON.stringify(previous.effect) !== marker) {
 					throw new Error("Deferred identity mismatch");
 				}
 			} else if (kind === "flow") {
-				flowSchema.validate(body, options.platform);
+				flowSchema.validate(
+					walEnvelope.requireRecord(
+						current.fields,
+						options.platform,
+						"flow"
+					),
+					options.platform
+				);
 			} else {
 				throw new Error("Unsupported deferred continuation");
 			}
@@ -114,7 +131,11 @@ function create(options) {
 		}
 
 		var body = validate(
-			JSON.parse(current.fields.text),
+			walEnvelope.requireRecord(
+				current.fields,
+				options.platform,
+				"deferred"
+			),
 			options.platform
 		);
 

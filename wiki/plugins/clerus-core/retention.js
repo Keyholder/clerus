@@ -20,22 +20,13 @@ var deferredSchema = require(
 var incidentSchema = require(
 	"$:/plugins/clerus/core/incident-schema.js"
 );
+var walEnvelope = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
 );
-
-function walPlatform(title) {
-	if (title.indexOf("$:/clerus/wal/browser/") === 0) {
-		return "browser";
-	}
-
-	if (title.indexOf("$:/clerus/wal/node/") === 0) {
-		return "node";
-	}
-
-	return null;
-}
 
 function evaluate(options) {
 	var jobs = schemas.copyJSON(options.jobs);
@@ -183,27 +174,21 @@ function evaluate(options) {
 	});
 
 	tiddlers.forEach(function (fields) {
-		var platform = walPlatform(fields.title);
+		var platform = walEnvelope.platformOf(fields.title);
 
 		if (platform === null) {
 			return;
 		}
 
 		try {
-			if (fields.type !== "application/json") {
-				throw new Error("WAL must be JSON");
+			var envelope = walEnvelope.read(fields);
+
+			if (envelope.kind !== "ready") {
+				throw new Error(envelope.reason);
 			}
 
-			var record = JSON.parse(fields.text);
-			var kind = fields["clerus-wal-kind"];
-
-			if (
-				!schemas.isRecord(record) ||
-				record.version !== 1 ||
-				record.platform !== platform
-			) {
-				throw new Error("Invalid WAL envelope");
-			}
+			var record = envelope.record;
+			var kind = record.kind;
 
 			if (kind === "incident") {
 				incidentSchema.validate(record, platform);

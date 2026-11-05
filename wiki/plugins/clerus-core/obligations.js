@@ -23,6 +23,9 @@ var acceptedPlans = require(
 var incidentSchema = require(
 	"$:/plugins/clerus/core/incident-schema.js"
 );
+var walEnvelope = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -183,7 +186,11 @@ function create(options) {
 		}
 
 		var record = acceptedPlans.validate(
-			JSON.parse(journal.fields.text),
+			walEnvelope.requireRecord(
+				journal.fields,
+				options.platform,
+				"plan"
+			),
 			options.platform
 		);
 

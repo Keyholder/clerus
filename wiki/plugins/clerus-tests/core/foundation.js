@@ -35,6 +35,9 @@ var deferredSchema = require(
 var incidentSchema = require(
 	"$:/plugins/clerus/core/incident-schema.js"
 );
+var walEnvelope = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -1276,6 +1279,130 @@ function testIncidentProtocol() {
 	}, "Invalid incident envelope");
 }
 
+function testWalEnvelopeReading() {
+	var body = {
+		version: 1,
+		kind: "incident",
+		platform: "browser",
+		incident: {}
+	};
+
+	var fields = {
+		title: "$:/clerus/wal/browser/envelope-test",
+		type: "application/json",
+		"clerus-custody": "user",
+		"clerus-wal-kind": "incident",
+		text: JSON.stringify(body)
+	};
+
+	function read(value) {
+		fields.text = JSON.stringify(value);
+		return walEnvelope.read(fields);
+	}
+
+	assert(walEnvelope.platformOf(fields.title) === "browser");
+	assert(walEnvelope.platformOf("Ordinary") === null);
+
+	var ready = read(body);
+
+	assert(ready.kind === "ready");
+	assert(ready.platform === "browser");
+
+	ready.record.incident.local = true;
+	assert(!read(body).record.incident.local);
+
+	var future = schemas.copyJSON(body);
+	future.version = 2;
+
+	assert(read(future).kind === "unsupported");
+
+	var malformed = schemas.copyJSON(body);
+	malformed.version = "1";
+
+	assert(read(malformed).kind === "unreadable");
+
+	var foreign = schemas.copyJSON(body);
+	foreign.platform = "node";
+
+	assert(read(foreign).kind === "unreadable");
+
+	var unknown = schemas.copyJSON(body);
+	unknown.kind = "future";
+
+	fields["clerus-wal-kind"] = "future";
+	assert(read(unknown).kind === "unsupported");
+
+	fields["clerus-wal-kind"] = "incident";
+	assert(read(unknown).kind === "unreadable");
+
+	fields.text = "{broken";
+	assert(walEnvelope.read(fields).kind === "unreadable");
+
+	fields.text = JSON.stringify(body);
+	fields.type = "text/plain";
+	assert(walEnvelope.read(fields).kind === "unreadable");
+
+	// Envelope support does not imply body validity.
+	fields.type = "application/json";
+	assert(read({
+		version: 1,
+		kind: "incident",
+		platform: "browser",
+		incident: null
+	}).kind === "ready");
+}
+
+function testRequiredWalEnvelope() {
+	var fields = {
+		title: "$:/clerus/wal/browser/required-envelope",
+		type: "application/json",
+		"clerus-custody": "user",
+		"clerus-wal-kind": "flow",
+		text: JSON.stringify({
+			version: 1,
+			kind: "flow",
+			platform: "browser"
+		})
+	};
+
+	var before = JSON.stringify(fields);
+
+	// Supported outer envelope; body validation belongs to flow-schema.
+	var record = walEnvelope.requireRecord(
+		fields,
+		"browser",
+		"flow"
+	);
+
+	assert(record.kind === "flow");
+	assert(JSON.stringify(fields) === before);
+	assert(fields["clerus-custody"] === "user");
+
+	throws(function () {
+		walEnvelope.requireRecord(fields, "node", "flow");
+	}, "another platform");
+
+	throws(function () {
+		walEnvelope.requireRecord(fields, "browser", "plan");
+	}, "Unexpected WAL kind");
+
+	var future = JSON.parse(fields.text);
+	future.version = 2;
+	fields.text = JSON.stringify(future);
+
+	throws(function () {
+		walEnvelope.requireRecord(fields, "browser", "flow");
+	}, "Unsupported WAL version");
+
+	future.version = 1;
+	fields.text = JSON.stringify(future);
+	fields["clerus-wal-kind"] = "plan";
+
+	throws(function () {
+		walEnvelope.requireRecord(fields, "browser", "flow");
+	}, "Invalid WAL envelope");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -1305,7 +1432,9 @@ exports.run = function (tw) {
 		["external pass: execution and collection failures stay distinct", testExternalPassFailures],
 		["accepted-plan protocol: version, isolation and accepted authority", testAcceptedPlanProtocol],
 		["deferred protocol: body version and platform binding", testDeferredProtocol],
-		["incident protocol: strict envelope and opaque diagnostics", testIncidentProtocol]
+		["incident protocol: strict envelope and opaque diagnostics", testIncidentProtocol],
+		["WAL envelope: version, kind and platform classification", testWalEnvelopeReading],
+		["WAL envelope: required kind does not authorize custody", testRequiredWalEnvelope]
 	];
 
 	var results = cases.map(function (item) {
