@@ -70,6 +70,7 @@ var SUITES = Object.freeze([
     "obligation-acceptance",
     "materialization",
     "materialization-barrier",
+	"material-work",
     "persistent-reaction",
     "persistent-flow-reaction",
     "flow-scheduler",
