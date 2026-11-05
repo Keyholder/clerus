@@ -17,6 +17,9 @@ var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
 var deferredSchema = require(
 	"$:/plugins/clerus/core/deferred-schema.js"
 );
+var incidentSchema = require(
+	"$:/plugins/clerus/core/incident-schema.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -203,18 +206,9 @@ function evaluate(options) {
 			}
 
 			if (kind === "incident") {
-				if (
-					record.kind !== "incident" ||
-					!schemas.isRecord(record.incident) ||
-					Object.keys(record).some(function (key) {
-						return [
-							"version", "kind", "platform", "incident"
-						].indexOf(key) === -1;
-					})
-				) {
-					throw new Error("Invalid incident envelope");
-				}
+				incidentSchema.validate(record, platform);
 
+				// Valid diagnostic history is not unfinished materialization.
 				return;
 			}
 

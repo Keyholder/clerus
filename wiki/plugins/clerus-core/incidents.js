@@ -8,6 +8,9 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var transitions = require("$:/plugins/clerus/core/store.js");
+var incidentSchema = require(
+	"$:/plugins/clerus/core/incident-schema.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -61,12 +64,12 @@ function create(options) {
 			throw new Error("Incident title is already occupied");
 		}
 
-		var body = {
+		var body = incidentSchema.validate({
 			version: 1,
 			kind: "incident",
 			platform: options.platform,
 			incident: incident
-		};
+		}, options.platform);
 
 		options.store.apply(transitions.transition(title, null, {
 			title: title,

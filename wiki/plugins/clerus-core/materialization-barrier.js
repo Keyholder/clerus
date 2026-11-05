@@ -17,6 +17,9 @@ var flowSchema = require(
 var deferredSchema = require(
 	"$:/plugins/clerus/core/deferred-schema.js"
 );
+var incidentSchema = require(
+	"$:/plugins/clerus/core/incident-schema.js"
+);
 
 function walPlatform(title) {
 	if (title.indexOf("$:/clerus/wal/browser/") === 0) {
@@ -66,14 +69,9 @@ function collect(options) {
 			}
 
 			if (kind === "incident") {
-				if (
-					record.kind !== "incident" ||
-					!schemas.isRecord(record.incident)
-				) {
-					throw new Error("Invalid incident envelope");
-				}
+				incidentSchema.validate(record, platform);
 
-				// Diagnostic history is not unfinished materialization.
+				// Valid diagnostic history is not unfinished materialization.
 				return;
 			}
 

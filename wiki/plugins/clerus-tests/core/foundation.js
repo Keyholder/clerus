@@ -32,6 +32,9 @@ var acceptedPlans = require(
 var deferredSchema = require(
 	"$:/plugins/clerus/core/deferred-schema.js"
 );
+var incidentSchema = require(
+	"$:/plugins/clerus/core/incident-schema.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -1232,6 +1235,47 @@ function testDeferredProtocol() {
 	}, "Invalid deferred obligation");
 }
 
+function testIncidentProtocol() {
+	var record = {
+		version: 1,
+		kind: "incident",
+		platform: "browser",
+		incident: {
+			error: { message: "Historical failure" }
+		}
+	};
+
+	var result = incidentSchema.validate(record, "browser");
+
+	result.incident.error.message = "local";
+	assert(record.incident.error.message === "Historical failure");
+
+	var future = schemas.copyJSON(record);
+	future.version = 2;
+
+	throws(function () {
+		incidentSchema.validate(future, "browser");
+	}, "Invalid incident envelope");
+
+	var extended = schemas.copyJSON(record);
+	extended.future = {};
+
+	throws(function () {
+		incidentSchema.validate(extended, "browser");
+	}, "Invalid incident envelope");
+
+	throws(function () {
+		incidentSchema.validate(record, "node");
+	}, "Invalid incident envelope");
+
+	var malformed = schemas.copyJSON(record);
+	malformed.incident = [];
+
+	throws(function () {
+		incidentSchema.validate(malformed, "browser");
+	}, "Invalid incident envelope");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -1260,7 +1304,8 @@ exports.run = function (tw) {
 		["external pass: outer boundary owns collection", testExternalPassBoundaries],
 		["external pass: execution and collection failures stay distinct", testExternalPassFailures],
 		["accepted-plan protocol: version, isolation and accepted authority", testAcceptedPlanProtocol],
-		["deferred protocol: body version and platform binding", testDeferredProtocol]
+		["deferred protocol: body version and platform binding", testDeferredProtocol],
+		["incident protocol: strict envelope and opaque diagnostics", testIncidentProtocol]
 	];
 
 	var results = cases.map(function (item) {

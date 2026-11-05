@@ -243,6 +243,32 @@ function testInspectionIsIsolated(tw) {
 	assert(barrier.forJob(f.owner).join(",") === journal);
 }
 
+function testExtendedIncidentIsUnknownKnowledge(tw) {
+	var f = fixture(tw);
+	var title =
+		"$:/clerus/wal/" + f.platform + "/extended-incident";
+
+	f.wiki.addTiddler(new tw.Tiddler({
+		title: title,
+		type: "application/json",
+		"clerus-custody": "user",
+		"clerus-wal-kind": "incident",
+
+		text: JSON.stringify({
+			version: 1,
+			kind: "incident",
+			platform: f.platform,
+			incident: {},
+			future: { obligation: true }
+		})
+	}));
+
+	var barrier = f.collect();
+
+	assert(!barrier.inspect().complete);
+	assert(barrier.forJob(f.owner).join(",") === title);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["barrier: accepted plan blocks its owner", testAcceptedPlanBlocksOwner],
@@ -251,7 +277,8 @@ exports.run = function (tw) {
 		["barrier: unknown WAL prevents persistent authorization", testUnknownWalBlocksPersistentExecution],
 		["barrier: historical incident does not block", testIncidentDoesNotBlock],
 		["barrier: second acceptance is rejected", testSecondAcceptanceIsRejected],
-		["barrier: inspection does not expose internal references", testInspectionIsIsolated]
+		["barrier: inspection does not expose internal references", testInspectionIsIsolated],
+		["barrier: extended incident envelope is unknown knowledge", testExtendedIncidentIsUnknownKnowledge]
 	];
 
 	var results = cases.map(function (item) {

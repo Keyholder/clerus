@@ -229,13 +229,48 @@ function testIncidentsAreNotExecuted(tw) {
 	assert(f.wiki.getTiddler(title).fields.text === body);
 }
 
+function testIncidentMarkerDoesNotProveHistory(tw) {
+	var f = fixture(tw);
+	var title =
+		"$:/clerus/wal/" + f.platform + "/mislabeled-history";
+
+	var body = JSON.stringify({
+		version: 1,
+		kind: "flow",
+		platform: f.platform,
+		active: null,
+		pending: [],
+		seen: {},
+		errors: []
+	});
+
+	f.wiki.addTiddler(new tw.Tiddler({
+		title: title,
+		type: "application/json",
+		"clerus-custody": "user",
+		"clerus-wal-kind": "incident",
+		text: body
+	}));
+
+	var report = f.manager.recover();
+
+	assert(report.entries.length === 1);
+	assert(report.entries[0].status === "failed");
+
+	var current = f.wiki.getTiddler(title);
+
+	assert(current.fields.text === body);
+	assert(current.fields["clerus-custody"] === "user");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["recovery: one failed obligation does not block others", testIndependentRecovery],
 		["recovery: user journal waits for authorization", testUserJournalWaitsForAuthorization],
 		["recovery: user-prepared address is supported", testCustomUserAddress],
 		["recovery: unknown kind preserves its body", testUnknownKindPreservesBody],
-		["recovery: incidents remain historical", testIncidentsAreNotExecuted]
+		["recovery: incidents remain historical", testIncidentsAreNotExecuted],
+		["recovery: incident marker alone does not prove history", testIncidentMarkerDoesNotProveHistory]
 	];
 
 	var results = cases.map(function (item) {

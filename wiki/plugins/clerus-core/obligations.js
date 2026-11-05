@@ -20,6 +20,9 @@ var barriers = require(
 var acceptedPlans = require(
 	"$:/plugins/clerus/core/accepted-plan-schema.js"
 );
+var incidentSchema = require(
+	"$:/plugins/clerus/core/incident-schema.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -308,10 +311,22 @@ function create(options) {
 				var kind = fields["clerus-wal-kind"];
 
 				if (kind === "incident") {
-					entries.push({
-						title: title,
-						status: "historical"
-					});
+					try {
+						incidentSchema.read(fields, options.platform);
+
+						entries.push({
+							title: title,
+							status: "historical"
+						});
+					} catch (error) {
+						entries.push({
+							title: title,
+							status: "failed",
+							error: String(
+								error && error.message || error
+							)
+						});
+					}
 
 					return;
 				}
