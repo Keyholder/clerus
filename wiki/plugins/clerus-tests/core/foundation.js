@@ -38,6 +38,9 @@ var incidentSchema = require(
 var walEnvelope = require(
 	"$:/plugins/clerus/core/wal-envelope.js"
 );
+var messageEffects = require(
+	"$:/plugins/clerus/core/message-effect.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -1403,6 +1406,72 @@ function testRequiredWalEnvelope() {
 	}, "Invalid WAL envelope");
 }
 
+function testEstablishingMessageContract() {
+	var message = {
+		version: 1,
+		kind: "official-message",
+		id: "foundation-establishing-message",
+		platform: "browser",
+		type: "order",
+		establishing: true,
+
+		source: {
+			title: "$:/clerus/jobs/message-founder",
+			executor: "founder"
+		},
+
+		recipient: {
+			title: "$:/clerus/jobs/message-new-owner",
+			executor: "worker"
+		},
+
+		registry: {
+			mandate: {
+				form: "contract",
+				executor: "worker"
+			}
+		}
+	};
+
+	assert(messageEffects.validate(message).establishing);
+
+	message.registry.mandate.temp = true;
+
+	throws(function () {
+		messageEffects.validate(message);
+	}, "does not permit the recipient durability");
+
+	// Executor mismatch must still precede durability rejection.
+	message.registry.mandate.executor = "other";
+
+	throws(function () {
+		messageEffects.validate(message);
+	}, "executor does not match the contract");
+
+	message.registry.second = {
+		form: "contract",
+		executor: "worker"
+	};
+
+	throws(function () {
+		messageEffects.validate(message);
+	}, "exactly one contract");
+
+	delete message.registry.second;
+	message.registry.mandate.executor = "worker";
+
+	message.recipient.title =
+		"$:/temp/clerus/jobs/browser/message-new-owner";
+
+	assert(messageEffects.validate(message).establishing);
+
+	message.registry.mandate.temp = false;
+
+	throws(function () {
+		messageEffects.validate(message);
+	}, "does not permit the recipient durability");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -1434,7 +1503,8 @@ exports.run = function (tw) {
 		["deferred protocol: body version and platform binding", testDeferredProtocol],
 		["incident protocol: strict envelope and opaque diagnostics", testIncidentProtocol],
 		["WAL envelope: version, kind and platform classification", testWalEnvelopeReading],
-		["WAL envelope: required kind does not authorize custody", testRequiredWalEnvelope]
+		["WAL envelope: required kind does not authorize custody", testRequiredWalEnvelope],
+		["message protocol: founding contract checks preserve precedence", testEstablishingMessageContract],
 	];
 
 	var results = cases.map(function (item) {

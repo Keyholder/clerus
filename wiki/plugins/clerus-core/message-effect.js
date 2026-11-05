@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var roles = require("$:/plugins/clerus/core/roles.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
 
 function fieldsOnly(record, allowed, description) {
 	if (
@@ -103,19 +106,12 @@ function validate(value) {
 			throw new Error("Establishment requires an order");
 		}
 
-		var contracts = Object.keys(result.registry).filter(
-			function (key) {
-				return schemas.formOf(result.registry[key]) === "contract";
-			}
-		);
-
-		if (contracts.length !== 1) {
-			throw new Error(
+		var founding = establishmentInput.read(result.registry, {
+			countError:
 				"Establishing message requires exactly one contract"
-			);
-		}
+		});
 
-		var contract = result.registry[contracts[0]];
+		var contract = founding.contract;
 		var recipientSpace = jobTitles.classify(recipient.title);
 
 		if (contract.executor !== recipient.executor) {
@@ -124,14 +120,11 @@ function validate(value) {
 			);
 		}
 
-		if (
-			(contract.temp === true && recipientSpace.persistent) ||
-			(contract.temp === false && !recipientSpace.persistent)
-		) {
-			throw new Error(
-				"Contract does not permit the recipient durability"
-			);
-		}
+		establishmentInput.assertDurability(
+			contract,
+			!recipientSpace.persistent,
+			"Contract does not permit the recipient durability"
+		);
 
 		result.establishing = true;
 	}

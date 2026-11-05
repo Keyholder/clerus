@@ -8,6 +8,42 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 
+function assertDurability(value, temporary, diagnostic) {
+	if (typeof temporary !== "boolean") {
+		throw new Error("Establishment durability must be boolean");
+	}
+
+	if (
+		diagnostic !== undefined &&
+		(
+			typeof diagnostic !== "string" ||
+			diagnostic.length === 0
+		)
+	) {
+		throw new Error("Contract durability diagnostic must be non-empty");
+	}
+
+	var contract = schemas.document(value);
+
+	if (schemas.formOf(contract) !== "contract") {
+		throw new Error("Establishment requires a contract");
+	}
+
+	if (temporary && contract.temp === false) {
+		throw new Error(
+			diagnostic ||
+			"Contract forbids ephemeral establishment"
+		);
+	}
+
+	if (!temporary && contract.temp === true) {
+		throw new Error(
+			diagnostic ||
+			"Contract forbids persistent establishment"
+		);
+	}
+}
+
 function read(value, options) {
 	options = options || {};
 
@@ -54,23 +90,11 @@ function read(value, options) {
 	var key = keys[0];
 	var contract = registry[key];
 
-	if (
-		options.temporary === true &&
-		contract.temp === false
-	) {
-		throw new Error(
-			options.durabilityError ||
-			"Contract forbids ephemeral establishment"
-		);
-	}
-
-	if (
-		options.temporary === false &&
-		contract.temp === true
-	) {
-		throw new Error(
-			options.durabilityError ||
-			"Contract forbids persistent establishment"
+	if (options.temporary !== undefined) {
+		assertDurability(
+			contract,
+			options.temporary,
+			options.durabilityError
 		);
 	}
 
@@ -81,3 +105,4 @@ function read(value, options) {
 }
 
 exports.read = read;
+exports.assertDurability = assertDurability;
