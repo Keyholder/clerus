@@ -7,6 +7,7 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var publicApi = require("$:/plugins/clerus/core/api.js");
 
 function assert(condition, message) {
 	if (!condition) {
@@ -14,7 +15,7 @@ function assert(condition, message) {
 	}
 }
 
-function fixture(tw, handler) {
+function fixture(tw, handler, publicOnly) {
 	var wiki = new tw.Wiki();
 	var platform = tw.browser ? "browser" : "node";
 	var title =
@@ -22,7 +23,13 @@ function fixture(tw, handler) {
 
 	var sequence = 0;
 
-	var runtime = new Runtime({
+	var createRuntime = publicOnly
+		? publicApi.create
+		: function (options) {
+			return new Runtime(options);
+		};
+
+	var runtime = createRuntime({
 		wiki: wiki,
 		Tiddler: tw.Tiddler,
 		platform: platform,
@@ -203,12 +210,126 @@ function testInspectionIsIsolated(tw) {
 	);
 }
 
+function testPublicManagementSurface(tw) {
+	var f = fixture(tw, function () {}, true);
+	var api = f.runtime;
+
+	var expected = [
+		"dispatch",
+		"observe",
+		"resetObservation",
+		"runDeferred",
+		"drainFlows",
+		"recover",
+		"resume",
+		"collect",
+		"inspect"
+	].sort();
+
+	assert(Object.isFrozen(api));
+	assert(Object.getPrototypeOf(api) === null);
+	assert(
+		Object.getOwnPropertyNames(api).sort().join(",") ===
+			expected.join(",")
+	);
+	assert(Object.getOwnPropertySymbols(api).length === 0);
+
+	expected.forEach(function (name) {
+		assert(typeof api[name] === "function");
+	});
+
+	[
+		"store",
+		"wiki",
+		"scheduler",
+		"flowScheduler",
+		"observer",
+		"lifecycle",
+		"readJobs",
+		"dispatchDeferred",
+		"executePersistentIngress",
+		"drainOfficialWork",
+		"passDepth"
+	].forEach(function (name) {
+		assert(api[name] === undefined, "Exposed internal member: " + name);
+	});
+}
+
+function testPublicDispatchAndInspection(tw) {
+	var f = fixture(tw, function (event, operational) {
+		assert(event.type === "public-test");
+
+		operational.get("charter").setStatus({
+			phase: "completed"
+		});
+	}, true);
+
+	f.writeJob();
+
+	// Methods do not depend on the caller's receiver.
+	var dispatch = f.runtime.dispatch;
+	var inspect = f.runtime.inspect;
+
+	var result = dispatch(f.title, { type: "public-test" });
+
+	assert(result.errors.length === 0);
+
+	var view = inspect();
+
+	assert(
+		view.jobs[0].registry.charter.status.phase === "completed"
+	);
+
+	view.jobs[0].registry.charter.status.phase = "local";
+
+	assert(
+		inspect().jobs[0].registry.charter.status.phase === "completed"
+	);
+}
+
+function testPublicEntryKeepsRuntimeGuards(tw) {
+	var f;
+	var rejected = 0;
+
+	f = fixture(tw, function () {
+		[
+			function () {
+				f.runtime.dispatch(f.title, { type: "nested" });
+			},
+			function () {
+				f.runtime.observe();
+			},
+			function () {
+				f.runtime.recover();
+			}
+		].forEach(function (enter) {
+			try {
+				enter();
+			} catch (error) {
+				rejected++;
+			}
+		});
+	}, true);
+
+	f.writeJob();
+
+	var result = f.runtime.dispatch(f.title, { type: "test" });
+
+	assert(result.errors.length === 0);
+	assert(rejected === 3);
+
+	assert(f.runtime.recover().entries.length === 0);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime: incident survives outside the registry", testPersistentIncidentAndUntouchedRegistry],
 		["runtime: observation invokes real reactions", testObservationUsesRealReactions],
 		["runtime: unreadable job remains in the perspective", testUnreadableJobRemainsVisible],
-		["runtime: inspection exposes isolated data", testInspectionIsIsolated]
+		["runtime: inspection exposes isolated data", testInspectionIsIsolated],
+		["public runtime: explicit frozen management surface", testPublicManagementSurface],
+		["public runtime: detached dispatch and isolated inspection", testPublicDispatchAndInspection],
+		["public runtime: internal entry guards remain effective", testPublicEntryKeepsRuntimeGuards]
 	];
 
 	var results = cases.map(function (item) {

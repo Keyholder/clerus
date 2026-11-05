@@ -964,4 +964,10 @@ function wrapExternalPass(name, allowCollection) {
 
 wrapExternalPass("recover", false);
 
+/*
+Internal assembly interface.
+
+Public management consumers should use api.js.
+Direct component access is retained for infrastructure tests.
+*/
 exports.Runtime = Runtime;
