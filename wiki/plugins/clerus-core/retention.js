@@ -23,6 +23,12 @@ var incidentSchema = require(
 var walEnvelope = require(
 	"$:/plugins/clerus/core/wal-envelope.js"
 );
+var continuations = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
+var workPerspective = require(
+	"$:/plugins/clerus/core/work-perspective.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -189,6 +195,38 @@ function evaluate(options) {
 
 			var record = envelope.record;
 			var kind = record.kind;
+
+			if (kind === "continuation") {
+				var continuation = continuations.validate(
+					record,
+					platform
+				);
+
+				if (continuation.work !== null) {
+					var view = workPerspective.evaluate(
+						continuation.work
+					);
+
+					view.blocks.forEach(function (title) {
+						add(title, {
+							kind: "accepted-work",
+							wal: fields.title,
+							work: view.id
+						});
+					});
+
+					view.operational.forEach(function (entry) {
+						addRegistry(entry.registry, {
+							kind: "planned-operational-reference",
+							wal: fields.title,
+							work: view.id,
+							owner: entry.title
+						});
+					});
+				}
+
+				return;
+			}
 
 			if (kind === "incident") {
 				incidentSchema.validate(record, platform);

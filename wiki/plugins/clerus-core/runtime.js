@@ -45,6 +45,9 @@ var jobState = require("$:/plugins/clerus/core/job-state.js");
 var PassCoordinator = require(
 	"$:/plugins/clerus/core/external-pass.js"
 ).Coordinator;
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -131,6 +134,11 @@ function Runtime(options) {
 		store: this.store,
 		platform: this.platform,
 		newId: options.newId
+	});
+
+	this.continuations = continuations.create({
+		store: this.store,
+		platform: this.platform
 	});
 
 	this.readJobs = this.readJobs.bind(this);
@@ -886,13 +894,34 @@ function recoverPass() {
 			}
 		}, this);
 
+		var continuationTitles = ordinary.entries.filter(
+			function (entry) {
+				return (
+					entry.status === "delegated" &&
+					entry.kind === "continuation"
+				);
+			}
+		).map(function (entry) {
+			return entry.title;
+		});
+
+		var continuation = this.continuations.recover({
+			titles: continuationTitles
+		});
+
 		return {
 			entries: ordinary.entries.filter(function (entry) {
 				return !(
 					entry.status === "delegated" &&
-					entry.kind === "flow"
+					(
+						entry.kind === "flow" ||
+						entry.kind === "continuation"
+					)
 				);
-			}).concat(flow.entries),
+			}).concat(
+				flow.entries,
+				continuation.entries
+			),
 
 			pendingFlowAttempts: this.flowScheduler.queue.size
 		};

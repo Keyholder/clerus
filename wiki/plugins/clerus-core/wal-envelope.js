@@ -8,7 +8,22 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 
-var KINDS = ["plan", "flow", "deferred", "incident"];
+var KINDS = [
+	"plan", "flow", "deferred", "incident", "continuation"
+];
+
+function supports(version, kind) {
+	if (version === 1) {
+		return (
+			kind === "plan" ||
+			kind === "flow" ||
+			kind === "deferred" ||
+			kind === "incident"
+		);
+	}
+
+	return version === 2 && kind === "continuation";
+}
 
 function platformOf(title) {
 	if (typeof title !== "string") {
@@ -95,7 +110,7 @@ function read(fields) {
 		);
 	}
 
-	if (record.version !== 1) {
+	if (record.version !== 1 && record.version !== 2) {
 		return unavailable(
 			"unsupported",
 			platform,
@@ -103,11 +118,12 @@ function read(fields) {
 		);
 	}
 
-	if (KINDS.indexOf(record.kind) === -1) {
+	if (!supports(record.version, record.kind)) {
 		return unavailable(
 			"unsupported",
 			platform,
-			"Unsupported WAL kind: " + record.kind
+			"Unsupported WAL version/kind combination: " +
+				record.version + "/" + record.kind
 		);
 	}
 

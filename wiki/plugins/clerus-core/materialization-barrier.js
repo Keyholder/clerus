@@ -23,6 +23,12 @@ var incidentSchema = require(
 var walEnvelope = require(
 	"$:/plugins/clerus/core/wal-envelope.js"
 );
+var continuations = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
+var workPerspective = require(
+	"$:/plugins/clerus/core/work-perspective.js"
+);
 
 function collect(options) {
 	if (
@@ -52,6 +58,29 @@ function collect(options) {
 
 			var record = envelope.record;
 			var kind = record.kind;
+
+			if (kind === "continuation") {
+				var continuation = continuations.validate(
+					record,
+					platform
+				);
+
+				if (continuation.work !== null) {
+					var view = workPerspective.evaluate(
+						continuation.work
+					);
+
+					view.blocks.forEach(function (title) {
+						if (!blocked.has(title)) {
+							blocked.set(title, []);
+						}
+
+						blocked.get(title).push(fields.title);
+					});
+				}
+
+				return;
+			}
 
 			if (kind === "incident") {
 				incidentSchema.validate(record, platform);

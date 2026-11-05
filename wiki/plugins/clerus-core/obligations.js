@@ -338,7 +338,11 @@ function create(options) {
 					return;
 				}
 
-				if (kind === "flow" || kind === "deferred") {
+				if (
+					kind === "flow" ||
+					kind === "deferred" ||
+					kind === "continuation"
+				) {
 					var envelope;
 
 					try {
