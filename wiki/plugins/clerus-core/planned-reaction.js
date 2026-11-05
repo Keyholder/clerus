@@ -20,6 +20,9 @@ var executionContract = require(
 var reactionEvents = require(
 	"$:/plugins/clerus/core/reaction-event.js"
 );
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
 
 function run(options, establishing) {
 	schemas.assertPlatform(options.platform);
@@ -78,25 +81,13 @@ function run(options, establishing) {
 				);
 			}
 
-			var contracts = Object.keys(incoming).filter(
-				function (key) {
-					return schemas.formOf(incoming[key]) === "contract";
-				}
-			);
-
-			if (contracts.length !== 1) {
-				throw new Error(
+			var founding = establishmentInput.read(incoming, {
+				temporary: false,
+				countError:
 					"Planned establishment requires exactly one contract"
-				);
-			}
+			});
 
-			var contract = incoming[contracts[0]];
-
-			if (contract.temp === true) {
-				throw new Error(
-					"Contract forbids persistent establishment"
-				);
-			}
+			var contract = founding.contract;
 
 			if (typeof options.resolveExecutor !== "function") {
 				throw new Error(

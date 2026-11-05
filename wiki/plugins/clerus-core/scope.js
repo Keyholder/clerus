@@ -18,6 +18,9 @@ var missionIssuance = require(
 var jobTitles = require(
 	"$:/plugins/clerus/core/job-titles.js"
 );
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -227,17 +230,7 @@ function open(options) {
 			throw new Error("Establishment requires an incoming registry");
 		}
 
-		var contracts = Object.keys(incoming).filter(function (key) {
-			return schemas.formOf(incoming[key]) === "contract";
-		});
-
-		if (contracts.length !== 1) {
-			throw new Error(
-				"Establishment requires exactly one incoming contract"
-			);
-		}
-
-		establishingKey = contracts[0];
+		establishingKey = establishmentInput.read(incoming).key;
 	}
 
 	var establishingNode = unborn

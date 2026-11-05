@@ -23,6 +23,10 @@ var reactionEvents = require(
 	"$:/plugins/clerus/core/reaction-event.js"
 );
 
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
+
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
 		value: value,
@@ -94,21 +98,11 @@ function run(options, establishing) {
 			throw new Error("Establishment requires incoming documents");
 		}
 
-		var contracts = Object.keys(incoming).filter(function (key) {
-			return schemas.formOf(incoming[key]) === "contract";
+		var founding = establishmentInput.read(incoming, {
+			temporary: true
 		});
 
-		if (contracts.length !== 1) {
-			throw new Error(
-				"Establishment requires exactly one incoming contract"
-			);
-		}
-
-		var contract = incoming[contracts[0]];
-
-		if (contract.temp === false) {
-			throw new Error("Contract forbids ephemeral establishment");
-		}
+		var contract = founding.contract;
 
 		if (typeof options.resolveExecutor !== "function") {
 			throw new Error("Establishment requires an executor resolver");

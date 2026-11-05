@@ -14,6 +14,9 @@ var MaterializationError = require(
 	"$:/plugins/clerus/core/operation.js"
 ).MaterializationError;
 var jobState = require("$:/plugins/clerus/core/job-state.js");
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
 
 function describe(error) {
 	return {
@@ -187,24 +190,17 @@ Scheduler.prototype.prepareMessage = function (value) {
 			throw new Error("Recipient already has a pending establishment");
 		}
 
-		var contracts = Object.keys(message.registry).filter(
-			function (key) {
-				return schemas.formOf(message.registry[key]) === "contract";
-			}
-		);
+		var founding = establishmentInput.read(message.registry, {
+			temporary: true,
+			countError:
+				"Establishing order requires exactly one contract",
+			durabilityError:
+				"Invalid establishment executor or durability"
+		});
 
-		if (contracts.length !== 1) {
-			throw new Error(
-				"Establishing order requires exactly one contract"
-			);
-		}
+		var contract = founding.contract;
 
-		var contract = message.registry[contracts[0]];
-
-		if (
-			contract.temp === false ||
-			message.executor !== contract.executor
-		) {
+		if (message.executor !== contract.executor) {
 			throw new Error("Invalid establishment executor or durability");
 		}
 

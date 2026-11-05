@@ -20,6 +20,9 @@ var executionContract = require(
 var reactionEvents = require(
 	"$:/plugins/clerus/core/reaction-event.js"
 );
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -887,6 +890,85 @@ function testEstablishingReactionEvent() {
 	assert(!accessed, "Event preparation invoked an accessor");
 }
 
+function testEstablishmentInput() {
+	var source = {
+		note: { form: "memo", data: { value: 1 } },
+		mandate: {
+			form: "contract",
+			executor: "test",
+			book: { instruction: "initial" }
+		}
+	};
+
+	var before = JSON.stringify(source);
+
+	var temporary = establishmentInput.read(source, {
+		temporary: true
+	});
+
+	var persistent = establishmentInput.read(source, {
+		temporary: false
+	});
+
+	assert(temporary.key === "mandate");
+	assert(temporary.contract.executor === "test");
+	assert(persistent.key === "mandate");
+
+	temporary.contract.book.instruction = "local";
+	assert(JSON.stringify(source) === before);
+
+	throws(function () {
+		establishmentInput.read({});
+	}, "exactly one incoming contract");
+
+	throws(function () {
+		establishmentInput.read({
+			first: source.mandate,
+			second: source.mandate
+		});
+	}, "exactly one incoming contract");
+
+	source.mandate.temp = false;
+
+	throws(function () {
+		establishmentInput.read(source, {
+			temporary: true,
+			durabilityError: "Adapter-specific durability rejection"
+		});
+	}, "Adapter-specific durability rejection");
+
+	throws(function () {
+		establishmentInput.read(source, { temporary: true });
+	}, "forbids ephemeral");
+
+	assert(
+		establishmentInput.read(source, {
+			temporary: false
+		}).contract.temp === false
+	);
+
+	source.mandate.temp = true;
+
+	throws(function () {
+		establishmentInput.read(source, { temporary: false });
+	}, "forbids persistent");
+
+	assert(
+		establishmentInput.read(source, {
+			temporary: true
+		}).contract.temp === true
+	);
+
+	// The document scope does not select a durability contract.
+	assert(establishmentInput.read(source).key === "mandate");
+
+	throws(function () {
+		establishmentInput.read({}, {
+			countError: "Adapter-specific contract count"
+		});
+	}, "Adapter-specific contract count");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -910,7 +992,8 @@ exports.run = function (tw) {
 		["execution contract: ordered completion checks", testExecutionCompletionContract],
 		["execution contract: failure stops completion", testExecutionCompletionFailures],
 		["reaction event: isolated deeply frozen context", testReactionEventPreparation],
-		["reaction event: establishment and JSON boundaries", testEstablishingReactionEvent]
+		["reaction event: establishment and JSON boundaries", testEstablishingReactionEvent],
+		["establishment input: unique isolated mandate and durability", testEstablishmentInput]
 	];
 
 	var results = cases.map(function (item) {
