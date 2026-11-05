@@ -73,6 +73,7 @@ var SUITES = Object.freeze([
 	"material-work",
 	"continuations",
 	"work-compatibility",
+	"proposal-work",
     "persistent-reaction",
     "persistent-flow-reaction",
     "flow-scheduler",

@@ -39,8 +39,105 @@ function create(options) {
 		throw new Error("Continuations require a state store");
 	}
 
+	if (
+		options.newId !== undefined &&
+		typeof options.newId !== "function"
+	) {
+		throw new Error("Continuation newId must be a function");
+	}
+
 	var prefix = "$:/clerus/wal/" + options.platform + "/";
 	var recovering = false;
+	var used = new Set();
+
+	function accept(value) {
+		if (typeof options.newId !== "function") {
+			throw new Error(
+				"Continuation acceptance requires an identity source"
+			);
+		}
+
+		var record = continuationSchema.validate({
+			version: 2,
+			kind: "continuation",
+			platform: options.platform,
+			work: value,
+			events: {},
+			evidence: {
+				identities: {},
+				receipts: {}
+			},
+			diagnostics: []
+		}, options.platform);
+
+		if (record.work === null) {
+			throw new Error(
+				"Cannot accept a continuation without work"
+			);
+		}
+
+		compatibility.check({
+			store: options.store,
+			work: record.work
+		});
+
+		materializer.check({
+			store: options.store,
+			platform: options.platform,
+			work: record.work
+		});
+
+		var id = options.newId();
+
+		if (
+			typeof id !== "string" ||
+			!/^[A-Za-z0-9_-]{16,128}$/.test(id) ||
+			used.has(id)
+		) {
+			throw new Error(
+				"Invalid or reused continuation identifier"
+			);
+		}
+
+		used.add(id);
+
+		var title = prefix + "continuation-" + id;
+
+		if (options.store.read(title).kind !== "absent") {
+			throw new Error(
+				"Continuation title is occupied"
+			);
+		}
+
+		var fields = {
+			title: title,
+			type: "application/json",
+			"clerus-custody": options.platform,
+			"clerus-wal-kind": "continuation",
+			text: JSON.stringify(record)
+		};
+
+		try {
+			options.store.apply(stores.transition(
+				title,
+				null,
+				fields
+			));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = "ContinuationRegistrationError";
+			error.cause = cause;
+			error.obligationTitle = title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+
+		return title;
+	}
 
 	function assertLocalTitle(title) {
 		if (
@@ -263,6 +360,7 @@ function create(options) {
 	}
 
 	return Object.freeze({
+		accept: accept,
 		read: read,
 		resume: resume,
 		recover: recover

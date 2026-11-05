@@ -138,7 +138,8 @@ function Runtime(options) {
 
 	this.continuations = continuations.create({
 		store: this.store,
-		platform: this.platform
+		platform: this.platform,
+		newId: this.newId
 	});
 
 	this.readJobs = this.readJobs.bind(this);
