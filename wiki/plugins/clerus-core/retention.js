@@ -225,6 +225,51 @@ function evaluate(options) {
 					});
 				}
 
+				function addEvent(event, id, planned) {
+					add(event.recipient.title, {
+						kind: planned
+							? "planned-event"
+							: "waiting-event",
+						wal: fields.title,
+						event: id
+					});
+
+					addRegistry(event.registry, {
+						kind: "transactional-reference",
+						wal: fields.title,
+						event: id
+					});
+				}
+
+				Object.keys(continuation.events).forEach(
+					function (id) {
+						addEvent(
+							continuation.events[id].event,
+							id,
+							false
+						);
+					}
+				);
+
+				if (continuation.work !== null) {
+					continuation.work.emits.forEach(
+						function (effect) {
+							if (
+								!hasOwn(
+									continuation.evidence.identities,
+									effect.id
+								)
+							) {
+								addEvent(
+									effect.event,
+									effect.id,
+									true
+								);
+							}
+						}
+					);
+				}
+
 				return;
 			}
 

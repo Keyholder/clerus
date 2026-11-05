@@ -18,6 +18,11 @@ var materializer = require(
 var compatibility = require(
 	"$:/plugins/clerus/core/work-compatibility.js"
 );
+var eventSchema = require(
+	"$:/plugins/clerus/core/event-schema.js"
+);
+
+var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
 function describe(error) {
 	return {
@@ -216,7 +221,8 @@ function create(options) {
 	function resume(title) {
 		try {
 			var loaded = read(title);
-			var work = loaded.record.work;
+			var record = loaded.record;
+			var work = record.work;
 			var results = [];
 
 			if (work !== null) {
@@ -227,19 +233,70 @@ function create(options) {
 					platform: options.platform,
 					work: work
 				});
+
+				work.emits.forEach(function (effect) {
+					if (
+						hasOwn(
+							record.evidence.identities,
+							effect.id
+						)
+					) {
+						return;
+					}
+
+					Object.defineProperty(
+						record.evidence.identities,
+						effect.id,
+						{
+							value: eventSchema.fingerprint(
+								effect.event
+							),
+							enumerable: true,
+							writable: true,
+							configurable: true
+						}
+					);
+
+					Object.defineProperty(
+						record.events,
+						effect.id,
+						{
+							value: {
+								mode: "ready",
+								event: effect.event
+							},
+							enumerable: true,
+							writable: true,
+							configurable: true
+						}
+					);
+				});
+
+				record.work = null;
 			}
 
-			/*
-				This supported subset has no events or receipts.
+			record = continuationSchema.validate(
+				record,
+				options.platform
+			);
 
-				Deleting the journal is the authoritative completion
-				of its last material work.
-			*/
-			options.store.apply(stores.transition(
-				title,
-				loaded.fields,
-				null
-			));
+			if (Object.keys(record.events).length === 0) {
+				options.store.apply(stores.transition(
+					title,
+					loaded.fields,
+					null
+				));
+			} else {
+				var after = schemas.copyJSON(loaded.fields);
+
+				after.text = JSON.stringify(record);
+
+				options.store.apply(stores.transition(
+					title,
+					loaded.fields,
+					after
+				));
+			}
 
 			return results;
 		} catch (error) {
@@ -331,10 +388,15 @@ function create(options) {
 						return;
 					}
 
+					var results = resume(title);
+					var remaining = options.store.read(title);
+
 					entries.push({
 						title: title,
-						status: "completed",
-						results: resume(title)
+						status: remaining.kind === "absent"
+							? "completed"
+							: "pending",
+						results: results
 					});
 				} catch (error) {
 					var entry = {

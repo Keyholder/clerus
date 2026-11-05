@@ -9,6 +9,7 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var stores = require("$:/plugins/clerus/core/store.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
+var events = require("$:/plugins/clerus/core/event-schema.js");
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -133,14 +134,11 @@ function validate(value) {
 
 	identity(work.id);
 
-	if (work.emits.length !== 0) {
-		throw new Error(
-			"Event-bearing work is not supported by this material protocol yet"
-		);
-	}
-
-	if (work.transitions.length === 0) {
-		throw new Error("Material work must contain transitions");
+	if (
+		work.transitions.length === 0 &&
+		work.emits.length === 0
+	) {
+		throw new Error("Work must contain transitions or emissions");
 	}
 
 	var targets = new Set();
@@ -220,13 +218,26 @@ function validate(value) {
 		return title;
 	});
 
+	var emitted = new Set();
+
+	var emits = work.emits.map(function (value) {
+		var effect = events.emission(value);
+
+		if (emitted.has(effect.id)) {
+			throw new Error("Repeated emitted event identity");
+		}
+
+		emitted.add(effect.id);
+		return effect;
+	});
+
 	return schemas.copyJSON({
 		version: 2,
 		id: work.id,
 		checks: checks,
 		transitions: transitions,
 		blocks: blocks,
-		emits: []
+		emits: emits
 	});
 }
 

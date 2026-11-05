@@ -74,6 +74,7 @@ var SUITES = Object.freeze([
 	"continuations",
 	"work-compatibility",
 	"proposal-work",
+	"continuation-events",
     "persistent-reaction",
     "persistent-flow-reaction",
     "flow-scheduler",
