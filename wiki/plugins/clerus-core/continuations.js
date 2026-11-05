@@ -15,11 +15,8 @@ var continuationSchema = require(
 var materializer = require(
 	"$:/plugins/clerus/core/work-materializer.js"
 );
-var perspective = require(
-	"$:/plugins/clerus/core/work-perspective.js"
-);
-var barriers = require(
-	"$:/plugins/clerus/core/materialization-barrier.js"
+var compatibility = require(
+	"$:/plugins/clerus/core/work-compatibility.js"
 );
 
 function describe(error) {
@@ -112,97 +109,11 @@ function create(options) {
 	}
 
 	function checkConflicts(title, work) {
-		/*
-			Reuse conservative recognition of every visible WAL.
-
-			Unknown obligations must not become invisible merely
-			because this manager handles only version 2.
-		*/
-		var knowledge = barriers.collect({
-			store: options.store
-		}).inspect();
-
-		if (!knowledge.complete) {
-			throw new Error(
-				"Cannot establish work compatibility: unreadable WAL"
-			);
-		}
-
-		options.store.snapshot().materialized.forEach(
-			function (fields) {
-				var platform = envelopes.platformOf(fields.title);
-
-				if (
-					platform === null ||
-					fields.title === title
-				) {
-					return;
-				}
-
-				var envelope = envelopes.read(fields);
-
-				if (envelope.kind !== "ready") {
-					throw new Error(
-						"Cannot establish work compatibility: " +
-						fields.title
-					);
-				}
-
-				var record = envelope.record;
-
-				if (record.kind === "continuation") {
-					var other = continuationSchema.validate(
-						record,
-						platform
-					);
-
-					if (other.work === null) {
-						return;
-					}
-
-					/*
-						Two authoritative placements of one work
-						identity are not automatically a safe move.
-					*/
-					if (other.work.id === work.id) {
-						throw new Error(
-							"Work identity has another journal: " +
-							fields.title
-						);
-					}
-
-					if (
-						perspective.conflicts(work, other.work)
-					) {
-						throw new Error(
-							"Accepted work conflict: " +
-							fields.title
-						);
-					}
-
-					return;
-				}
-
-				/*
-					Temporary conservative interoperability rule.
-
-					Version 1 body recognition was performed by
-					the barrier scan above.
-				*/
-				if (
-					record.kind === "plan" ||
-					(
-						record.kind === "flow" &&
-						record.active !== null
-					)
-				) {
-					throw new Error(
-						"Version 1 material work is unfinished: " +
-						fields.title
-					);
-				}
-			}
-		);
+		compatibility.check({
+			store: options.store,
+			title: title,
+			work: work
+		});
 	}
 
 	function resume(title) {

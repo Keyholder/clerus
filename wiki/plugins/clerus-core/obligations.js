@@ -26,6 +26,9 @@ var incidentSchema = require(
 var walEnvelope = require(
 	"$:/plugins/clerus/core/wal-envelope.js"
 );
+var compatibility = require(
+	"$:/plugins/clerus/core/work-compatibility.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -79,6 +82,11 @@ function create(options) {
 				blockers.join(", ")
 			);
 		}
+
+		compatibility.check({
+			store: options.store,
+			proposal: proposal
+		});
 
 		var shadowTitles = new Set(
 			options.store.snapshot().shadows.map(function (fields) {
@@ -239,6 +247,12 @@ function create(options) {
 	function resume(title) {
 		try {
 			var loaded = read(title);
+
+			compatibility.check({
+				store: options.store,
+				title: title,
+				proposal: loaded.record.proposal
+			});
 
 			var results = materializer.execute({
 				store: options.store,

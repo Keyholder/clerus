@@ -13,6 +13,9 @@ var stores = require("$:/plugins/clerus/core/store.js");
 var deferredSchema = require(
 	"$:/plugins/clerus/core/deferred-schema.js"
 );
+var compatibility = require(
+	"$:/plugins/clerus/core/work-compatibility.js"
+);
 
 var validate = deferredSchema.validate;
 
@@ -244,6 +247,12 @@ function create(options) {
 		if (blockers.length > 0) {
 			throw new Error("Deferred recipient has unfinished materialization");
 		}
+
+		compatibility.check({
+			store: options.store,
+			title: title,
+			proposal: proposal
+		});
 
 		materializer.check({
 			store: options.store,

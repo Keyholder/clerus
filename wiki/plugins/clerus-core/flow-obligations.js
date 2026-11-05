@@ -24,6 +24,9 @@ var deferredObligations = require(
 var walEnvelope = require(
 	"$:/plugins/clerus/core/wal-envelope.js"
 );
+var compatibility = require(
+	"$:/plugins/clerus/core/work-compatibility.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -248,6 +251,11 @@ function create(options) {
 			throw new Error("Flow owner has unfinished materialization");
 		}
 
+		compatibility.check({
+			store: options.store,
+			proposal: proposal
+		});
+
 		checkEstablishmentReservations(proposal);
 
 		var record = flows.validate({
@@ -315,6 +323,12 @@ function create(options) {
 			var record = loaded.record;
 
 			if (record.active !== null) {
+				compatibility.check({
+					store: options.store,
+					title: title,
+					proposal: record.active
+				});
+
 				materializer.execute({
 					store: options.store,
 					platform: options.platform,
@@ -458,6 +472,12 @@ function create(options) {
 				"Recipient has unfinished materialization"
 			);
 		}
+
+		compatibility.check({
+			store: options.store,
+			title: title,
+			proposal: proposal
+		});
 
 		checkEstablishmentReservations(proposal);
 
