@@ -19,6 +19,10 @@ var executionContract = require(
 	"$:/plugins/clerus/core/execution-contract.js"
 );
 
+var reactionEvents = require(
+	"$:/plugins/clerus/core/reaction-event.js"
+);
+
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
 		value: value,
@@ -26,18 +30,6 @@ function define(record, key, value) {
 		writable: true,
 		configurable: true
 	});
-}
-
-function freezeTree(value) {
-	if (value !== null && typeof value === "object") {
-		Object.keys(value).forEach(function (key) {
-			freezeTree(value[key]);
-		});
-
-		Object.freeze(value);
-	}
-
-	return value;
 }
 
 function sameFields(left, right) {
@@ -146,24 +138,12 @@ function run(options, establishing) {
 		throw new Error("Reaction requires an available handler");
 	}
 
-	var event = schemas.copyJSON(
-		establishing && options.event === undefined
-			? { type: "order" }
-			: options.event
-	);
-
-	if (
-		!schemas.isRecord(event) ||
-		typeof event.type !== "string" ||
-		event.type.length === 0 ||
-		(establishing && event.type !== "order")
-	) {
-		throw new Error("Reaction requires a valid event type");
-	}
-
-	define(event, "title", job.title);
-	define(event, "platform", options.platform);
-	freezeTree(event);
+	var event = reactionEvents.prepare({
+		event: options.event,
+		title: job.title,
+		platform: options.platform,
+		establishing: establishing
+	});
 
 	var expected = initial.kind === "materialized"
 		? schemas.copyJSON(initial.fields)

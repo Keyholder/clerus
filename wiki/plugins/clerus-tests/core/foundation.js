@@ -17,6 +17,9 @@ var reactionServices = require(
 var executionContract = require(
 	"$:/plugins/clerus/core/execution-contract.js"
 );
+var reactionEvents = require(
+	"$:/plugins/clerus/core/reaction-event.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -771,6 +774,119 @@ function testExecutionCompletionFailures() {
 	assert(calls.join(",") === "handler,incoming");
 }
 
+function testReactionEventPreparation() {
+	var source = {
+		type: "test",
+		title: "Untrusted title",
+		platform: "node",
+		payload: {
+			items: [{ value: 1 }]
+		}
+	};
+
+	var event = reactionEvents.prepare({
+		event: source,
+		title: "$:/clerus/jobs/event-owner",
+		platform: "browser"
+	});
+
+	assert(event.type === "test");
+	assert(event.title === "$:/clerus/jobs/event-owner");
+	assert(event.platform === "browser");
+
+	assert(Object.isFrozen(event));
+	assert(Object.isFrozen(event.payload));
+	assert(Object.isFrozen(event.payload.items));
+	assert(Object.isFrozen(event.payload.items[0]));
+
+	assert(!Object.isFrozen(source));
+	assert(!Object.isFrozen(source.payload));
+	assert(source.title === "Untrusted title");
+	assert(source.platform === "node");
+
+	source.payload.items[0].value = 2;
+	assert(event.payload.items[0].value === 1);
+
+	throws(function () {
+		event.payload.items[0].value = 3;
+	});
+
+	assert(event.payload.items[0].value === 1);
+
+	var safe = reactionEvents.prepare({
+		event: JSON.parse(
+			'{"type":"test","__proto__":{"value":1}}'
+		),
+		title: "$:/clerus/jobs/event-owner",
+		platform: "browser"
+	});
+
+	assert(Object.getPrototypeOf(safe) === null);
+	assert(
+		Object.prototype.hasOwnProperty.call(safe, "__proto__")
+	);
+	assert(Object.isFrozen(safe.__proto__));
+}
+
+function testEstablishingReactionEvent() {
+	var options = {
+		title: "$:/clerus/jobs/event-establishment",
+		platform: "browser",
+		establishing: true
+	};
+
+	var event = reactionEvents.prepare(options);
+	assert(event.type === "order");
+	assert(Object.isFrozen(event));
+
+	options.event = {
+		type: "order",
+		id: "explicit-order"
+	};
+
+	assert(
+		reactionEvents.prepare(options).id === "explicit-order"
+	);
+
+	options.event = { type: "tick" };
+
+	throws(function () {
+		reactionEvents.prepare(options);
+	}, "valid event type");
+
+	options.event = null;
+
+	throws(function () {
+		reactionEvents.prepare(options);
+	}, "valid event type");
+
+	options.establishing = false;
+	options.event = { type: "" };
+
+	throws(function () {
+		reactionEvents.prepare(options);
+	}, "valid event type");
+
+	var accessed = false;
+	var supplied = { type: "test" };
+
+	Object.defineProperty(supplied, "payload", {
+		enumerable: true,
+		get: function () {
+			accessed = true;
+			return {};
+		}
+	});
+
+	options.event = supplied;
+
+	throws(function () {
+		reactionEvents.prepare(options);
+	});
+
+	assert(!accessed, "Event preparation invoked an accessor");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -792,7 +908,9 @@ exports.run = function (tw) {
 		["job state: owner overlay enforces structural boundaries", testOwnerOverlayBoundaries],
 		["reaction services: shared lazy assembly", testReactionServiceAssembly],
 		["execution contract: ordered completion checks", testExecutionCompletionContract],
-		["execution contract: failure stops completion", testExecutionCompletionFailures]
+		["execution contract: failure stops completion", testExecutionCompletionFailures],
+		["reaction event: isolated deeply frozen context", testReactionEventPreparation],
+		["reaction event: establishment and JSON boundaries", testEstablishingReactionEvent]
 	];
 
 	var results = cases.map(function (item) {

@@ -17,27 +17,9 @@ var jobState = require("$:/plugins/clerus/core/job-state.js");
 var executionContract = require(
 	"$:/plugins/clerus/core/execution-contract.js"
 );
-
-function define(record, key, value) {
-	Object.defineProperty(record, key, {
-		value: value,
-		enumerable: true,
-		writable: true,
-		configurable: true
-	});
-}
-
-function freezeTree(value) {
-	if (value !== null && typeof value === "object") {
-		Object.keys(value).forEach(function (key) {
-			freezeTree(value[key]);
-		});
-
-		Object.freeze(value);
-	}
-
-	return value;
-}
+var reactionEvents = require(
+	"$:/plugins/clerus/core/reaction-event.js"
+);
 
 function run(options, establishing) {
 	schemas.assertPlatform(options.platform);
@@ -64,24 +46,12 @@ function run(options, establishing) {
 		throw new Error("newId must be a function");
 	}
 
-	var event = schemas.copyJSON(
-		establishing && options.event === undefined
-			? { type: "order" }
-			: options.event
-	);
-
-	if (
-		!schemas.isRecord(event) ||
-		typeof event.type !== "string" ||
-		event.type.length === 0 ||
-		(establishing && event.type !== "order")
-	) {
-		throw new Error("Invalid planned reaction event");
-	}
-
-	define(event, "title", options.title);
-	define(event, "platform", options.platform);
-	freezeTree(event);
+	var event = reactionEvents.prepare({
+		event: options.event,
+		title: options.title,
+		platform: options.platform,
+		establishing: establishing
+	});
 
 	var incoming = options.incoming === undefined
 		? undefined
