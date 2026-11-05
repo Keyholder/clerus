@@ -42,6 +42,9 @@ var deferredObligations = require(
 var retention = require("$:/plugins/clerus/core/retention.js");
 var collection = require("$:/plugins/clerus/core/collection.js");
 var jobState = require("$:/plugins/clerus/core/job-state.js");
+var PassCoordinator = require(
+	"$:/plugins/clerus/core/external-pass.js"
+).Coordinator;
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -65,9 +68,40 @@ function Runtime(options) {
 		throw new Error("autoCollectJobs must be boolean");
 	}
 
-	this.autoCollectJobs = options.autoCollectJobs === true;
-	this.passDepth = 0;
-	this.lastCollection = null;
+	this.passes = new PassCoordinator({
+		autoCollect: options.autoCollectJobs === true,
+
+		collect: function () {
+			return this.collect();
+		}.bind(this)
+	});
+
+	/*
+	Read-only compatibility views for internal diagnostics/tests.
+	The coordinator owns the state.
+	*/
+	Object.defineProperties(this, {
+		autoCollectJobs: {
+			enumerable: true,
+			get: function () {
+				return this.passes.autoCollect;
+			}
+		},
+
+		passDepth: {
+			enumerable: true,
+			get: function () {
+				return this.passes.depth;
+			}
+		},
+
+		lastCollection: {
+			enumerable: true,
+			get: function () {
+				return this.passes.lastCollection;
+			}
+		}
+	});
 
 	this.wiki = options.wiki;
 	this.platform = options.platform;
@@ -449,7 +483,7 @@ Runtime.prototype.drainOfficialWork = function () {
 	return result;
 };
 
-Runtime.prototype.dispatchDeferred = function (title) {
+function dispatchDeferredPass(title) {
 	if (
 		this.executing ||
 		this.scheduler.running ||
@@ -542,9 +576,9 @@ Runtime.prototype.dispatchDeferred = function (title) {
 	} finally {
 		this.executing = false;
 	}
-};
+}
 
-Runtime.prototype.runDeferred = function () {
+function runDeferredPass() {
 	if (
 		this.executing ||
 		this.scheduler.running ||
@@ -618,9 +652,9 @@ Runtime.prototype.runDeferred = function () {
 	} finally {
 		this.runningDeferred = false;
 	}
-};
+}
 
-Runtime.prototype.dispatch = function (title, event, incoming) {
+function dispatchPass(title, event, incoming) {
 	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
 		throw new Error("Cannot start a nested runtime dispatch");
 	}
@@ -741,9 +775,9 @@ Runtime.prototype.dispatch = function (title, event, incoming) {
 	} finally {
 		this.executing = false;
 	}
-};
+}
 
-Runtime.prototype.observe = function () {
+function observePass() {
 	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
 		throw new Error("Cannot collect observations during a reaction");
 	}
@@ -779,7 +813,7 @@ Runtime.prototype.observe = function () {
 	}, this);
 
 	return passes;
-};
+}
 
 Runtime.prototype.resetObservation = function () {
 	this.observer.clear();
@@ -803,7 +837,7 @@ Runtime.prototype.inspect = function () {
 	};
 };
 
-Runtime.prototype.drainFlows = function () {
+function drainFlowsPass() {
 	if (
 		this.executing ||
 		this.scheduler.running ||
@@ -819,9 +853,9 @@ Runtime.prototype.drainFlows = function () {
 	} finally {
 		this.executing = false;
 	}
-};
+}
 
-Runtime.prototype.recover = function () {
+function recoverPass() {
 	if (
 		this.executing ||
 		this.scheduler.running ||
@@ -855,9 +889,9 @@ Runtime.prototype.recover = function () {
 	} finally {
 		this.executing = false;
 	}
-};
+}
 
-Runtime.prototype.resume = function (title) {
+function resumePass(title) {
 	var space = jobTitles.classify(title);
 
 	if (!space || !space.persistent) {
@@ -867,7 +901,7 @@ Runtime.prototype.resume = function (title) {
 	return this.dispatch(title, {
 		type: "resumed"
 	});
-};
+}
 
 Runtime.prototype.collectionBarriers = function () {
 	var reasons = [];
@@ -904,65 +938,68 @@ Runtime.prototype.collect = function () {
 	});
 };
 
-function wrapExternalPass(name, allowCollection) {
-	var implementation = Runtime.prototype[name];
+Runtime.prototype.dispatch = function () {
+	return this.passes.run(
+		this,
+		dispatchPass,
+		arguments,
+		true
+	);
+};
 
-	if (typeof implementation !== "function") {
-		throw new Error("Missing runtime pass: " + name);
-	}
+Runtime.prototype.observe = function () {
+	return this.passes.run(
+		this,
+		observePass,
+		arguments,
+		true
+	);
+};
 
-	Runtime.prototype[name] = function () {
-		this.passDepth++;
+Runtime.prototype.runDeferred = function () {
+	return this.passes.run(
+		this,
+		runDeferredPass,
+		arguments,
+		true
+	);
+};
 
-		var completed = false;
+Runtime.prototype.drainFlows = function () {
+	return this.passes.run(
+		this,
+		drainFlowsPass,
+		arguments,
+		true
+	);
+};
 
-		try {
-			var result = implementation.apply(this, arguments);
+Runtime.prototype.resume = function () {
+	return this.passes.run(
+		this,
+		resumePass,
+		arguments,
+		true
+	);
+};
 
-			completed = true;
-			return result;
-		} finally {
-			this.passDepth--;
+Runtime.prototype.dispatchDeferred = function () {
+	return this.passes.run(
+		this,
+		dispatchDeferredPass,
+		arguments,
+		true
+	);
+};
 
-			if (
-				completed &&
-				allowCollection &&
-				this.passDepth === 0 &&
-				this.autoCollectJobs
-			) {
-				try {
-					this.lastCollection = this.collect();
-				} catch (error) {
-					/*
-						Collection diagnostics must not replace
-						the completed execution result.
-					*/
-					this.lastCollection = {
-						removed: [],
-						skipped: [],
-						blocked: ["collection-error"],
-						failures: [{
-							error: lifecycle.describeError(error)
-						}]
-					};
-				}
-			}
-		}
-	};
-}
-
-[
-	"dispatch",
-	"observe",
-	"runDeferred",
-	"drainFlows",
-	"resume",
-	"dispatchDeferred"
-].forEach(function (name) {
-	wrapExternalPass(name, true);
-});
-
-wrapExternalPass("recover", false);
+Runtime.prototype.recover = function () {
+	return this.passes.run(
+		this,
+		recoverPass,
+		arguments,
+		false
+	);
+};
 
 /*
 Internal assembly interface.

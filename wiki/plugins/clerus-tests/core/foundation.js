@@ -23,6 +23,9 @@ var reactionEvents = require(
 var establishmentInput = require(
 	"$:/plugins/clerus/core/establishment-input.js"
 );
+var PassCoordinator = require(
+	"$:/plugins/clerus/core/external-pass.js"
+).Coordinator;
 
 function assert(condition, message) {
 	if (!condition) {
@@ -969,6 +972,106 @@ function testEstablishmentInput() {
 	}, "Adapter-specific contract count");
 }
 
+function testExternalPassBoundaries() {
+	var collections = 0;
+
+	var passes = new PassCoordinator({
+		autoCollect: true,
+
+		collect: function () {
+			collections++;
+			assert(passes.depth === 0);
+			return { sequence: collections };
+		}
+	});
+
+	var receiver = {};
+
+	var result = passes.run(receiver, function (value) {
+		assert(this === receiver);
+		assert(value === 42);
+		assert(passes.depth === 1);
+
+		passes.run(receiver, function () {
+			assert(passes.depth === 2);
+		}, [], true);
+
+		assert(collections === 0);
+		return "completed";
+	}, [42], true);
+
+	assert(result === "completed");
+	assert(collections === 1);
+	assert(passes.depth === 0);
+	assert(passes.lastCollection.sequence === 1);
+
+	// A non-collecting outer pass owns the entire boundary.
+	passes.run(receiver, function () {
+		passes.run(receiver, function () {}, [], true);
+	}, [], false);
+
+	assert(collections === 1);
+	assert(passes.depth === 0);
+
+	var disabled = new PassCoordinator({
+		autoCollect: false,
+
+		collect: function () {
+			throw new Error("Disabled collection was invoked");
+		}
+	});
+
+	disabled.run(receiver, function () {}, [], true);
+
+	assert(disabled.depth === 0);
+	assert(disabled.lastCollection === null);
+}
+
+function testExternalPassFailures() {
+	var collections = 0;
+
+	var passes = new PassCoordinator({
+		autoCollect: true,
+
+		collect: function () {
+			collections++;
+			throw new Error("Collector failure");
+		}
+	});
+
+	var failure = new Error("Pass failure");
+	var caught;
+
+	try {
+		passes.run(null, function () {
+			passes.run(null, function () {}, [], true);
+			throw failure;
+		}, [], true);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught === failure);
+	assert(passes.depth === 0);
+	assert(collections === 0);
+	assert(passes.lastCollection === null);
+
+	var result = passes.run(null, function () {
+		return "preserved result";
+	}, [], true);
+
+	assert(result === "preserved result");
+	assert(passes.depth === 0);
+	assert(collections === 1);
+	assert(
+		passes.lastCollection.blocked[0] === "collection-error"
+	);
+	assert(
+		passes.lastCollection.failures[0].error.message ===
+			"Collector failure"
+	);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -993,7 +1096,9 @@ exports.run = function (tw) {
 		["execution contract: failure stops completion", testExecutionCompletionFailures],
 		["reaction event: isolated deeply frozen context", testReactionEventPreparation],
 		["reaction event: establishment and JSON boundaries", testEstablishingReactionEvent],
-		["establishment input: unique isolated mandate and durability", testEstablishmentInput]
+		["establishment input: unique isolated mandate and durability", testEstablishmentInput],
+		["external pass: outer boundary owns collection", testExternalPassBoundaries],
+		["external pass: execution and collection failures stay distinct", testExternalPassFailures]
 	];
 
 	var results = cases.map(function (item) {
