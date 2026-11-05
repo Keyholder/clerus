@@ -10,7 +10,9 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
 var missions = require("$:/plugins/clerus/core/missions.js");
-var materializer = require("$:/plugins/clerus/core/materializer.js");
+var acceptedPlans = require(
+	"$:/plugins/clerus/core/accepted-plan-schema.js"
+);
 var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
 var deferred = require(
 	"$:/plugins/clerus/core/deferred-obligations.js"
@@ -111,7 +113,7 @@ function evaluate(options) {
 			Validate accepted authority, not current authorization
 			or current before/after preconditions.
 		*/
-		materializer.validate({
+		acceptedPlans.validate({
 			version: 1,
 			kind: "plan",
 			platform: platform,
@@ -217,7 +219,7 @@ function evaluate(options) {
 			}
 
 			if (kind === "plan") {
-				var accepted = materializer.validate(record, platform);
+				var accepted = acceptedPlans.validate(record, platform);
 
 				addActive(
 					accepted.proposal,

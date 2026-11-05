@@ -17,6 +17,9 @@ var materializer = require(
 var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
+var acceptedPlans = require(
+	"$:/plugins/clerus/core/accepted-plan-schema.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -176,7 +179,7 @@ function create(options) {
 			throw new Error("Plan obligation is not locally owned");
 		}
 
-		var record = materializer.validate(
+		var record = acceptedPlans.validate(
 			JSON.parse(journal.fields.text),
 			options.platform
 		);

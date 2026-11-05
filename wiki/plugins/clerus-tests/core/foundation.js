@@ -26,6 +26,9 @@ var establishmentInput = require(
 var PassCoordinator = require(
 	"$:/plugins/clerus/core/external-pass.js"
 ).Coordinator;
+var acceptedPlans = require(
+	"$:/plugins/clerus/core/accepted-plan-schema.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -1072,6 +1075,102 @@ function testExternalPassFailures() {
 	);
 }
 
+function testAcceptedPlanProtocol() {
+	var title = "$:/clerus/jobs/accepted-schema-owner";
+
+	var before = {
+		title: title,
+		type: "application/json",
+		"clerus-executor": "test",
+		"clerus-custody": "browser",
+		text: JSON.stringify({
+			charter: charter()
+		})
+	};
+
+	var after = schemas.copyJSON(before);
+
+	after.text = JSON.stringify({
+		charter: {
+			form: "charter",
+			status: { phase: "completed" }
+		}
+	});
+
+	var record = {
+		version: 1,
+		kind: "plan",
+		platform: "browser",
+		proposal: {
+			version: 1,
+			owner: {
+				title: title,
+				executor: "test",
+				state: before
+			},
+			plan: {
+				version: 1,
+				effects: [
+					stores.transition(title, before, after)
+				]
+			}
+		}
+	};
+
+	var original = JSON.stringify(record);
+	var result = acceptedPlans.validate(record, "browser");
+
+	assert(result.version === 1);
+	assert(result.proposal.plan.effects.length === 1);
+
+	result.proposal.owner.state.text = "local";
+	assert(JSON.stringify(record) === original);
+
+	var future = schemas.copyJSON(record);
+	future.version = 2;
+
+	throws(function () {
+		acceptedPlans.validate(future, "browser");
+	}, "Invalid accepted-plan record");
+
+	var extended = schemas.copyJSON(record);
+	extended.future = {};
+
+	throws(function () {
+		acceptedPlans.validate(extended, "browser");
+	}, "Invalid accepted-plan record");
+
+	throws(function () {
+		acceptedPlans.validate(record, "node");
+	}, "Invalid accepted-plan record");
+
+	var empty = schemas.copyJSON(record);
+	empty.proposal.plan.effects = [];
+
+	throws(function () {
+		acceptedPlans.validate(empty, "browser");
+	}, "must contain effects");
+
+	assert(
+		acceptedPlans.validate(
+			empty,
+			"browser",
+			true
+		).proposal.plan.effects.length === 0
+	);
+
+	var unauthorized = schemas.copyJSON(record);
+
+	unauthorized.proposal.owner.state["clerus-custody"] = "user";
+	unauthorized.proposal.plan.effects[0].before[
+		"clerus-custody"
+	] = "user";
+
+	throws(function () {
+		acceptedPlans.validate(unauthorized, "browser");
+	}, "Invalid accepted target authority");
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["schemas: registries and safe keys", testRegistries],
@@ -1098,7 +1197,8 @@ exports.run = function (tw) {
 		["reaction event: establishment and JSON boundaries", testEstablishingReactionEvent],
 		["establishment input: unique isolated mandate and durability", testEstablishmentInput],
 		["external pass: outer boundary owns collection", testExternalPassBoundaries],
-		["external pass: execution and collection failures stay distinct", testExternalPassFailures]
+		["external pass: execution and collection failures stay distinct", testExternalPassFailures],
+		["accepted-plan protocol: version, isolation and accepted authority", testAcceptedPlanProtocol]
 	];
 
 	var results = cases.map(function (item) {
