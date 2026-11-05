@@ -339,12 +339,59 @@ function create(options) {
 				}
 
 				if (kind === "flow" || kind === "deferred") {
-					entries.push({
-						title: title,
-						status: "delegated",
-						kind: kind
-					});
+					var envelope;
 
+					try {
+						envelope = walEnvelope.read(fields);
+					} catch (error) {
+						/*
+						A reader contract failure is not a supported
+						delegation target. Preserve the journal.
+						*/
+						entries.push({
+							title: title,
+							status: "failed",
+							error: String(
+								error && error.message || error
+							)
+						});
+
+						return;
+					}
+
+					if (envelope.kind === "ready") {
+						entries.push({
+							title: title,
+							status: "delegated",
+							kind: kind
+						});
+
+						return;
+					}
+
+					var rejection = new Error(envelope.reason);
+
+					var rejected = {
+						title: title,
+						status: envelope.kind === "unsupported"
+							? "unsupported"
+							: "failed",
+						error: rejection.message
+					};
+
+					/*
+					pause() writes only locally owned journals.
+					User custody never authorizes a repair write.
+					*/
+					try {
+						pause(title, rejection);
+					} catch (pauseError) {
+						rejected.pauseError = String(
+							pauseError && pauseError.message || pauseError
+						);
+					}
+
+					entries.push(rejected);
 					return;
 				}
 

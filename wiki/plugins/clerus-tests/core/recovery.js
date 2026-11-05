@@ -263,6 +263,80 @@ function testIncidentMarkerDoesNotProveHistory(tw) {
 	assert(current.fields["clerus-custody"] === "user");
 }
 
+function testDelegationRequiresMatchingEnvelope(tw) {
+	var f = fixture(tw);
+	var title =
+		"$:/clerus/wal/" + f.platform + "/mislabeled-flow";
+
+	var body = JSON.stringify({
+		version: 1,
+		kind: "plan",
+		platform: f.platform,
+		proposal: {}
+	});
+
+	f.wiki.addTiddler(new tw.Tiddler({
+		title: title,
+		type: "application/json",
+		"clerus-custody": f.platform,
+		"clerus-wal-kind": "flow",
+		text: body
+	}));
+
+	var report = f.manager.recover();
+	var entry = report.entries[0];
+
+	assert(entry.title === title);
+	assert(entry.status === "failed");
+
+	var current = f.wiki.getTiddler(title);
+
+	assert(current.fields.text === body);
+	assert(current.fields["clerus-custody"] === "user");
+	assert(current.fields["clerus-wal-kind"] === "flow");
+	assert(current.fields["clerus-wal-error"]);
+}
+
+function testFutureDelegationIsNotExecution(tw) {
+	var f = fixture(tw);
+
+	["flow", "deferred"].forEach(function (kind) {
+		var title =
+			"$:/clerus/wal/" + f.platform + "/future-" + kind;
+
+		var body = JSON.stringify({
+			version: 2,
+			kind: kind,
+			platform: f.platform
+		});
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: title,
+			type: "application/json",
+			"clerus-custody": "user",
+			"clerus-wal-kind": kind,
+			text: body
+		}));
+
+		var before = JSON.stringify(
+			f.wiki.getTiddler(title).fields
+		);
+
+		var report = f.manager.recover();
+
+		var entry = report.entries.find(function (candidate) {
+			return candidate.title === title;
+		});
+
+		assert(entry.status === "unsupported");
+		assert(entry.error.indexOf("Unsupported WAL version") !== -1);
+
+		assert(
+			JSON.stringify(f.wiki.getTiddler(title).fields) === before
+		);
+	});
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["recovery: one failed obligation does not block others", testIndependentRecovery],
@@ -270,7 +344,9 @@ exports.run = function (tw) {
 		["recovery: user-prepared address is supported", testCustomUserAddress],
 		["recovery: unknown kind preserves its body", testUnknownKindPreservesBody],
 		["recovery: incidents remain historical", testIncidentsAreNotExecuted],
-		["recovery: incident marker alone does not prove history", testIncidentMarkerDoesNotProveHistory]
+		["recovery: incident marker alone does not prove history", testIncidentMarkerDoesNotProveHistory],
+		["recovery: delegation requires a matching envelope", testDelegationRequiresMatchingEnvelope],
+		["recovery: future delegated versions remain untouched under user custody", testFutureDelegationIsNotExecution]
 	];
 
 	var results = cases.map(function (item) {
