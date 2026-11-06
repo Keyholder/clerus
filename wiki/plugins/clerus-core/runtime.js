@@ -48,6 +48,9 @@ var PassCoordinator = require(
 var continuations = require(
 	"$:/plugins/clerus/core/continuations.js"
 );
+var obligationSummary = require(
+	"$:/plugins/clerus/core/obligation-summary.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -526,6 +529,13 @@ Runtime.prototype.handleFlowResult = function (context) {
 	}
 };
 
+Runtime.prototype.summarizeObligations = function () {
+	return obligationSummary.evaluate({
+		store: this.store,
+		platform: this.platform
+	});
+};
+
 Runtime.prototype.drainContinuationWork = function () {
 	var report = {
 		completed: [],
@@ -763,6 +773,7 @@ Runtime.prototype.drainOfficialWork = function () {
 
 	result.remaining = this.flowScheduler.queue.size;
 	result.ephemeralRemaining = this.scheduler.queue.length;
+	result.summary = this.summarizeObligations();
 
 	return result;
 };
@@ -1104,6 +1115,8 @@ function runDeferredPass() {
 					fields["clerus-custody"] === this.platform;
 			}, this).length;
 
+		report.summary = this.summarizeObligations();
+
 		return report;
 	} finally {
 		this.runningDeferred = false;
@@ -1289,7 +1302,8 @@ Runtime.prototype.inspect = function () {
 		}),
 		collection: this.lastCollection === null
 			? null
-			: schemas.copyJSON(this.lastCollection)
+			: schemas.copyJSON(this.lastCollection),
+		obligations: this.summarizeObligations()
 	};
 };
 
@@ -1371,7 +1385,8 @@ function recoverPass() {
 				continuation.entries
 			),
 
-			pendingFlowAttempts: this.flowScheduler.queue.size
+			pendingFlowAttempts: this.flowScheduler.queue.size,
+			summary: this.summarizeObligations()
 		};
 	} finally {
 		this.executing = false;
