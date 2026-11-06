@@ -259,6 +259,9 @@ function testUpwardAndDownwardCascade(tw) {
 
 	assert(result.status === "completed");
 	assert(result.flow.errors.length === 0);
+	assert(result.flow.continuations.every(function (pass) {
+		return pass.errors.length === 0;
+	}));
 	assert(result.flow.remaining === 0);
 
 	assert(
@@ -393,6 +396,9 @@ function testStaffedAssignmentRoundTrip(tw) {
 
 	assert(first.status === "completed");
 	assert(first.flow.errors.length === 0);
+	assert(first.flow.continuations.every(function (pass) {
+		return pass.errors.length === 0;
+	}));
 	assert(workerIsActive(f.runtime, f.titles.worker));
 
 	assert(!f.registry("director").department);
@@ -406,6 +412,9 @@ function testStaffedAssignmentRoundTrip(tw) {
 
 	assert(returned.status === "completed");
 	assert(returned.flow.errors.length === 0);
+	assert(returned.flow.continuations.every(function (pass) {
+		return pass.errors.length === 0;
+	}));
 	assert(state.returned === 1);
 	assert(f.registry("director").returned.link === "10/1");
 	assert(!f.registry("manager").mission);

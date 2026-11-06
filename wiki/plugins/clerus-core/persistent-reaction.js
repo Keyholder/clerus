@@ -426,13 +426,13 @@ function execute(options) {
 			proposal.plan.messages.length > 0 ||
 			proposal.plan.deferred.length > 0
 		) {
+			/*
+				Automatic event-producing roots remain on v1
+				until v2 supports the full recipient effect set.
+			*/
 			flow = true;
 			title = flows.register(proposal);
 		} else if (proposal.plan.effects.length === 0) {
-			/*
-				A root reaction without effects creates no
-				obligation and consumes no work identity.
-			*/
 			title = null;
 		} else {
 			var work = proposalWork.convert(
