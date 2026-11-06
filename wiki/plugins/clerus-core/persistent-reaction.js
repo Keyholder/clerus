@@ -49,6 +49,13 @@ function failed(phase, error, title) {
 }
 
 function messageEvent(message) {
+	if (message.kind === "activation") {
+		return {
+			type: "tick",
+			id: message.id
+		};
+	}
+
 	var event = {
 		type: message.type,
 		id: message.id
@@ -281,7 +288,9 @@ function execute(options) {
 
 			continuationDelivery = true;
 			event = messageEvent(delivery);
-			incoming = delivery.registry;
+			incoming = delivery.kind === "activation"
+				? undefined
+				: delivery.registry;
 		} catch (error) {
 			return failed(
 				"preparation",
@@ -437,7 +446,8 @@ function execute(options) {
 		} else {
 			var work = proposalWork.convert(
 				proposal,
-				options.newId()
+				options.newId(),
+				options.platform
 			);
 
 			title = manager.accept(work);

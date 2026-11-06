@@ -37,6 +37,42 @@ function identity(value) {
 function validate(value) {
 	var event = schemas.copyJSON(value);
 
+	if (
+		schemas.isRecord(event) &&
+		event.kind === "activation"
+	) {
+		fieldsOnly(event, [
+			"kind", "recipient"
+		], "activation event");
+
+		fieldsOnly(event.recipient, [
+			"title", "executor"
+		], "activation recipient");
+
+		var activationSpace = jobTitles.classify(
+			event.recipient.title
+		);
+
+		if (
+			!activationSpace ||
+			!activationSpace.persistent ||
+			typeof event.recipient.executor !== "string" ||
+			event.recipient.executor.length === 0
+		) {
+			throw new Error(
+				"Activation requires a persistent recipient"
+			);
+		}
+
+		return schemas.copyJSON({
+			kind: "activation",
+			recipient: {
+				title: event.recipient.title,
+				executor: event.recipient.executor
+			}
+		});
+	}
+
 	fieldsOnly(event, [
 		"kind", "recipient", "type", "registry", "project", "role"
 	], "event");

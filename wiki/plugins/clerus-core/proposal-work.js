@@ -12,8 +12,9 @@ var proposals = require(
 var works = require(
 	"$:/plugins/clerus/core/work-schema.js"
 );
+var schemas = require("$:/plugins/clerus/core/schemas.js");
 
-function convert(value, id) {
+function convert(value, id, platform) {
 	var proposal = proposals.validate(value, {
 		allowMessages: true,
 		allowDeferred: true
@@ -22,12 +23,6 @@ function convert(value, id) {
 	if (proposal.owner.state === null) {
 		throw new Error(
 			"Birth proposal requires establishing-event support"
-		);
-	}
-
-	if (proposal.plan.deferred.length !== 0) {
-		throw new Error(
-			"Deferred proposal requires activation support"
 		);
 	}
 
@@ -55,6 +50,26 @@ function convert(value, id) {
 			event: event
 		};
 	});
+
+	if (proposal.plan.deferred.length !== 0) {
+		schemas.assertPlatform(platform);
+
+		proposal.plan.deferred.forEach(function (effect) {
+			if (effect.platform !== platform) {
+				throw new Error(
+					"Cannot convert a foreign deferred effect"
+				);
+			}
+
+			emits.push({
+				id: effect.id,
+				event: {
+					kind: "activation",
+					recipient: effect.recipient
+				}
+			});
+		});
+	}
 
 	if (
 		proposal.plan.effects.length === 0 &&

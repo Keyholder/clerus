@@ -484,6 +484,13 @@ Runtime.prototype.drainContinuationWork = function () {
 					eventIndex++
 				) {
 					var entry = pending[eventIndex];
+
+					if (
+						entry.event.kind !== "delivery"
+					) {
+						continue;
+					}
+
 					var key = JSON.stringify([title, entry.id]);
 
 					if (!attempted.has(key)) {
@@ -751,6 +758,106 @@ function dispatchDeferredPass(title) {
 	}
 }
 
+function dispatchContinuationActivation(title, id) {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running
+	) {
+		throw new Error(
+			"Cannot start a nested continuation activation"
+		);
+	}
+
+	this.executing = true;
+
+	try {
+		var pending = this.continuations.pending(title).find(
+			function (entry) {
+				return (
+					entry.id === id &&
+					entry.event.kind === "activation"
+				);
+			}
+		);
+
+		if (!pending) {
+			return {
+				status: "unavailable",
+				reason: "activation-not-ready"
+			};
+		}
+
+		var recipient = pending.event.recipient;
+		var stored = this.store.read(recipient.title);
+
+		if (
+			stored.kind !== "materialized" ||
+			!jobState.hasExecutionHeader(stored.fields) ||
+			stored.fields["clerus-executor"] !==
+				recipient.executor
+		) {
+			return {
+				status: "unavailable",
+				reason: "activation-recipient-changed"
+			};
+		}
+
+		if (
+			stored.fields["clerus-suspended"] === "yes" &&
+			stored.fields["clerus-custody"] === this.platform
+		) {
+			return {
+				status: "blocked",
+				reason: "resumption-required",
+				obligations: []
+			};
+		}
+
+		var handler = this.resolveExecutor(
+			recipient.executor
+		);
+
+		if (typeof handler !== "function") {
+			return {
+				status: "unavailable",
+				reason: "executor-unavailable"
+			};
+		}
+
+		var event = {
+			type: "tick",
+			id: id
+		};
+
+		var result = persistentReactions.execute({
+			store: this.store,
+			title: recipient.title,
+			platform: this.platform,
+			handler: handler,
+			newId: this.newId,
+			continuation: {
+				title: title,
+				eventId: id
+			}
+		});
+
+		this.handlePersistentResult(
+			recipient.title,
+			recipient.executor,
+			handler,
+			event,
+			result
+		);
+
+		result.flow = this.drainOfficialWork();
+
+		return result;
+	} finally {
+		this.executing = false;
+	}
+}
+
 function runDeferredPass() {
 	if (
 		this.executing ||
@@ -776,6 +883,41 @@ function runDeferredPass() {
 	).map(function (fields) {
 		return fields.title;
 	}).sort();
+
+	var activationBatch = [];
+	var activationDiscoveryErrors = [];
+
+	this.store.snapshot().materialized.filter(
+		function (fields) {
+			return (
+				fields.title.indexOf(prefix) === 0 &&
+				fields["clerus-wal-kind"] === "continuation" &&
+				fields["clerus-custody"] === this.platform
+			);
+		},
+		this
+	).map(function (fields) {
+		return fields.title;
+	}).sort().forEach(function (title) {
+		try {
+			this.continuations.pending(title).forEach(
+				function (entry) {
+					if (entry.event.kind === "activation") {
+						activationBatch.push({
+							title: title,
+							id: entry.id
+						});
+					}
+				}
+			);
+		} catch (error) {
+			activationDiscoveryErrors.push({
+				title: title,
+				phase: "activation-discovery",
+				error: lifecycle.describeError(error)
+			});
+		}
+	}, this);
 
 	this.runningDeferred = true;
 
@@ -809,6 +951,43 @@ function runDeferredPass() {
 				report.errors.push({
 					title: title,
 					phase: "persistent-deferred-delivery",
+					error: lifecycle.describeError(error)
+				});
+			}
+		}, this);
+
+		report.activations = [];
+
+		report.errors = report.errors.concat(
+			activationDiscoveryErrors
+		);
+
+		activationBatch.forEach(function (entry) {
+			var current = this.store.read(entry.title);
+
+			if (
+				current.kind !== "materialized" ||
+				current.fields["clerus-custody"] !== this.platform ||
+				current.fields["clerus-wal-kind"] !== "continuation"
+			) {
+				return;
+			}
+
+			try {
+				report.activations.push({
+					title: entry.title,
+					eventId: entry.id,
+					result: dispatchContinuationActivation.call(
+						this,
+						entry.title,
+						entry.id
+					)
+				});
+			} catch (error) {
+				report.errors.push({
+					title: entry.title,
+					eventId: entry.id,
+					phase: "continuation-activation",
 					error: lifecycle.describeError(error)
 				});
 			}

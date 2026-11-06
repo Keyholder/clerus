@@ -537,7 +537,8 @@ function create(options) {
 
 		var work = proposalWork.convert(
 			proposal,
-			nonempty ? options.newId() : undefined
+			nonempty ? options.newId() : undefined,
+			options.platform
 		);
 
 		if (work !== null) {

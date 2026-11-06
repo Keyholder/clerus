@@ -234,11 +234,13 @@ function evaluate(options) {
 						event: id
 					});
 
-					addRegistry(event.registry, {
-						kind: "transactional-reference",
-						wal: fields.title,
-						event: id
-					});
+					if (event.kind === "delivery") {
+						addRegistry(event.registry, {
+							kind: "transactional-reference",
+							wal: fields.title,
+							event: id
+						});
+					}
 				}
 
 				Object.keys(continuation.events).forEach(
