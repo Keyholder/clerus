@@ -245,12 +245,185 @@ function testEmissionOnlyWork(tw) {
 	assert(f.calls() === 0);
 }
 
+function testDeliveryConsumesEvent(tw) {
+	var f = fixture(tw);
+	var calls = 0;
+	var receivedId = null;
+
+	f.runtime.resolveExecutor = function () {
+		return function (event, operational, incoming) {
+			calls++;
+			receivedId = event.id;
+
+			incoming.move("input", operational, "received");
+			incoming.destroy("reference");
+
+			operational.get("charter").setStatus({
+				phase: "received"
+			});
+		};
+	};
+
+	var title = f.runtime.continuations.accept(f.work);
+
+	f.runtime.recover();
+
+	assert(calls === 0);
+
+	var report = f.runtime.drainFlows();
+
+	assert(report.continuations.length !== 0);
+	assert(calls === 1);
+	assert(receivedId === f.work.emits[0].id);
+	assert(!f.wiki.tiddlerExists(title));
+
+	var registry = JSON.parse(
+		f.wiki.getTiddlerText(f.recipient)
+	);
+
+	assert(registry.received.data === 42);
+	assert(registry.charter.status.phase === "received");
+
+	f.runtime.drainFlows();
+	assert(calls === 1);
+}
+
+function testEmptyDeliveryStillCompletes(tw) {
+	var f = fixture(tw);
+	var calls = 0;
+
+	f.work.emits[0].event.registry = {};
+
+	f.runtime.resolveExecutor = function () {
+		return function () {
+			calls++;
+		};
+	};
+
+	var title = f.runtime.continuations.accept(f.work);
+
+	f.runtime.recover();
+	f.runtime.drainFlows();
+
+	assert(calls === 1);
+	assert(!f.wiki.tiddlerExists(title));
+}
+
+function testReactionFailurePausesEvent(tw) {
+	var f = fixture(tw);
+	var calls = 0;
+	var id = f.work.emits[0].id;
+
+	f.runtime.resolveExecutor = function () {
+		return function (event, operational) {
+			if (event.type === "suspended") {
+				return;
+			}
+
+			calls++;
+
+			operational.get("charter").setStatus({
+				phase: "must-not-materialize"
+			});
+
+			throw new Error("Rejected continuation event");
+		};
+	};
+
+	var title = f.runtime.continuations.accept(f.work);
+
+	f.runtime.recover();
+	f.runtime.drainFlows();
+
+	var journal = f.wiki.getTiddler(title);
+	var record = JSON.parse(journal.fields.text);
+
+	assert(calls === 1);
+	assert(record.work === null);
+	assert(record.events[id].mode === "paused");
+	assert(record.events[id].event.registry.input.data === 42);
+	assert(record.diagnostics.length === 1);
+	assert(journal.fields["clerus-custody"] === "user");
+
+	assert(
+		JSON.parse(f.wiki.getTiddlerText(f.recipient))
+			.charter.status.phase !== "must-not-materialize"
+	);
+
+	f.runtime.drainFlows();
+	assert(calls === 1);
+}
+
+function testAcceptedConsequencesDoNotReplayHandler(tw) {
+	var f = fixture(tw);
+	var calls = 0;
+
+	f.runtime.resolveExecutor = function () {
+		return function (event, operational, incoming) {
+			calls++;
+			incoming.move("input", operational, "received");
+			incoming.destroy("reference");
+		};
+	};
+
+	var title = f.runtime.continuations.accept(f.work);
+	f.runtime.recover();
+
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (
+			effect.title === f.recipient &&
+			!injected
+		) {
+			injected = true;
+			throw new Error("Interrupted recipient materialization");
+		}
+
+		return result;
+	};
+
+	try {
+		f.runtime.drainFlows();
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(calls === 1);
+
+	var journal = f.wiki.getTiddler(title);
+	var record = JSON.parse(journal.fields.text);
+
+	assert(record.work);
+	assert(Object.keys(record.events).length === 0);
+	assert(journal.fields["clerus-custody"] === "user");
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		journal,
+		{ "clerus-custody": f.runtime.platform }
+	));
+
+	f.runtime.recover();
+	f.runtime.drainFlows();
+
+	assert(calls === 1);
+	assert(!f.wiki.tiddlerExists(title));
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["work publishes registered waiting events", testPublication],
 		["failed publication preserves accepted work", testPublicationFailure],
 		["paused events retain recipients and references", testWaitingRetention],
-		["emission-only work is supported", testEmissionOnlyWork]
+		["emission-only work is supported", testEmissionOnlyWork],
+		["delivery consumes event and files documents", testDeliveryConsumesEvent],
+		["empty consequences still complete delivery", testEmptyDeliveryStillCompletes],
+		["reaction failure pauses the authoritative event", testReactionFailurePausesEvent],
+		["accepted consequences do not replay handler", testAcceptedConsequencesDoNotReplayHandler]
 	];
 
 	var results = cases.map(function (item) {

@@ -25,20 +25,41 @@ function convert(value, id) {
 		);
 	}
 
-	if (
-		proposal.plan.messages.length !== 0 ||
-		proposal.plan.deferred.length !== 0
-	) {
+	if (proposal.plan.deferred.length !== 0) {
 		throw new Error(
-			"Event-bearing proposal requires event support"
+			"Deferred proposal requires activation support"
 		);
 	}
 
-	/*
-		An empty material reaction creates no new obligation.
-		Consumption of an incoming event is a separate protocol.
-	*/
-	if (proposal.plan.effects.length === 0) {
+	var emits = proposal.plan.messages.map(function (message) {
+		if (message.establishing === true) {
+			throw new Error(
+				"Establishing message requires establishment support"
+			);
+		}
+
+		var event = {
+			kind: "delivery",
+			recipient: message.recipient,
+			type: message.type,
+			registry: message.registry
+		};
+
+		if (message.type === "report") {
+			event.project = message.project;
+			event.role = message.role;
+		}
+
+		return {
+			id: message.id,
+			event: event
+		};
+	});
+
+	if (
+		proposal.plan.effects.length === 0 &&
+		emits.length === 0
+	) {
 		return null;
 	}
 
@@ -59,7 +80,7 @@ function convert(value, id) {
 			}],
 		transitions: proposal.plan.effects,
 		blocks: [proposal.owner.title],
-		emits: []
+		emits: emits
 	});
 }
 

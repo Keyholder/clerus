@@ -445,12 +445,172 @@ Runtime.prototype.handleFlowResult = function (context) {
 	}
 };
 
+Runtime.prototype.drainContinuationWork = function () {
+	var report = {
+		completed: [],
+		blocked: [],
+		unavailable: [],
+		errors: []
+	};
+
+	var attempted = new Set();
+	var prefix = "$:/clerus/wal/" + this.platform + "/";
+
+	while (true) {
+		var selected = null;
+
+		var titles = this.store.snapshot().materialized.filter(
+			function (fields) {
+				return (
+					fields.title.indexOf(prefix) === 0 &&
+					fields["clerus-wal-kind"] === "continuation" &&
+					fields["clerus-custody"] === this.platform
+				);
+			},
+			this
+		).map(function (fields) {
+			return fields.title;
+		}).sort();
+
+		for (var index = 0; index < titles.length; index++) {
+			var title = titles[index];
+
+			try {
+				var pending = this.continuations.pending(title);
+
+				for (
+					var eventIndex = 0;
+					eventIndex < pending.length;
+					eventIndex++
+				) {
+					var entry = pending[eventIndex];
+					var key = JSON.stringify([title, entry.id]);
+
+					if (!attempted.has(key)) {
+						selected = {
+							title: title,
+							id: entry.id,
+							event: entry.event,
+							key: key
+						};
+						break;
+					}
+				}
+			} catch (error) {
+				var journalKey = JSON.stringify([title, null]);
+
+				if (!attempted.has(journalKey)) {
+					attempted.add(journalKey);
+					report.errors.push({
+						title: title,
+						phase: "journal",
+						error: lifecycle.describeError(error)
+					});
+				}
+			}
+
+			if (selected !== null) {
+				break;
+			}
+		}
+
+		if (selected === null) {
+			break;
+		}
+
+		attempted.add(selected.key);
+
+		var event = selected.event;
+		var stored = this.store.read(event.recipient.title);
+		var item = {
+			title: selected.title,
+			eventId: selected.id,
+			recipient: event.recipient.title
+		};
+
+		if (
+			stored.kind !== "materialized" ||
+			!jobState.hasExecutionHeader(stored.fields) ||
+			stored.fields["clerus-executor"] !==
+				event.recipient.executor
+		) {
+			item.reason = "recipient-unavailable";
+			report.unavailable.push(item);
+			continue;
+		}
+
+		if (
+			stored.fields["clerus-suspended"] === "yes" &&
+			stored.fields["clerus-custody"] === this.platform
+		) {
+			item.reason = "resumption-required";
+			report.blocked.push(item);
+			continue;
+		}
+
+		var handler = this.resolveExecutor(
+			event.recipient.executor
+		);
+
+		if (typeof handler !== "function") {
+			item.reason = "executor-unavailable";
+			report.unavailable.push(item);
+			continue;
+		}
+
+		var deliveredEvent = {
+			type: event.type,
+			id: selected.id
+		};
+
+		if (event.type === "report") {
+			deliveredEvent.project = event.project;
+			deliveredEvent.role = event.role.slice();
+		}
+
+		var result = persistentReactions.execute({
+			store: this.store,
+			title: event.recipient.title,
+			platform: this.platform,
+			handler: handler,
+			newId: this.newId,
+			continuation: {
+				title: selected.title,
+				eventId: selected.id
+			}
+		});
+
+		this.handlePersistentResult(
+			event.recipient.title,
+			event.recipient.executor,
+			handler,
+			deliveredEvent,
+			result
+		);
+
+		item.result = result;
+
+		if (result.status === "completed") {
+			report.completed.push(item);
+		} else if (result.status === "blocked") {
+			report.blocked.push(item);
+		} else if (result.status === "unavailable") {
+			report.unavailable.push(item);
+		} else {
+			report.errors.push(item);
+		}
+	}
+
+	return report;
+};
+
 Runtime.prototype.drainOfficialWork = function () {
 	var result = {
 		completed: [],
 		blocked: [],
 		unavailable: [],
 		errors: [],
+		continuations: [],
 		ephemeral: [],
 		remaining: 0,
 		ephemeralRemaining: 0
@@ -472,6 +632,10 @@ Runtime.prototype.drainOfficialWork = function () {
 		].forEach(function (name) {
 			result[name] = result[name].concat(flow[name]);
 		});
+
+		result.continuations.push(
+			this.drainContinuationWork()
+		);
 
 		/*
 			Continue only if flow delivery accepted new ephemeral

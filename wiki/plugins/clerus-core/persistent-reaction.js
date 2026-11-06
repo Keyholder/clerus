@@ -96,11 +96,16 @@ function execute(options) {
 	});
 
 	if (
-		options.flow !== undefined &&
-		options.deferred !== undefined
+		[
+			options.flow,
+			options.deferred,
+			options.continuation
+		].filter(function (value) {
+			return value !== undefined;
+		}).length > 1
 	) {
 		throw new Error(
-			"A reaction cannot consume both a message and a deferred event"
+			"A reaction can consume only one incoming obligation"
 		);
 	}
 
@@ -117,6 +122,7 @@ function execute(options) {
 
 	var delivery = null;
 	var deferredDelivery = false;
+	var continuationDelivery = false;
 	var incomingObligation = null;
 	var event = options.event;
 	var incoming = options.incoming;
@@ -225,6 +231,66 @@ function execute(options) {
 		}
 	}
 
+	if (options.continuation !== undefined) {
+		if (
+			!options.continuation ||
+			typeof options.continuation.title !== "string" ||
+			typeof options.continuation.eventId !== "string"
+		) {
+			throw new Error(
+				"Invalid continuation delivery address"
+			);
+		}
+
+		incomingObligation = options.continuation.title;
+
+		try {
+			var pendingEvent = manager.pending(
+				incomingObligation
+			).find(function (entry) {
+				return (
+					entry.id === options.continuation.eventId
+				);
+			});
+
+			if (!pendingEvent) {
+				return {
+					status: "unavailable",
+					reason: "continuation-event-not-ready"
+				};
+			}
+
+			delivery = Object.assign(
+				{ id: pendingEvent.id },
+				pendingEvent.event
+			);
+
+			var recipient = options.store.read(options.title);
+
+			if (
+				delivery.recipient.title !== options.title ||
+				recipient.kind !== "materialized" ||
+				recipient.fields["clerus-executor"] !==
+					delivery.recipient.executor
+			) {
+				return {
+					status: "unavailable",
+					reason: "continuation-recipient-changed"
+				};
+			}
+
+			continuationDelivery = true;
+			event = messageEvent(delivery);
+			incoming = delivery.registry;
+		} catch (error) {
+			return failed(
+				"preparation",
+				error,
+				incomingObligation
+			);
+		}
+	}
+
 	var proposal;
 	var invoked = false;
 
@@ -275,7 +341,16 @@ function execute(options) {
 
 		if (delivery && invoked) {
 			try {
-				if (deferredDelivery) {
+				if (continuationDelivery) {
+					manager.failEvent(
+						incomingObligation,
+						delivery.id,
+						delivery.recipient,
+						error
+					);
+
+					failure.pending = [];
+				} else if (deferredDelivery) {
 					deferred.fail(
 						incomingObligation,
 						delivery.id,
@@ -310,23 +385,36 @@ function execute(options) {
 	}
 
 	var title = null;
-	var flow = delivery !== null;
+	var flow = (
+		delivery !== null &&
+		!continuationDelivery
+	);
 
 	try {
 		if (delivery) {
 			title = incomingObligation;
 
-			var accepted = deferredDelivery
-				? deferred.accept(
-					title,
-					delivery.id,
-					proposal
-				)
-				: flows.accept(
+			var accepted;
+
+			if (continuationDelivery) {
+				accepted = manager.acceptEvent(
 					title,
 					delivery.id,
 					proposal
 				);
+			} else if (deferredDelivery) {
+				accepted = deferred.accept(
+					title,
+					delivery.id,
+					proposal
+				);
+			} else {
+				accepted = flows.accept(
+					title,
+					delivery.id,
+					proposal
+				);
+			}
 
 			if (accepted !== "accepted") {
 				return {

@@ -21,6 +21,12 @@ var compatibility = require(
 var eventSchema = require(
 	"$:/plugins/clerus/core/event-schema.js"
 );
+var proposals = require(
+	"$:/plugins/clerus/core/proposal-schema.js"
+);
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -421,11 +427,214 @@ function create(options) {
 		}
 	}
 
+	function pending(title) {
+		var record = read(title).record;
+
+		if (record.work !== null) {
+			return [];
+		}
+
+		return Object.keys(record.events).sort().filter(
+			function (id) {
+				return record.events[id].mode === "ready";
+			}
+		).map(function (id) {
+			return schemas.copyJSON({
+				id: id,
+				event: record.events[id].event
+			});
+		});
+	}
+
+	function replace(loaded, record, custody, name) {
+		var normalized = continuationSchema.validate(
+			record,
+			options.platform
+		);
+
+		var after = schemas.copyJSON(loaded.fields);
+
+		after.text = JSON.stringify(normalized);
+		after["clerus-custody"] = custody;
+
+		try {
+			options.store.apply(stores.transition(
+				loaded.fields.title,
+				loaded.fields,
+				after
+			));
+		} catch (cause) {
+			var error = new Error(
+				String(cause && cause.message || cause)
+			);
+
+			error.name = name;
+			error.cause = cause;
+			error.obligationTitle = loaded.fields.title;
+			error.acceptanceUncertain = true;
+
+			throw error;
+		}
+	}
+
+	function acceptEvent(title, id, value) {
+		var loaded = read(title);
+		var record = loaded.record;
+
+		if (record.work !== null) {
+			throw new Error(
+				"Continuation already has active materialization"
+			);
+		}
+
+		if (
+			!hasOwn(record.events, id) ||
+			record.events[id].mode !== "ready"
+		) {
+			return "unavailable";
+		}
+
+		var event = record.events[id].event;
+
+		var proposal = proposals.validate(value, {
+			allowMessages: true,
+			allowDeferred: true
+		});
+
+		if (
+			proposal.owner.title !== event.recipient.title ||
+			proposal.owner.executor !== event.recipient.executor ||
+			proposal.owner.state === null
+		) {
+			throw new Error(
+				"Event consequences belong to another recipient"
+			);
+		}
+
+		var owner = options.store.read(proposal.owner.title);
+
+		if (
+			owner.kind !== "materialized" ||
+			JSON.stringify(owner.fields) !==
+				JSON.stringify(proposal.owner.state)
+		) {
+			throw new Error(
+				"Event recipient baseline has changed"
+			);
+		}
+
+		var nonempty = (
+			proposal.plan.effects.length !== 0 ||
+			proposal.plan.messages.length !== 0 ||
+			proposal.plan.deferred.length !== 0
+		);
+
+		if (nonempty && typeof options.newId !== "function") {
+			throw new Error(
+				"Event acceptance requires an identity source"
+			);
+		}
+
+		var work = proposalWork.convert(
+			proposal,
+			nonempty ? options.newId() : undefined
+		);
+
+		if (work !== null) {
+			compatibility.check({
+				store: options.store,
+				title: title,
+				work: work
+			});
+
+			materializer.check({
+				store: options.store,
+				platform: options.platform,
+				work: work
+			});
+		}
+
+		delete record.events[id];
+		record.work = work;
+
+		/*
+			The event fingerprint remains in evidence.
+
+			The authoritative replacement happens in one write:
+			before it the event is pending; after it the accepted
+			consequences are authoritative.
+		*/
+		replace(
+			loaded,
+			record,
+			options.platform,
+			"ContinuationEventAcceptanceError"
+		);
+
+		return "accepted";
+	}
+
+		function failEvent(title, id, recipient, cause) {
+		var loaded = read(title);
+		var record = loaded.record;
+
+		if (record.work !== null) {
+			throw new Error(
+				"Cannot fail an event during materialization"
+			);
+		}
+
+		if (
+			!hasOwn(record.events, id) ||
+			record.events[id].mode !== "ready"
+		) {
+			return "unavailable";
+		}
+
+		var event = record.events[id].event;
+
+		if (
+			!recipient ||
+			recipient.title !== event.recipient.title ||
+			recipient.executor !== event.recipient.executor
+		) {
+			throw new Error(
+				"Event failure belongs to another recipient"
+			);
+		}
+
+		record.events[id].mode = "paused";
+
+		record.diagnostics.push({
+			event: id,
+			phase: "reaction",
+			error: describe(cause)
+		});
+
+		var hasReady = Object.keys(record.events).some(
+			function (key) {
+				return record.events[key].mode === "ready";
+			}
+		);
+
+		replace(
+			loaded,
+			record,
+			hasReady ? options.platform : "user",
+			"ContinuationEventFailureError"
+		);
+
+		return "paused";
+	}
+
 	return Object.freeze({
 		accept: accept,
 		read: read,
 		resume: resume,
-		recover: recover
+		recover: recover,
+		pending: pending,
+		acceptEvent: acceptEvent,
+		failEvent: failEvent
 	});
 }
 
