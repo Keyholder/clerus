@@ -274,15 +274,23 @@ function execute(options) {
 
 			var recipient = options.store.read(options.title);
 
-			if (
-				delivery.recipient.title !== options.title ||
-				recipient.kind !== "materialized" ||
-				recipient.fields["clerus-executor"] !==
-					delivery.recipient.executor
-			) {
+			var recipientMatches = (
+				delivery.recipient.title === options.title &&
+				(
+					delivery.establishing === true
+						? recipient.kind === "absent"
+						: recipient.kind === "materialized" &&
+							recipient.fields["clerus-executor"] ===
+								delivery.recipient.executor
+				)
+			);
+
+			if (!recipientMatches) {
 				return {
 					status: "unavailable",
-					reason: "continuation-recipient-changed"
+					reason: delivery.establishing === true
+						? "establishment-target-occupied"
+						: "continuation-recipient-changed"
 				};
 			}
 

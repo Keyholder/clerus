@@ -205,8 +205,9 @@ function testAcceptedReservationPreventsSecondFounding(tw) {
 	assert(second.phase === "acceptance");
 	assert(
 		second.error.message.indexOf(
-			"pending establishment"
-		) !== -1
+			"Establishment address is reserved:"
+		) !== -1,
+		"Second founding must be rejected by the accepted address reservation"
 	);
 
 	assert(f.wiki.getTiddler(f.founder).fields.text === before);
@@ -215,6 +216,25 @@ function testAcceptedReservationPreventsSecondFounding(tw) {
 	);
 	assert(f.registry().secondContract);
 	assert(!f.wiki.getTiddler(f.registry().child));
+	assert(f.births() === 0);
+	assert(second.obligation === null);
+	assert(!second.acceptanceUncertain);
+
+	var journals = [];
+
+	f.wiki.each(function (tiddler, title) {
+		if (
+			title.indexOf("$:/clerus/wal/") === 0
+		) {
+			journals.push(title);
+		}
+	});
+
+	assert(
+		journals.length === 1 &&
+		journals[0] === first.obligation,
+		"Rejected founding must not create another journal"
+	);
 }
 
 exports.run = function (tw) {

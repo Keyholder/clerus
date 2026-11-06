@@ -68,9 +68,9 @@ function snapshot(title, value) {
 }
 
 function validateJobTransition(effect) {
-	if (effect.before === null || effect.after === null) {
+	if (effect.after === null) {
 		throw new Error(
-			"Job creation and deletion are not supported by material work yet"
+			"Job deletion is not supported by material work yet"
 		);
 	}
 
@@ -78,26 +78,34 @@ function validateJobTransition(effect) {
 	var after = effect.after;
 
 	if (
-		typeof before["clerus-executor"] !== "string" ||
-		before["clerus-executor"].length === 0 ||
-		after["clerus-executor"] !== before["clerus-executor"]
-	) {
-		throw new Error("Material work cannot change job executor");
-	}
-
-	if (
-		before["clerus-custody"] !== after["clerus-custody"]
-	) {
-		throw new Error(
-			"Job custody changes require the relocation protocol"
-		);
-	}
-
-	if (
 		after.type !== "application/json" ||
+		typeof after["clerus-executor"] !== "string" ||
+		after["clerus-executor"].length === 0 ||
 		typeof after.text !== "string"
 	) {
 		throw new Error("Invalid final job header");
+	}
+
+	if (before !== null) {
+		if (
+			typeof before["clerus-executor"] !== "string" ||
+			before["clerus-executor"].length === 0 ||
+			after["clerus-executor"] !==
+				before["clerus-executor"]
+		) {
+			throw new Error(
+				"Material work cannot change job executor"
+			);
+		}
+
+		if (
+			before["clerus-custody"] !==
+				after["clerus-custody"]
+		) {
+			throw new Error(
+				"Job custody changes require the relocation protocol"
+			);
+		}
 	}
 
 	var registry;
@@ -108,10 +116,6 @@ function validateJobTransition(effect) {
 		throw new Error("Invalid final job registry JSON");
 	}
 
-	/*
-		Validate the destination, not the source registry.
-		A material work may repair a damaged operational registry.
-	*/
 	schemas.registry(registry, "operational");
 }
 

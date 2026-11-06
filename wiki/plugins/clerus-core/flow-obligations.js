@@ -156,61 +156,6 @@ function create(options) {
 				throw new Error("Establishment target is occupied");
 			}
 		});
-
-		if (requested.size === 0) {
-			return;
-		}
-
-		options.store.snapshot().materialized.forEach(function (fields) {
-			if (
-				fields.title.indexOf(walPrefix) !== 0 ||
-				fields["clerus-wal-kind"] !== "flow"
-			) {
-				return;
-			}
-
-			/*
-				Custody does not cancel a previously accepted reservation.
-				An unreadable flow prevents proving that an address is free.
-			*/
-			var record = flows.validate(
-				walEnvelope.requireRecord(
-					fields,
-					options.platform,
-					"flow"
-				),
-				options.platform
-			);
-
-			if (
-				record.active !== null &&
-				record.active.owner.state === null &&
-				requested.has(record.active.owner.title)
-			) {
-				throw new Error(
-					"Target has an accepted unfinished birth"
-				);
-			}
-
-			var messages = record.pending.slice();
-
-			if (record.active !== null) {
-				messages = messages.concat(
-					record.active.plan.messages
-				);
-			}
-
-			messages.forEach(function (message) {
-				if (
-					message.establishing === true &&
-					requested.has(message.recipient.title)
-				) {
-					throw new Error(
-						"Target already has a pending establishment"
-					);
-				}
-			});
-		});
 	}
 
 	function register(value) {

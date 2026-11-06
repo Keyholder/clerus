@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var roles = require("$:/plugins/clerus/core/roles.js");
+var establishmentInput = require(
+	"$:/plugins/clerus/core/establishment-input.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -74,7 +77,13 @@ function validate(value) {
 	}
 
 	fieldsOnly(event, [
-		"kind", "recipient", "type", "registry", "project", "role"
+		"kind",
+		"recipient",
+		"type",
+		"registry",
+		"project",
+		"role",
+		"establishing"
 	], "event");
 
 	fieldsOnly(event.recipient, [
@@ -125,6 +134,33 @@ function validate(value) {
 		hasOwn(event, "role")
 	) {
 		throw new Error("Order event cannot carry a report signature");
+	}
+
+	if (hasOwn(event, "establishing")) {
+		if (
+			event.establishing !== true ||
+			event.type !== "order"
+		) {
+			throw new Error(
+				"Establishment requires an order"
+			);
+		}
+
+		var founding = establishmentInput.read(
+			result.registry,
+			{ temporary: false }
+		);
+
+		if (
+			founding.contract.executor !==
+				result.recipient.executor
+		) {
+			throw new Error(
+				"Establishment executor does not match the contract"
+			);
+		}
+
+		result.establishing = true;
 	}
 
 	return schemas.copyJSON(result);

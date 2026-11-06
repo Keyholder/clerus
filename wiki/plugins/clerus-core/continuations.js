@@ -503,21 +503,30 @@ function create(options) {
 
 		if (
 			proposal.owner.title !== event.recipient.title ||
-			proposal.owner.executor !== event.recipient.executor ||
-			proposal.owner.state === null
+			proposal.owner.executor !== event.recipient.executor
 		) {
 			throw new Error(
 				"Event consequences belong to another recipient"
 			);
 		}
 
+		var birth = proposal.owner.state === null;
+
+		if (birth !== (event.establishing === true)) {
+			throw new Error(
+				"Proposal birth state does not match the event"
+			);
+		}
+
 		var owner = options.store.read(proposal.owner.title);
 
-		if (
-			owner.kind !== "materialized" ||
-			JSON.stringify(owner.fields) !==
-				JSON.stringify(proposal.owner.state)
-		) {
+		var matchesBaseline = birth
+			? owner.kind === "absent"
+			: owner.kind === "materialized" &&
+				JSON.stringify(owner.fields) ===
+					JSON.stringify(proposal.owner.state);
+
+		if (!matchesBaseline) {
 			throw new Error(
 				"Event recipient baseline has changed"
 			);
@@ -538,7 +547,8 @@ function create(options) {
 		var work = proposalWork.convert(
 			proposal,
 			nonempty ? options.newId() : undefined,
-			options.platform
+			options.platform,
+			birth
 		);
 
 		if (work !== null) {

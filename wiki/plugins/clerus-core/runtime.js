@@ -535,18 +535,26 @@ Runtime.prototype.drainContinuationWork = function () {
 			recipient: event.recipient.title
 		};
 
-		if (
-			stored.kind !== "materialized" ||
-			!jobState.hasExecutionHeader(stored.fields) ||
-			stored.fields["clerus-executor"] !==
-				event.recipient.executor
-		) {
-			item.reason = "recipient-unavailable";
+		var establishing = event.establishing === true;
+
+		var recipientAvailable = establishing
+			? stored.kind === "absent"
+			: stored.kind === "materialized" &&
+				jobState.hasExecutionHeader(stored.fields) &&
+				stored.fields["clerus-executor"] ===
+					event.recipient.executor;
+
+		if (!recipientAvailable) {
+			item.reason = establishing
+				? "establishment-target-occupied"
+				: "recipient-unavailable";
+
 			report.unavailable.push(item);
 			continue;
 		}
 
 		if (
+			!establishing &&
 			stored.fields["clerus-suspended"] === "yes" &&
 			stored.fields["clerus-custody"] === this.platform
 		) {

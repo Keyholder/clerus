@@ -22,6 +22,9 @@ var envelopes = require(
 var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
+var reservations = require(
+	"$:/plugins/clerus/core/establishment-reservations.js"
+);
 
 function proposalView(value) {
 	var proposal = proposals.validate(value, {
@@ -116,6 +119,14 @@ function check(options) {
 			"Cannot establish work compatibility: unreadable WAL"
 		);
 	}
+
+	reservations.check({
+		store: options.store,
+		title: options.title,
+		claims: hasWork
+			? reservations.fromWork(options.work)
+			: reservations.fromProposal(options.proposal)
+	});
 
 	options.store.snapshot().materialized.forEach(function (fields) {
 		var platform = envelopes.platformOf(fields.title);

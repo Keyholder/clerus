@@ -14,31 +14,32 @@ var works = require(
 );
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 
-function convert(value, id, platform) {
+function convert(value, id, platform, establishing) {
 	var proposal = proposals.validate(value, {
 		allowMessages: true,
 		allowDeferred: true
 	});
 
-	if (proposal.owner.state === null) {
+	if (
+		proposal.owner.state === null &&
+		establishing !== true
+	) {
 		throw new Error(
-			"Birth proposal requires establishing-event support"
+			"Birth proposal requires an establishing event"
 		);
 	}
 
 	var emits = proposal.plan.messages.map(function (message) {
-		if (message.establishing === true) {
-			throw new Error(
-				"Establishing message requires establishment support"
-			);
-		}
-
 		var event = {
 			kind: "delivery",
 			recipient: message.recipient,
 			type: message.type,
 			registry: message.registry
 		};
+
+		if (message.establishing === true) {
+			event.establishing = true;
+		}
 
 		if (message.type === "report") {
 			event.project = message.project;
