@@ -77,6 +77,7 @@ var SUITES = Object.freeze([
 	"continuation-events",
 	"continuation-cascade",
 	"continuation-repair",
+	"continuation-mixed",
 	"continuation-activations",
 	"continuation-establishment",
 	"continuation-ephemeral",
