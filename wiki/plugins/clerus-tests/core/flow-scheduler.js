@@ -10,8 +10,8 @@ var FlowScheduler = require(
 	"$:/plugins/clerus/core/flow-scheduler.js"
 ).Scheduler;
 
-var persistent = require(
-	"$:/plugins/clerus/core/persistent-reaction.js"
+var legacyRoot = require(
+	"$:/plugins/clerus/tests/legacy-flow-root.js"
 );
 
 var Store = require("$:/plugins/clerus/core/store.js").Store;
@@ -90,7 +90,7 @@ function fixture(tw, handlers) {
 		scheduler: scheduler,
 
 		root: function (handler) {
-			return persistent.execute({
+			return legacyRoot.start({
 				store: store,
 				title: titles.root,
 				platform: platform,

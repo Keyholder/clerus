@@ -10,6 +10,9 @@ var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
 );
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -149,19 +152,30 @@ function testUnavailableExecutor(tw, ephemeral) {
 	var first = f.start();
 
 	assert(first.status === "completed");
-	assert(first.flow.unavailable.length === 1);
-	assert(first.flow.remaining === 1);
+	assert(
+		observation.attempts(first.flow).unavailable.length === 1
+	);
+	assert(first.flow.summary.complete);
+	assert(first.flow.summary.waiting.deliveries.ready === 1);
 	assert(f.calls.root === 1);
 	assert(f.calls.target === 0);
 
-	var id = first.pending[0].id;
+	var ids = observation.pendingDeliveryIds(
+		f.wiki,
+		first.obligation
+	);
+
+	assert(ids.length === 1);
+	var id = ids[0];
 	var body = f.wiki.getTiddler(first.obligation).fields.text;
 
 	for (var index = 0; index < 2; index++) {
 		var retried = f.runtime.drainFlows();
 
-		assert(retried.unavailable.length === 1);
-		assert(retried.remaining === 1);
+		assert(
+			observation.attempts(retried).unavailable.length === 1
+		);
+		assert(retried.summary.waiting.deliveries.ready === 1);
 		assert(f.calls.target === 0);
 
 		assert(
@@ -172,10 +186,11 @@ function testUnavailableExecutor(tw, ephemeral) {
 	f.enable();
 
 	var completed = f.runtime.drainFlows();
+	var completedAttempts = observation.attempts(completed);
 
-	assert(completed.errors.length === 0);
-	assert(completed.completed.length === 1);
-	assert(completed.remaining === 0);
+	assert(completedAttempts.errors.length === 0);
+	assert(completedAttempts.completed.length === 1);
+	assert(completed.summary.waiting.deliveries.ready === 0);
 	assert(f.calls.root === 1);
 	assert(f.calls.target === 1);
 	assert(f.receivedIds[0] === id);
@@ -183,7 +198,9 @@ function testUnavailableExecutor(tw, ephemeral) {
 
 	var repeated = f.runtime.drainFlows();
 
-	assert(repeated.completed.length === 0);
+	assert(
+		observation.attempts(repeated).completed.length === 0
+	);
 	assert(f.calls.target === 1);
 }
 
@@ -202,6 +219,14 @@ function testChangedExecutorPreservesObligation(tw) {
 
 	var first = f.start();
 
+	var ids = observation.pendingDeliveryIds(
+		f.wiki,
+		first.obligation
+	);
+
+	assert(ids.length === 1);
+	var id = ids[0];
+
 	f.wiki.addTiddler(new tw.Tiddler(
 		f.wiki.getTiddler(f.titles.target),
 		{ "clerus-executor": "replacement" }
@@ -211,8 +236,10 @@ function testChangedExecutorPreservesObligation(tw) {
 
 	var blocked = f.runtime.drainFlows();
 
-	assert(blocked.unavailable.length === 1);
-	assert(blocked.remaining === 1);
+	assert(
+		observation.attempts(blocked).unavailable.length === 1
+	);
+	assert(blocked.summary.waiting.deliveries.ready === 1);
 	assert(f.calls.target === 0);
 
 	f.wiki.addTiddler(new tw.Tiddler(
@@ -222,9 +249,11 @@ function testChangedExecutorPreservesObligation(tw) {
 
 	var completed = f.runtime.drainFlows();
 
-	assert(completed.completed.length === 1);
+	assert(
+		observation.attempts(completed).completed.length === 1
+	);
 	assert(f.calls.target === 1);
-	assert(f.receivedIds[0] === first.pending[0].id);
+	assert(f.receivedIds[0] === id);
 }
 
 function testPersistentUserCustodyPermitsTransit(tw) {
@@ -238,8 +267,11 @@ function testPersistentUserCustodyPermitsTransit(tw) {
 	var result = f.start();
 
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 0);
-	assert(result.flow.remaining === 0);
+	assert(
+		observation.attempts(result.flow).errors.length === 0
+	);
+	assert(result.flow.summary.waiting.deliveries.ready === 0);
+	assert(result.flow.summary.waiting.deliveries.paused === 0);
 	assert(f.calls.target === 1);
 	assert(f.calls.peer === 1);
 
@@ -276,11 +308,19 @@ function testUnfinishedPlanBlocksButDoesNotConsumeMessage(tw) {
 	var first = f.start();
 
 	assert(first.status === "completed");
-	assert(first.flow.blocked.length === 1);
-	assert(first.flow.remaining === 1);
+	assert(
+		observation.attempts(first.flow).blocked.length === 1
+	);
+	assert(first.flow.summary.waiting.deliveries.ready === 1);
 	assert(f.calls.target === 0);
 
-	var id = first.pending[0].id;
+	var ids = observation.pendingDeliveryIds(
+		f.wiki,
+		first.obligation
+	);
+
+	assert(ids.length === 1);
+	var id = ids[0];
 
 	var recovery = f.runtime.recover();
 
@@ -293,10 +333,11 @@ function testUnfinishedPlanBlocksButDoesNotConsumeMessage(tw) {
 	assert(!f.wiki.getTiddler(blocker));
 
 	var completed = f.runtime.drainFlows();
+	var attempts = observation.attempts(completed);
 
-	assert(completed.errors.length === 0);
-	assert(completed.completed.length === 1);
-	assert(completed.remaining === 0);
+	assert(attempts.errors.length === 0);
+	assert(attempts.completed.length === 1);
+	assert(completed.summary.waiting.deliveries.ready === 0);
 	assert(f.calls.target === 1);
 	assert(f.receivedIds[0] === id);
 	assert(!f.wiki.getTiddler(first.obligation));

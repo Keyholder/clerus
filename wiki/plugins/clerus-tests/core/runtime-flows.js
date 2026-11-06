@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -130,9 +133,16 @@ function testDispatchDrainsFlow(tw) {
 		{ type: "test" }
 	);
 
+	var attempts = observation.attempts(result.flow);
+
 	assert(result.status === "completed");
-	assert(result.flow.completed.length === 2);
-	assert(result.flow.errors.length === 0);
+	assert(attempts.completed.length === 2);
+	assert(attempts.errors.length === 0);
+
+	assert(result.flow.summary.complete);
+	assert(result.flow.summary.materializations === 0);
+	assert(result.flow.summary.waiting.deliveries.ready === 0);
+	assert(result.flow.summary.waiting.deliveries.paused === 0);
 	assert(result.flow.remaining === 0);
 
 	assert(f.calls.root === 1);
@@ -172,8 +182,35 @@ function testFailedRecipientIsSuspended(tw) {
 		f.wiki.getTiddler(result.obligation).fields.text
 	);
 
-	assert(record.errors.length === 1);
-	assert(record.pending.length === 0);
+	if (record.version === 1 && record.kind === "flow") {
+		assert(record.errors.length === 1);
+		assert(record.pending.length === 0);
+
+		assert(
+			result.flow.summary.waiting.deliveries.paused === 0
+		);
+	} else {
+		assert(record.version === 2);
+		assert(record.kind === "continuation");
+		assert(record.work === null);
+		assert(record.diagnostics.length === 1);
+
+		var ids = Object.keys(record.events);
+
+		assert(ids.length === 1);
+		assert(record.events[ids[0]].mode === "paused");
+		assert(
+			record.events[ids[0]].event.recipient.title ===
+				f.titles.manager
+		);
+		assert(
+			record.events[ids[0]].event.registry.input.data === 42
+		);
+
+		assert(
+			result.flow.summary.waiting.deliveries.paused === 1
+		);
+	}
 }
 
 function testRecoveryQueuesWithoutCallingHandlers(tw) {
@@ -181,26 +218,46 @@ function testRecoveryQueuesWithoutCallingHandlers(tw) {
 	var originalApply = f.runtime.store.apply;
 	var injected = false;
 
-	/*
-		The manager's reaction is message-only. Interrupt the
-		transition from its accepted plan to pending worker delivery.
-	*/
 	f.runtime.store.apply = function (effect) {
-		if (
-			!injected &&
-			effect.after &&
-			effect.after["clerus-wal-kind"] === "flow"
-		) {
-			var record = JSON.parse(effect.after.text);
+		if (!injected && effect.after) {
+			var kind = effect.after["clerus-wal-kind"];
+			var shouldInterrupt = false;
 
-			if (
-				record.active === null &&
-				record.pending.some(function (message) {
-					return message.recipient.title === f.titles.worker;
-				})
-			) {
+			if (kind === "flow") {
+				var flow = JSON.parse(effect.after.text);
+
+				shouldInterrupt = (
+					flow.active === null &&
+					flow.pending.some(function (message) {
+						return (
+							message.recipient.title ===
+								f.titles.worker
+						);
+					})
+				);
+			} else if (kind === "continuation") {
+				var continuation = JSON.parse(effect.after.text);
+
+				shouldInterrupt = (
+					continuation.work === null &&
+					Object.keys(
+						continuation.events
+					).some(function (id) {
+						return (
+							continuation.events[id]
+								.event.recipient.title ===
+									f.titles.worker
+						);
+					})
+				);
+			}
+
+			if (shouldInterrupt) {
 				injected = true;
-				throw new Error("Interrupted before registering worker delivery");
+
+				throw new Error(
+					"Interrupted before registering worker delivery"
+				);
 			}
 		}
 
@@ -219,7 +276,9 @@ function testRecoveryQueuesWithoutCallingHandlers(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
+	assert(
+		observation.attempts(result.flow).errors.length === 1
+	);
 	assert(f.calls.root === 1);
 	assert(f.calls.manager === 1);
 	assert(f.calls.worker === 0);
@@ -232,14 +291,16 @@ function testRecoveryQueuesWithoutCallingHandlers(tw) {
 	var restarted = f.createRuntime();
 	var recovery = restarted.recover();
 
-	assert(recovery.pendingFlowAttempts === 1);
-	assert(f.calls.manager === 1);
-	assert(f.calls.worker === 0);
+	assert(recovery.summary.complete);
+	assert(recovery.summary.materializations === 0);
+	assert(recovery.summary.waiting.deliveries.ready === 1);
 
 	var completed = restarted.drainFlows();
+	var attempts = observation.attempts(completed);
 
-	assert(completed.completed.length === 1);
-	assert(completed.errors.length === 0);
+	assert(attempts.completed.length === 1);
+	assert(attempts.errors.length === 0);
+	assert(completed.summary.waiting.deliveries.ready === 0);
 	assert(f.calls.root === 1);
 	assert(f.calls.manager === 1);
 	assert(f.calls.worker === 1);
