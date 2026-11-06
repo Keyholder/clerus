@@ -401,6 +401,87 @@ Runtime.prototype.executeEphemeralDelivery = function (context) {
 	}
 };
 
+Runtime.prototype.executeEphemeralContinuation = function (
+	title,
+	id,
+	event,
+	handler
+) {
+	var message = Object.assign(
+		{ id: id },
+		event
+	);
+
+	var result = this.executeEphemeralDelivery({
+		message: message,
+		handler: handler
+	});
+
+	if (result.status === "completed") {
+		try {
+			var acknowledged =
+				this.continuations.completeEphemeral(
+					title,
+					id,
+					event.recipient
+				);
+
+			if (acknowledged !== "completed") {
+				return {
+					status: "unavailable",
+					reason: "continuation-event-not-ready"
+				};
+			}
+
+			/*
+				Finish journal cleanup only after completion has
+				been authoritatively recorded.
+			*/
+			this.continuations.resume(title);
+
+			return {
+				status: "completed",
+				obligation: title
+			};
+		} catch (error) {
+			return {
+				status: "failed",
+				phase: "acknowledgement",
+				obligation: title,
+				acceptanceUncertain: !!error.acceptanceUncertain,
+				error: lifecycle.describeError(error)
+			};
+		}
+	}
+
+	if (
+		result.status === "failed" &&
+		result.phase === "reaction"
+	) {
+		try {
+			this.continuations.failEvent(
+				title,
+				id,
+				event.recipient,
+				result.error
+			);
+
+			result.obligation = title;
+		} catch (error) {
+			return {
+				status: "failed",
+				phase: "failure-registration",
+				obligation: title,
+				acceptanceUncertain: !!error.acceptanceUncertain,
+				error: lifecycle.describeError(error),
+				reactionError: result.error
+			};
+		}
+	}
+
+	return result;
+};
+
 Runtime.prototype.handleFlowResult = function (context) {
 	var space = jobTitles.classify(context.title);
 
@@ -528,6 +609,9 @@ Runtime.prototype.drainContinuationWork = function () {
 		attempted.add(selected.key);
 
 		var event = selected.event;
+		var space = jobTitles.classify(
+			event.recipient.title
+		);
 		var stored = this.store.read(event.recipient.title);
 		var item = {
 			title: selected.title,
@@ -555,6 +639,7 @@ Runtime.prototype.drainContinuationWork = function () {
 
 		if (
 			!establishing &&
+			space.persistent &&
 			stored.fields["clerus-suspended"] === "yes" &&
 			stored.fields["clerus-custody"] === this.platform
 		) {
@@ -583,25 +668,36 @@ Runtime.prototype.drainContinuationWork = function () {
 			deliveredEvent.role = event.role.slice();
 		}
 
-		var result = persistentReactions.execute({
-			store: this.store,
-			title: event.recipient.title,
-			platform: this.platform,
-			handler: handler,
-			newId: this.newId,
-			continuation: {
-				title: selected.title,
-				eventId: selected.id
-			}
-		});
+		var result;
 
-		this.handlePersistentResult(
-			event.recipient.title,
-			event.recipient.executor,
-			handler,
-			deliveredEvent,
-			result
-		);
+		if (space.persistent) {
+			result = persistentReactions.execute({
+				store: this.store,
+				title: event.recipient.title,
+				platform: this.platform,
+				handler: handler,
+				newId: this.newId,
+				continuation: {
+					title: selected.title,
+					eventId: selected.id
+				}
+			});
+		} else {
+			result = this.executeEphemeralContinuation(
+				selected.title,
+				selected.id,
+				event,
+				handler
+			);
+		}
+
+		this.handleFlowResult({
+			title: event.recipient.title,
+			executor: event.recipient.executor,
+			handler: handler,
+			event: deliveredEvent,
+			result: result
+		});
 
 		item.result = result;
 

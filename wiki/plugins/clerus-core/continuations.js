@@ -27,6 +27,9 @@ var proposals = require(
 var proposalWork = require(
 	"$:/plugins/clerus/core/proposal-work.js"
 );
+var jobTitles = require(
+	"$:/plugins/clerus/core/job-titles.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -638,6 +641,59 @@ function create(options) {
 		return "paused";
 	}
 
+	function completeEphemeral(title, id, recipient) {
+		var loaded = read(title);
+		var record = loaded.record;
+
+		if (record.work !== null) {
+			throw new Error(
+				"Cannot acknowledge during materialization"
+			);
+		}
+
+		if (
+			!hasOwn(record.events, id) ||
+			record.events[id].mode !== "ready"
+		) {
+			return "unavailable";
+		}
+
+		var event = record.events[id].event;
+		var space = jobTitles.classify(
+			event.recipient.title
+		);
+
+		if (
+			event.kind !== "delivery" ||
+			!space ||
+			space.persistent ||
+			space.platform !== options.platform ||
+			!recipient ||
+			recipient.title !== event.recipient.title ||
+			recipient.executor !== event.recipient.executor
+		) {
+			throw new Error(
+				"Ephemeral acknowledgement belongs to another recipient"
+			);
+		}
+
+		delete record.events[id];
+
+		/*
+			Only completion is recorded.
+			No persistent work is invented for effects already
+			performed by the ephemeral reaction.
+		*/
+		replace(
+			loaded,
+			record,
+			options.platform,
+			"ContinuationEphemeralAcknowledgementError"
+		);
+
+		return "completed";
+	}
+
 	return Object.freeze({
 		accept: accept,
 		read: read,
@@ -645,7 +701,8 @@ function create(options) {
 		recover: recover,
 		pending: pending,
 		acceptEvent: acceptEvent,
-		failEvent: failEvent
+		failEvent: failEvent,
+		completeEphemeral: completeEphemeral
 	});
 }
 

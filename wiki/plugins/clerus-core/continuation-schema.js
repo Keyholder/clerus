@@ -105,7 +105,10 @@ function validate(value, platform) {
 			throw new Error("Invalid waiting event mode");
 		}
 
-		var event = events.validate(entry.event);
+		var event = events.assertPlatform(
+			entry.event,
+			platform
+		);
 
 		if (
 			!hasOwn(identities, id) ||
@@ -127,6 +130,8 @@ function validate(value, platform) {
 
 	if (work !== null) {
 		work.emits.forEach(function (effect) {
+			events.assertPlatform(effect.event, platform);
+
 			if (
 				hasOwn(identities, effect.id) &&
 				identities[effect.id] !==

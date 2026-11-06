@@ -96,7 +96,6 @@ function validate(value) {
 		event.kind !== "delivery" ||
 		(event.type !== "order" && event.type !== "report") ||
 		!space ||
-		!space.persistent ||
 		typeof event.recipient.executor !== "string" ||
 		event.recipient.executor.length === 0
 	) {
@@ -148,7 +147,7 @@ function validate(value) {
 
 		var founding = establishmentInput.read(
 			result.registry,
-			{ temporary: false }
+			{ temporary: !space.persistent }
 		);
 
 		if (
@@ -204,7 +203,26 @@ function fingerprint(value) {
 	return JSON.stringify(canonical(validate(value)));
 }
 
+function assertPlatform(value, platform) {
+	schemas.assertPlatform(platform);
+
+	var event = validate(value);
+	var space = jobTitles.classify(event.recipient.title);
+
+	if (
+		!space.persistent &&
+		space.platform !== platform
+	) {
+		throw new Error(
+			"Event addresses a foreign ephemeral recipient"
+		);
+	}
+
+	return event;
+}
+
 exports.identity = identity;
 exports.validate = validate;
 exports.emission = emission;
 exports.fingerprint = fingerprint;
+exports.assertPlatform = assertPlatform;
