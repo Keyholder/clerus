@@ -54,6 +54,9 @@ var obligationSummary = require(
 var localCustody = require(
 	"$:/plugins/clerus/core/local-custody.js"
 );
+var custodyEvidence = require(
+	"$:/plugins/clerus/core/custody-evidence.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -122,6 +125,11 @@ function Runtime(options) {
 	this.store = new Store({
 		wiki: options.wiki,
 		Tiddler: options.Tiddler
+	});
+
+	this.custodyEvidence = custodyEvidence.create({
+		store: this.store,
+		platform: this.platform
 	});
 
 	this.custody = localCustody.create({
@@ -1507,6 +1515,36 @@ Runtime.prototype.recover = function () {
 	return this.passes.run(
 		this,
 		recoverPass,
+		arguments,
+		false
+	);
+};
+
+function recordWalDeletionPass(journal) {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running ||
+		this.runningDeferred
+	) {
+		throw new Error(
+			"Cannot record incoming WAL deletion during execution"
+		);
+	}
+
+	this.executing = true;
+
+	try {
+		return this.custodyEvidence.recordWalDeletion(journal);
+	} finally {
+		this.executing = false;
+	}
+}
+
+Runtime.prototype.recordWalDeletion = function () {
+	return this.passes.run(
+		this,
+		recordWalDeletionPass,
 		arguments,
 		false
 	);

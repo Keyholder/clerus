@@ -223,7 +223,8 @@ function testPublicManagementSurface(tw) {
 		"recover",
 		"resume",
 		"collect",
-		"inspect"
+		"inspect",
+		"recordWalDeletion"
 	].sort();
 
 	assert(Object.isFrozen(api));

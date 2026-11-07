@@ -27,7 +27,8 @@ function create(options) {
 		"recover",
 		"resume",
 		"collect",
-		"inspect"
+		"inspect",
+		"recordWalDeletion"
 	].forEach(function (name) {
 		Object.defineProperty(api, name, {
 			value: runtime[name].bind(runtime),
