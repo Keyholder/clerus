@@ -83,6 +83,7 @@ var SUITES = Object.freeze([
 	"continuation-ephemeral",
 	"obligation-summary",
 	"material-birth",
+	"local-custody",
     "persistent-reaction",
     "persistent-flow-reaction",
     "flow-scheduler",

@@ -23,9 +23,16 @@ var reactionServices = require(
 var establishmentInput = require(
 	"$:/plugins/clerus/core/establishment-input.js"
 );
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 function open(options) {
 	schemas.assertPlatform(options.platform);
+
+	var custody = localCustody.create({
+		platform: options.platform
+	});
 
 	if (
 		options.newId !== undefined &&
@@ -100,7 +107,7 @@ function open(options) {
 		return current.kind === "materialized" &&
 			current.fields.type === "application/json" &&
 			current.fields["clerus-executor"] === executor &&
-			current.fields["clerus-custody"] === options.platform;
+			custody.owns(current.fields);
 	}
 
 	function messageEffect(draft, id) {

@@ -11,6 +11,9 @@ var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var retention = require("$:/plugins/clerus/core/retention.js");
 var stores = require("$:/plugins/clerus/core/store.js");
 var jobState = require("$:/plugins/clerus/core/job-state.js");
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 var PASSIVE_FORMS = [
 	"charter",
@@ -23,6 +26,10 @@ var PASSIVE_FORMS = [
 
 function collect(options) {
 	schemas.assertPlatform(options.platform);
+
+	var custody = localCustody.create({
+		platform: options.platform
+	});
 
 	if (
 		!options.store ||
@@ -147,7 +154,7 @@ function collect(options) {
 
 		if (
 			(!space.persistent && space.platform !== options.platform) ||
-			stored.fields["clerus-custody"] !== options.platform
+			!custody.owns(stored.fields)
 		) {
 			result.skipped.push({
 				title: title,

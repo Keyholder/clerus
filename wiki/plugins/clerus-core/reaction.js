@@ -27,6 +27,10 @@ var establishmentInput = require(
 	"$:/plugins/clerus/core/establishment-input.js"
 );
 
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
+
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
 		value: value,
@@ -42,6 +46,10 @@ function sameFields(left, right) {
 
 function run(options, establishing) {
 	schemas.assertPlatform(options.platform);
+
+	var custody = localCustody.create({
+		platform: options.platform
+	});
 
 	var store = options.store;
 
@@ -161,7 +169,7 @@ function run(options, establishing) {
 		var current = store.read(job.title);
 
 		return current.kind === "materialized" &&
-			current.fields["clerus-custody"] === options.platform &&
+			custody.owns(current.fields) &&
 			current.fields["clerus-executor"] === job.executor &&
 			current.fields.type === "application/json" &&
 			sameFields(current.fields, expected);

@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var transitions = require("$:/plugins/clerus/core/store.js");
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 function describeError(error) {
 	return {
@@ -20,6 +23,10 @@ function describeError(error) {
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
+
+	var custody = localCustody.create({
+		platform: options.platform
+	});
 
 	if (
 		!options.store ||
@@ -109,9 +116,7 @@ function create(options) {
 			return result;
 		}
 
-		if (
-			current.fields["clerus-custody"] !== options.platform
-		) {
+		if (!custody.owns(current.fields)) {
 			result.reason = "not-locally-owned";
 			return result;
 		}
@@ -211,9 +216,7 @@ function create(options) {
 			return result;
 		}
 
-		if (
-			current.fields["clerus-custody"] !== options.platform
-		) {
+		if (!custody.owns(current.fields)) {
 			result.reason = "not-locally-owned";
 			return result;
 		}
