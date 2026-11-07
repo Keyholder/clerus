@@ -206,9 +206,47 @@ function readDeletion(fields, platform) {
 	return record;
 }
 
+function assertWorkBinding(work, platform, journal) {
+	schemas.assertPlatform(platform);
+
+	if (journalPlatform(journal) !== platform) {
+		throw new Error("Work journal belongs to another platform");
+	}
+
+	work.transitions.forEach(function (effect) {
+		if (
+			!jobTitles.isJobTitle(effect.title) ||
+			effect.before === null ||
+			effect.after === null ||
+			effect.before["clerus-custody"] ===
+				effect.after["clerus-custody"]
+		) {
+			return;
+		}
+
+		var marker = readTransfer(effect.after);
+
+		if (
+			marker === null ||
+			marker.journal !== journal ||
+			marker.work !== work.id ||
+			marker.from !== platform ||
+			marker.from !== effect.before["clerus-custody"] ||
+			marker.to !== effect.after["clerus-custody"]
+		) {
+			throw new Error(
+				"Custody transfer is not bound to its accepted work journal"
+			);
+		}
+	});
+
+	return true;
+}
+
 exports.TRANSFER_FIELD = TRANSFER_FIELD;
 exports.transfer = transfer;
 exports.readTransfer = readTransfer;
 exports.deletion = deletion;
 exports.deletionTitle = deletionTitle;
 exports.readDeletion = readDeletion;
+exports.assertWorkBinding = assertWorkBinding;

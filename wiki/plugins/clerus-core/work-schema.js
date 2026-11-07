@@ -10,6 +10,9 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var stores = require("$:/plugins/clerus/core/store.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var events = require("$:/plugins/clerus/core/event-schema.js");
+var custodySchema = require(
+	"$:/plugins/clerus/core/custody-schema.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -67,7 +70,7 @@ function snapshot(title, value) {
 	return stores.transition(title, value, value).after;
 }
 
-function validateJobTransition(effect) {
+function validateJobTransition(effect, workId) {
 	if (effect.after === null) {
 		throw new Error(
 			"Job deletion is not supported by material work yet"
@@ -86,6 +89,25 @@ function validateJobTransition(effect) {
 		throw new Error("Invalid final job header");
 	}
 
+	if (before === null) {
+		if (
+			Object.prototype.hasOwnProperty.call(
+				after,
+				custodySchema.TRANSFER_FIELD
+			)
+		) {
+			throw new Error(
+				"A new job cannot start with a relocation marker"
+			);
+		}
+	} else {
+		/*
+			A retained marker remains protocol data even when
+			only the operational registry changes.
+		*/
+		custodySchema.readTransfer(after);
+	}
+
 	if (before !== null) {
 		if (
 			typeof before["clerus-executor"] !== "string" ||
@@ -98,12 +120,30 @@ function validateJobTransition(effect) {
 			);
 		}
 
-		if (
+		var changingCustody = (
 			before["clerus-custody"] !==
 				after["clerus-custody"]
+		);
+
+		if (changingCustody) {
+			var marker = custodySchema.readTransfer(after);
+
+			if (
+				marker === null ||
+				marker.work !== workId ||
+				marker.from !== before["clerus-custody"] ||
+				marker.to !== after["clerus-custody"]
+			) {
+				throw new Error(
+					"Job custody changes require a bound relocation marker"
+				);
+			}
+		} else if (
+			before[custodySchema.TRANSFER_FIELD] !==
+				after[custodySchema.TRANSFER_FIELD]
 		) {
 			throw new Error(
-				"Job custody changes require the relocation protocol"
+				"Material work cannot rewrite an existing transfer marker"
 			);
 		}
 	}
@@ -174,7 +214,7 @@ function validate(value) {
 		targets.add(effect.title);
 
 		if (kind === "job") {
-			validateJobTransition(effect);
+			validateJobTransition(effect, work.id);
 		}
 
 		return effect;

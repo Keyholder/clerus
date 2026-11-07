@@ -30,6 +30,9 @@ var proposalWork = require(
 var jobTitles = require(
 	"$:/plugins/clerus/core/job-titles.js"
 );
+var custodySchema = require(
+	"$:/plugins/clerus/core/custody-schema.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -123,6 +126,12 @@ function create(options) {
 			);
 		}
 
+		custodySchema.assertWorkBinding(
+			record.work,
+			options.platform,
+			title
+		);
+
 		var fields = {
 			title: title,
 			type: "application/json",
@@ -181,7 +190,8 @@ function create(options) {
 				options.platform,
 				"continuation"
 			),
-			options.platform
+			options.platform,
+			title
 		);
 
 		return {
@@ -286,7 +296,8 @@ function create(options) {
 
 			record = continuationSchema.validate(
 				record,
-				options.platform
+				options.platform,
+				title
 			);
 
 			if (Object.keys(record.events).length === 0) {
@@ -452,7 +463,8 @@ function create(options) {
 	function replace(loaded, record, custody, name) {
 		var normalized = continuationSchema.validate(
 			record,
-			options.platform
+			options.platform,
+			loaded.fields.title
 		);
 
 		var after = schemas.copyJSON(loaded.fields);

@@ -62,7 +62,8 @@ function collect(options) {
 			if (kind === "continuation") {
 				var continuation = continuations.validate(
 					record,
-					platform
+					platform,
+					fields.title
 				);
 
 				if (continuation.work !== null) {

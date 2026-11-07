@@ -7,85 +7,32 @@ module-type: library
 "use strict";
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
+var stores = require("$:/plugins/clerus/core/store.js");
+var envelopes = require("$:/plugins/clerus/core/wal-envelope.js");
 var custodySchema = require(
 	"$:/plugins/clerus/core/custody-schema.js"
 );
+var continuations = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
 
-/*
-Local execution perspective.
-
-This service answers only whether this runtime owns the supplied
-tiddler state. Accepted material transition authority is separate.
-
-The receiving side of relocation requires durable local evidence
-of the accompanying source WAL deletion.
-
-Source-side recognition of active relocation work is not enabled
-yet. Work creation of relocations remains prohibited.
-*/
 function create(options) {
 	var platform = schemas.assertPlatform(options.platform);
 	var store = options.store;
 
 	if (
 		store !== undefined &&
-		(
-			!store ||
-			typeof store.read !== "function"
-		)
+		(!store || typeof store.read !== "function")
 	) {
-		throw new Error(
-			"Local custody requires a state reader"
-		);
+		throw new Error("Local custody requires a state reader");
 	}
 
-	function owns(fields) {
-		if (!schemas.isRecord(fields)) {
-			throw new Error(
-				"Local custody requires a tiddler field record"
-			);
-		}
-
-		if (fields["clerus-custody"] !== platform) {
-			return false;
-		}
-
-		var transfer;
-
-		try {
-			transfer = custodySchema.readTransfer(fields);
-		} catch (error) {
-			/*
-				Malformed serialized transfer data cannot grant
-				local ownership.
-			*/
-			return false;
-		}
-
-		if (transfer === null) {
-			return true;
-		}
-
-		if (!store) {
-			return false;
-		}
-
-		var evidenceTitle;
-
-		try {
-			evidenceTitle = custodySchema.deletionTitle(
-				platform,
-				transfer.journal
-			);
-		} catch (error) {
-			return false;
-		}
-
+	function read(title) {
 		/*
-			Read failures are infrastructure failures.
-			Do not hide them in a malformed-data catch.
+			Source failures propagate. Serialized-data failures
+			are handled by the corresponding protocol readers.
 		*/
-		var stored = store.read(evidenceTitle);
+		var stored = store.read(title);
 
 		if (
 			!schemas.isRecord(stored) ||
@@ -95,19 +42,102 @@ function create(options) {
 				stored.kind !== "shadow"
 			)
 		) {
-			throw new Error(
-				"Invalid custody evidence store view"
-			);
+			throw new Error("Invalid custody store view");
 		}
+
+		return stored;
+	}
+
+	function sourceOwns(fields, marker) {
+		var stored = read(marker.journal);
 
 		if (stored.kind !== "materialized") {
 			return false;
 		}
 
-		var evidence;
+		var record;
 
 		try {
-			evidence = custodySchema.readDeletion(
+			record = continuations.validate(
+				envelopes.requireRecord(
+					stored.fields,
+					platform,
+					"continuation"
+				),
+				platform,
+				marker.journal
+			);
+		} catch (error) {
+			return false;
+		}
+
+		if (
+			record.work === null ||
+			record.work.id !== marker.work
+		) {
+			return false;
+		}
+
+		var effect = record.work.transitions.find(
+			function (candidate) {
+				return candidate.title === fields.title;
+			}
+		);
+
+		if (
+			!effect ||
+			effect.before === null ||
+			effect.after === null ||
+			effect.before["clerus-custody"] !== platform ||
+			effect.after["clerus-custody"] !== marker.to
+		) {
+			return false;
+		}
+
+		var normalized;
+
+		try {
+			normalized = stores.transition(
+				fields.title,
+				fields,
+				fields
+			).after;
+		} catch (error) {
+			return false;
+		}
+
+		/*
+			The active work authorizes this exact materialized
+			destination, not an arbitrary state with a copied marker.
+		*/
+		return (
+			JSON.stringify(normalized) ===
+				JSON.stringify(effect.after)
+		);
+	}
+
+	function destinationOwns(marker) {
+		var title;
+
+		try {
+			title = custodySchema.deletionTitle(
+				platform,
+				marker.journal
+			);
+		} catch (error) {
+			return false;
+		}
+
+		var stored = read(title);
+
+		if (stored.kind !== "materialized") {
+			return false;
+		}
+
+		var record;
+
+		try {
+			record = custodySchema.readDeletion(
 				stored.fields,
 				platform
 			);
@@ -115,7 +145,41 @@ function create(options) {
 			return false;
 		}
 
-		return evidence.journal === transfer.journal;
+		return record.journal === marker.journal;
+	}
+
+	function owns(fields) {
+		if (!schemas.isRecord(fields)) {
+			throw new Error(
+				"Local custody requires a tiddler field record"
+			);
+		}
+
+		var marker;
+
+		try {
+			marker = custodySchema.readTransfer(fields);
+		} catch (error) {
+			return false;
+		}
+
+		if (marker === null) {
+			return fields["clerus-custody"] === platform;
+		}
+
+		if (!store) {
+			return false;
+		}
+
+		if (marker.from === platform) {
+			return sourceOwns(fields, marker);
+		}
+
+		if (marker.to === platform) {
+			return destinationOwns(marker);
+		}
+
+		return false;
 	}
 
 	return Object.freeze({

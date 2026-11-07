@@ -153,7 +153,8 @@ function check(options) {
 		if (record.kind === "continuation") {
 			var continuation = continuations.validate(
 				record,
-				platform
+				platform,
+				fields.title
 			);
 
 			if (continuation.work !== null) {

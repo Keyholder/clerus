@@ -302,7 +302,7 @@ function testUnsupportedLifecycleChanges(tw) {
 
 	throws(function () {
 		works.validate(work);
-	}, "relocation protocol");
+	}, "relocation marker");
 
 	work = works.validate(f.work);
 	work.transitions[1].after["clerus-executor"] = "replacement";

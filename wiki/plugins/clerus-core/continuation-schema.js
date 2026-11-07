@@ -9,6 +9,9 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var works = require("$:/plugins/clerus/core/work-schema.js");
 var events = require("$:/plugins/clerus/core/event-schema.js");
+var custodySchema = require(
+	"$:/plugins/clerus/core/custody-schema.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -34,7 +37,7 @@ function emptyRecord(value, description) {
 	return Object.create(null);
 }
 
-function validate(value, platform) {
+function validate(value, platform, journal) {
 	schemas.assertPlatform(platform);
 
 	var record = schemas.copyJSON(value);
@@ -65,6 +68,14 @@ function validate(value, platform) {
 	var work = record.work === null
 		? null
 		: works.validate(record.work);
+
+	if (work !== null && journal !== undefined) {
+		custodySchema.assertWorkBinding(
+			work,
+			platform,
+			journal
+		);
+	}
 
 	if (
 		!schemas.isRecord(record.events) ||

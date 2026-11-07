@@ -151,7 +151,8 @@ function evaluate(options) {
 				if (record.kind === "continuation") {
 					var continuation = continuations.validate(
 						record,
-						options.platform
+						options.platform,
+						fields.title
 					);
 
 					if (continuation.work !== null) {
