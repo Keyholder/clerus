@@ -51,6 +51,9 @@ var continuations = require(
 var obligationSummary = require(
 	"$:/plugins/clerus/core/obligation-summary.js"
 );
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -111,6 +114,11 @@ function Runtime(options) {
 
 	this.wiki = options.wiki;
 	this.platform = options.platform;
+
+	this.custody = localCustody.create({
+		platform: this.platform
+	});
+
 	this.resolveExecutor = options.resolveExecutor;
 	this.newId = options.newId;
 	this.executing = false;
@@ -286,7 +294,7 @@ Runtime.prototype.executePersistentIngress = function (context) {
 
 	if (
 		stored.fields["clerus-suspended"] === "yes" &&
-		stored.fields["clerus-custody"] === this.platform
+		this.custody.owns(stored.fields)
 	) {
 		return {
 			status: "blocked",
@@ -651,7 +659,7 @@ Runtime.prototype.drainContinuationWork = function () {
 			!establishing &&
 			space.persistent &&
 			stored.fields["clerus-suspended"] === "yes" &&
-			stored.fields["clerus-custody"] === this.platform
+			this.custody.owns(stored.fields)
 		) {
 			item.reason = "resumption-required";
 			report.blocked.push(item);
@@ -808,7 +816,7 @@ function dispatchDeferredPass(title) {
 
 		if (
 			owner.fields["clerus-suspended"] === "yes" &&
-			owner.fields["clerus-custody"] === this.platform
+			this.custody.owns(owner.fields)
 		) {
 			return {
 				status: "blocked",
@@ -920,7 +928,7 @@ function dispatchContinuationActivation(title, id) {
 
 		if (
 			stored.fields["clerus-suspended"] === "yes" &&
-			stored.fields["clerus-custody"] === this.platform
+			this.custody.owns(stored.fields)
 		) {
 			return {
 				status: "blocked",
@@ -1178,7 +1186,7 @@ function dispatchPass(title, event, incoming) {
 
 		var resumptionPending =
 			stored.fields["clerus-suspended"] === "yes" &&
-			stored.fields["clerus-custody"] === this.platform;
+			this.custody.owns(stored.fields);
 
 		var resumedEvent =
 			schemas.isRecord(event) &&

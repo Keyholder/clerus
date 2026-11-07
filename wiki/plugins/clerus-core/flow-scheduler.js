@@ -15,6 +15,9 @@ var flowObligations = require(
 var persistent = require(
 	"$:/plugins/clerus/core/persistent-reaction.js"
 );
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 function key(title, id) {
 	return JSON.stringify([title, id]);
@@ -29,6 +32,10 @@ function describe(error) {
 
 function Scheduler(options) {
 	schemas.assertPlatform(options.platform);
+
+	this.custody = localCustody.create({
+		platform: options.platform
+	});
 
 	if (
 		!options.store ||
@@ -320,7 +327,7 @@ Scheduler.prototype.drain = function () {
 				message.establishing !== true &&
 				space.persistent &&
 				recipient.fields["clerus-suspended"] === "yes" &&
-				recipient.fields["clerus-custody"] === this.options.platform
+				this.custody.owns(recipient.fields)
 			) {
 				report.blocked.push({
 					title: selected.title,

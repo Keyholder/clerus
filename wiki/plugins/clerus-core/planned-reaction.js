@@ -23,9 +23,16 @@ var reactionEvents = require(
 var establishmentInput = require(
 	"$:/plugins/clerus/core/establishment-input.js"
 );
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 function run(options, establishing) {
 	schemas.assertPlatform(options.platform);
+
+	var custody = localCustody.create({
+		platform: options.platform
+	});
 
 	var space = jobTitles.classify(options.title);
 
@@ -120,7 +127,7 @@ function run(options, establishing) {
 			(
 				establishing ||
 				initial.fields["clerus-suspended"] !== "yes" ||
-				initial.fields["clerus-custody"] !== options.platform ||
+				!custody.owns(initial.fields) ||
 				event.type !== "resumed"
 			)
 		) {
@@ -149,7 +156,7 @@ function run(options, establishing) {
 
 			if (
 				current.kind !== "materialized" ||
-				current.fields["clerus-custody"] !== options.platform ||
+				!custody.owns(current.fields) ||
 				current.fields["clerus-executor"] !== executor ||
 				current.fields["clerus-suspended"] !== "yes"
 			) {

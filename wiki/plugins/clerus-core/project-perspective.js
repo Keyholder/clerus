@@ -17,6 +17,9 @@ var jobTitles = require(
 	"$:/plugins/clerus/core/job-titles.js"
 );
 var jobState = require("$:/plugins/clerus/core/job-state.js");
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -296,6 +299,10 @@ function create(options) {
 
 		schemas.assertPlatform(options.platform);
 
+		var custody = localCustody.create({
+			platform: options.platform
+		});
+
 		var document = assignment.document;
 		var project = options.store.read(document.project);
 
@@ -305,9 +312,7 @@ function create(options) {
 			);
 		}
 
-		if (
-			project.fields["clerus-custody"] !== options.platform
-		) {
+		if (!custody.owns(project.fields)) {
 			throw new Error("Project is not owned by this platform");
 		}
 
