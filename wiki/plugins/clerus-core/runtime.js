@@ -115,10 +115,6 @@ function Runtime(options) {
 	this.wiki = options.wiki;
 	this.platform = options.platform;
 
-	this.custody = localCustody.create({
-		platform: this.platform
-	});
-
 	this.resolveExecutor = options.resolveExecutor;
 	this.newId = options.newId;
 	this.executing = false;
@@ -126,6 +122,11 @@ function Runtime(options) {
 	this.store = new Store({
 		wiki: options.wiki,
 		Tiddler: options.Tiddler
+	});
+
+	this.custody = localCustody.create({
+		platform: this.platform,
+		store: this.store
 	});
 
 	this.runningDeferred = false;

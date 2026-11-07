@@ -30,10 +30,6 @@ var localCustody = require(
 function open(options) {
 	schemas.assertPlatform(options.platform);
 
-	var custody = localCustody.create({
-		platform: options.platform
-	});
-
 	if (
 		options.newId !== undefined &&
 		typeof options.newId !== "function"
@@ -94,6 +90,11 @@ function open(options) {
 			return activePlan.read(title);
 		}
 	};
+
+	var custody = localCustody.create({
+		platform: options.platform,
+		store: view
+	});
 
 	function readJobs() {
 		return jobState.readJobs(function (visit) {

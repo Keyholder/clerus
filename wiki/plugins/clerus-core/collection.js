@@ -28,7 +28,8 @@ function collect(options) {
 	schemas.assertPlatform(options.platform);
 
 	var custody = localCustody.create({
-		platform: options.platform
+		platform: options.platform,
+		store: options.store
 	});
 
 	if (
