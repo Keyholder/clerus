@@ -166,9 +166,11 @@ function testFailedRecipientIsSuspended(tw) {
 		{ type: "test" }
 	);
 
+	var attempts = observation.attempts(result.flow);
+
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 1);
-	assert(result.flow.errors[0].result.lifecycle.suspended);
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.lifecycle.suspended);
 	assert(f.calls.manager === 1);
 	assert(f.calls.worker === 0);
 	assert(f.calls.suspended === 1);

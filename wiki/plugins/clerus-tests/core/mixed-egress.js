@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -129,13 +132,16 @@ function testPersistentOrderReachesEphemeralChain(tw) {
 	);
 
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 0);
-	assert(result.flow.completed.length === 1);
+
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 0);
+	assert(attempts.completed.length === 1);
+	assert(result.flow.summary.waiting.deliveries.ready === 0);
+	assert(result.flow.summary.waiting.deliveries.paused === 0);
+
 	assert(f.trace.join(",") === "root,manager,worker");
 	assert(f.ids[0]);
-
-	assert(result.flow.remaining === 0);
-	assert(result.flow.ephemeralRemaining === 0);
 	assert(!f.wiki.getTiddler(result.obligation));
 
 	var worker = JSON.parse(
@@ -153,9 +159,11 @@ function testEphemeralFailureBecomesFlowEvidence(tw) {
 		{ type: "test" }
 	);
 
-	assert(result.flow.errors.length === 1);
-	assert(result.flow.errors[0].result.phase === "reaction");
-	assert(result.flow.errors[0].result.lifecycle.dismissed);
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.phase === "reaction");
+	assert(attempts.errors[0].result.lifecycle.dismissed);
 
 	assert(
 		f.trace.join(",") ===
@@ -171,8 +179,22 @@ function testEphemeralFailureBecomesFlowEvidence(tw) {
 	var record = JSON.parse(journal.fields.text);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(record.errors.length === 1);
-	assert(record.pending.length === 0);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(record.diagnostics.length === 1);
+
+	var ids = Object.keys(record.events);
+
+	assert(ids.length === 1);
+	assert(record.events[ids[0]].mode === "paused");
+	assert(
+		record.events[ids[0]].event.recipient.title ===
+			f.titles.manager
+	);
+	assert(
+		record.events[ids[0]].event.registry.input.data === 42
+	);
 }
 
 function testInfrastructureFailurePreservesPendingDelivery(tw) {
@@ -201,16 +223,22 @@ function testInfrastructureFailurePreservesPendingDelivery(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
-	assert(result.flow.errors[0].result.phase === "materialization");
-	assert(result.flow.remaining === 1);
-	assert(!result.flow.errors[0].result.lifecycle);
+
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.phase === "materialization");
+	assert(!attempts.errors[0].result.lifecycle);
+	assert(result.flow.summary.waiting.deliveries.ready === 1);
+
 	assert(f.ids.length === 1);
 
 	var retried = f.runtime.drainFlows();
 
-	assert(retried.errors.length === 0);
-	assert(retried.remaining === 0);
+	assert(
+		observation.attempts(retried).errors.length === 0
+	);
+	assert(retried.summary.waiting.deliveries.ready === 0);
 	assert(retried.ephemeralRemaining === 0);
 
 	assert(f.ids.length === 2);

@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -153,8 +156,11 @@ function fixture(tw, handlers, staffedTransfer) {
 			var result = [];
 
 			wiki.each(function (tiddler, title) {
+				var kind = tiddler.fields["clerus-wal-kind"];
+
 				if (
-					tiddler.fields["clerus-wal-kind"] === "flow"
+					kind === "flow" ||
+					kind === "continuation"
 				) {
 					result.push(title);
 				}
@@ -258,7 +264,7 @@ function testUpwardAndDownwardCascade(tw) {
 	);
 
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 0);
+	assert(observation.attempts(result.flow).errors.length === 0);
 	assert(result.flow.continuations.every(function (pass) {
 		return pass.errors.length === 0;
 	}));
@@ -395,7 +401,7 @@ function testStaffedAssignmentRoundTrip(tw) {
 	);
 
 	assert(first.status === "completed");
-	assert(first.flow.errors.length === 0);
+	assert(observation.attempts(first.flow).errors.length === 0);
 	assert(first.flow.continuations.every(function (pass) {
 		return pass.errors.length === 0;
 	}));
@@ -411,7 +417,7 @@ function testStaffedAssignmentRoundTrip(tw) {
 	);
 
 	assert(returned.status === "completed");
-	assert(returned.flow.errors.length === 0);
+	assert(observation.attempts(returned.flow).errors.length === 0);
 	assert(returned.flow.continuations.every(function (pass) {
 		return pass.errors.length === 0;
 	}));
@@ -464,10 +470,11 @@ function testInterruptedAssignmentReception(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
-	assert(
-		result.flow.errors[0].result.phase === "materialization"
-	);
+
+	var errors = observation.attempts(result.flow).errors;
+
+	assert(errors.length === 1);
+	assert(errors[0].result.phase === "materialization");
 
 	assert(state.director === 1);
 	assert(state.manager === 1);

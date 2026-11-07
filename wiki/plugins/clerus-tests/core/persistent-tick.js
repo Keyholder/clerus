@@ -13,6 +13,9 @@ var flows = require(
 	"$:/plugins/clerus/core/flow-obligations.js"
 );
 var Store = require("$:/plugins/clerus/core/store.js").Store;
+var legacyRoot = require(
+	"$:/plugins/clerus/tests/legacy-flow-root.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -78,9 +81,17 @@ function fixture(tw) {
 		pendingTicks: pendingTicks,
 
 		schedule: function () {
-			return execute(function (event, operational) {
-				operational.get("charter").defer();
-				operational.get("charter").defer();
+			return legacyRoot.start({
+				store: store,
+				title: owner,
+				platform: platform,
+				event: { type: "test" },
+				newId: newId,
+
+				handler: function (event, operational) {
+					operational.get("charter").defer();
+					operational.get("charter").defer();
+				}
 			});
 		},
 

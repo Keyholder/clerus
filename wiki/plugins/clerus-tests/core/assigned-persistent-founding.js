@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -221,19 +224,31 @@ function fixture(tw) {
 				wiki.getTiddler(journal).fields.text
 			);
 
-			var messages = record.pending.slice();
+			assert(record.version === 2);
+			assert(record.kind === "continuation");
 
-			if (record.active !== null) {
-				messages = messages.concat(
-					record.active.plan.messages
+			var events = Object.keys(record.events).map(
+				function (id) {
+					return record.events[id].event;
+				}
+			);
+
+			if (record.work !== null) {
+				events = events.concat(
+					record.work.emits.map(function (effect) {
+						return effect.event;
+					})
 				);
 			}
 
-			var founding = messages.find(function (message) {
-				return message.establishing === true;
+			var founding = events.find(function (event) {
+				return event.establishing === true;
 			});
 
-			assert(founding, "Accepted work lost its founding message");
+			assert(
+				founding,
+				"Accepted work lost its founding event"
+			);
 
 			return founding.recipient.title;
 		}
@@ -283,7 +298,9 @@ function testNormalFounding(tw) {
 	);
 
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 0);
+	assert(
+		observation.attempts(result.flow).errors.length === 0
+	);
 
 	verifyCompleted(
 		f,
@@ -311,14 +328,16 @@ function testInterruption(tw, point) {
 
 		if (
 			effect.after &&
-			effect.after["clerus-wal-kind"] === "flow"
+			effect.after["clerus-wal-kind"] === "continuation"
 		) {
 			var body = JSON.parse(effect.after.text);
 
 			pendingWrite =
-				body.active === null &&
-				body.pending.some(function (message) {
-					return message.establishing === true;
+				body.work === null &&
+				Object.keys(body.events).some(function (id) {
+					return (
+						body.events[id].event.establishing === true
+					);
 				});
 		}
 
@@ -397,8 +416,12 @@ function testInterruption(tw, point) {
 
 	var delivered = restarted.drainFlows();
 
-	assert(delivered.errors.length === 0);
-	assert(delivered.remaining === 0);
+	assert(
+		observation.attempts(delivered).errors.length === 0
+	);
+	assert(delivered.summary.materializations === 0);
+	assert(delivered.summary.waiting.deliveries.ready === 0);
+	assert(delivered.summary.waiting.deliveries.paused === 0);
 
 	verifyCompleted(f, restarted, journal, staffBefore);
 }

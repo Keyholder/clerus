@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -140,9 +143,13 @@ function testCompleteFoundingPath(tw) {
 	);
 
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 0);
-	assert(result.flow.completed.length === 1);
-	assert(result.flow.remaining === 0);
+
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 0);
+	assert(attempts.completed.length === 1);
+	assert(result.flow.summary.waiting.deliveries.ready === 0);
+
 	assert(f.births() === 1);
 
 	var founder = f.registry();
@@ -188,8 +195,10 @@ function testAcceptedReservationPreventsSecondFounding(tw) {
 	);
 
 	assert(first.status === "completed");
-	assert(first.flow.unavailable.length === 1);
-	assert(first.flow.remaining === 1);
+	assert(
+		observation.attempts(first.flow).unavailable.length === 1
+	);
+	assert(first.flow.summary.waiting.deliveries.ready === 1);
 	assert(f.births() === 0);
 
 	var before = f.wiki.getTiddler(f.founder).fields.text;

@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -180,8 +183,12 @@ function testEphemeralReportStartsPersistentFlow(tw) {
 	assert(result.persistent[0].result.status === "completed");
 	assert(result.persistent[0].result.obligation);
 
-	assert(result.flow.completed.length === 1);
-	assert(result.flow.errors.length === 0);
+	assert(
+		observation.attempts(result.flow).completed.length === 1
+	);
+	assert(
+		observation.attempts(result.flow).errors.length === 0
+	);
 
 	var peer = JSON.parse(
 		f.wiki.getTiddler(f.titles.peer).fields.text
@@ -201,7 +208,9 @@ function testSenderFailureDoesNotCancelAcceptedReport(tw) {
 	assert(result.errors.length === 1);
 	assert(result.persistent.length === 1);
 	assert(result.persistent[0].result.status === "completed");
-	assert(result.flow.completed.length === 1);
+	assert(
+		observation.attempts(result.flow).completed.length === 1
+	);
 
 	assert(
 		f.wiki.getTiddler(f.titles.worker)

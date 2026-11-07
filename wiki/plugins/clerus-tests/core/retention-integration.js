@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -102,12 +105,14 @@ function testPendingDeliveryNotSenderHistory(tw) {
 		{ type: "test" }
 	);
 
-	assert(result.flow.unavailable.length === 1);
+	assert(
+		observation.attempts(result.flow).unavailable.length === 1
+	);
 
 	var pending = f.retention();
 
 	assert(pending.complete);
-	assert(retained(pending, target, "pending-message"));
+	assert(retained(pending, target, "waiting-event"));
 	assert(pending.candidates.includes(source));
 
 	handlers.target = function () {
@@ -116,7 +121,38 @@ function testPendingDeliveryNotSenderHistory(tw) {
 
 	var delivered = f.runtime.drainFlows();
 
-	assert(delivered.errors.length === 1);
+	assert(
+		observation.attempts(delivered).errors.length === 1
+	);
+
+	var paused = f.retention();
+
+	assert(paused.complete);
+	assert(paused.valid);
+	assert(paused.candidates.includes(source));
+	assert(retained(paused, target, "waiting-event"));
+
+	var journal = f.wiki.getTiddler(result.obligation);
+	var body = JSON.parse(journal.fields.text);
+	var ids = Object.keys(body.events);
+
+	assert(journal.fields["clerus-custody"] === "user");
+	assert(body.work === null);
+	assert(body.diagnostics.length === 1);
+	assert(ids.length === 1);
+	assert(body.events[ids[0]].mode === "paused");
+
+	body.diagnostics.push({
+		event: ids[0],
+		action: "user-terminated",
+		snapshot: body.events[ids[0]].event
+	});
+
+	delete body.events[ids[0]];
+
+	f.wiki.addTiddler(new tw.Tiddler(journal, {
+		text: JSON.stringify(body)
+	}));
 
 	var historical = f.retention();
 
@@ -125,16 +161,9 @@ function testPendingDeliveryNotSenderHistory(tw) {
 	assert(historical.retained.length === 0);
 	assert(historical.candidates.includes(source));
 	assert(historical.candidates.includes(target));
-
-	var journal = f.wiki.getTiddler(result.obligation);
-	var body = JSON.parse(journal.fields.text);
-
-	assert(journal.fields["clerus-custody"] === "user");
-	assert(body.errors.length === 1);
-	assert(body.pending.length === 0);
 }
 
-function testPausedTickRetainsButFailedTickDoesNot(tw) {
+function testPausedActivationRetainsUntilExplicitlyTerminated(tw) {
 	var owner = "$:/clerus/jobs/retention-live-tick";
 	var ticks = 0;
 
@@ -160,11 +189,19 @@ function testPausedTickRetainsButFailedTickDoesNot(tw) {
 	var waiting = f.retention();
 
 	assert(waiting.complete);
-	assert(retained(waiting, owner, "deferred-event"));
+	assert(retained(waiting, owner, "waiting-event"));
 
 	var journals = f.runtime.store.snapshot().materialized.filter(
 		function (fields) {
-			return fields["clerus-wal-kind"] === "deferred";
+			if (fields["clerus-wal-kind"] !== "continuation") {
+				return false;
+			}
+
+			var record = JSON.parse(fields.text);
+
+			return Object.keys(record.events).some(function (id) {
+				return record.events[id].event.kind === "activation";
+			});
 		}
 	);
 
@@ -180,7 +217,7 @@ function testPausedTickRetainsButFailedTickDoesNot(tw) {
 	var paused = f.retention();
 
 	assert(paused.complete);
-	assert(retained(paused, owner, "deferred-event"));
+	assert(retained(paused, owner, "waiting-event"));
 
 	f.wiki.addTiddler(new tw.Tiddler(
 		f.wiki.getTiddler(title),
@@ -189,22 +226,33 @@ function testPausedTickRetainsButFailedTickDoesNot(tw) {
 
 	var ticked = f.runtime.runDeferred();
 
-	assert(ticked.persistent[0].result.phase === "reaction");
+	assert(ticked.activations[0].result.phase === "reaction");
 	assert(ticks === 1);
 
-	var completed = f.retention();
+	var failedJournal = f.wiki.getTiddler(title);
+	var record = JSON.parse(failedJournal.fields.text);
+	var ids = Object.keys(record.events);
 
-	assert(completed.complete);
-	assert(completed.candidates.includes(owner));
+	assert(record.kind === "continuation");
+	assert(ids.length === 1);
+	assert(record.events[ids[0]].event.kind === "activation");
+	assert(record.events[ids[0]].mode === "paused");
 
-	var historical = f.wiki.getTiddler(title);
+	var held = f.retention();
 
-	assert(historical.fields["clerus-wal-kind"] === "flow");
-	assert(historical.fields["clerus-deferred-effect"]);
-	assert(
-		JSON.parse(historical.fields.text).errors[0].event.type ===
-			"tick"
-	);
+	assert(held.complete);
+	assert(retained(held, owner, "waiting-event"));
+
+	delete record.events[ids[0]];
+
+	f.wiki.addTiddler(new tw.Tiddler(failedJournal, {
+		text: JSON.stringify(record)
+	}));
+
+	var historical = f.retention();
+
+	assert(historical.complete);
+	assert(historical.candidates.includes(owner));
 }
 
 function testAcceptedBirthRetainsWithoutSuperiorReference(tw) {
@@ -280,14 +328,16 @@ function testAcceptedBirthRetainsWithoutSuperiorReference(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
+	assert(
+		observation.attempts(result.flow).errors.length === 1
+	);
 	assert(initialized === 1);
 
 	var child = result.pending[0].recipient.title;
 	var pending = f.retention();
 
 	assert(pending.complete);
-	assert(retained(pending, child, "accepted-birth"));
+	assert(retained(pending, child, "accepted-work"));
 	assert(pending.candidates.includes(founder));
 
 	f.wiki.addTiddler(new tw.Tiddler(
@@ -310,7 +360,7 @@ function testAcceptedBirthRetainsWithoutSuperiorReference(tw) {
 exports.run = function (tw) {
 	var cases = [
 		["retention integration: pending delivery retains but sender history does not", testPendingDeliveryNotSenderHistory],
-		["retention integration: paused tick retains but completed failure does not", testPausedTickRetainsButFailedTickDoesNot],
+		["retention integration: paused activation retains until explicitly terminated", testPausedActivationRetainsUntilExplicitlyTerminated],
 		["retention integration: accepted birth retains without superior reference", testAcceptedBirthRetainsWithoutSuperiorReference]
 	];
 

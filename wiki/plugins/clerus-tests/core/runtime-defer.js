@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -150,17 +153,40 @@ function testTickStartsIndependentReportWave(tw) {
 	assert(ordered.flow.errors.length === 0);
 	assert(f.calls.ticks === 0);
 	assert(f.calls.reports === 0);
-	assert(!f.wiki.getTiddler(ordered.obligation));
+
+	var journal = f.wiki.getTiddler(ordered.obligation);
+
+	assert(journal);
+
+	var record = JSON.parse(journal.fields.text);
+	var ids = Object.keys(record.events);
+
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(ids.length === 1);
+
+	var activation = record.events[ids[0]];
+
+	assert(activation.mode === "ready");
+	assert(activation.event.kind === "activation");
+	assert(activation.event.recipient.title === f.worker);
+	assert(activation.event.recipient.executor === "worker");
+
+	assert(ordered.flow.summary.materializations === 0);
+	assert(ordered.flow.summary.waiting.deliveries.ready === 0);
+	assert(ordered.flow.summary.waiting.activations.ready === 1);
 
 	var report = f.runtime.runDeferred();
 
 	assert(report.errors.length === 0);
-	assert(report.persistent.length === 1);
-	assert(report.persistent[0].result.status === "completed");
-	assert(report.persistent[0].result.flow.errors.length === 0);
-	assert(report.persistentRemaining === 0);
+	assert(report.activations.length === 1);
+	assert(report.activations[0].result.status === "completed");
+	assert(report.activations[0].result.flow.errors.length === 0);
+	assert(report.summary.waiting.activations.ready === 0);
 	assert(f.calls.ticks === 1);
 	assert(f.calls.reports === 1);
+	assert(!f.wiki.getTiddler(ordered.obligation));
 }
 
 function testNewTickWaitsForNextPass(tw) {
@@ -170,14 +196,14 @@ function testNewTickWaitsForNextPass(tw) {
 
 	var first = f.runtime.runDeferred();
 
-	assert(first.persistent.length === 1);
-	assert(first.persistentRemaining === 1);
+	assert(first.activations.length === 1);
+	assert(first.summary.waiting.activations.ready === 1);
 	assert(f.calls.ticks === 1);
 	assert(f.calls.reports === 1);
 
 	var second = f.runtime.runDeferred();
 
-	assert(second.persistent.length === 1);
+	assert(second.activations.length === 1);
 	assert(second.persistentRemaining === 0);
 	assert(f.calls.ticks === 2);
 	assert(f.calls.reports === 2);
@@ -196,8 +222,8 @@ function testPendingTickSurvivesRuntimeReplacement(tw) {
 
 	var report = restarted.runDeferred();
 
-	assert(report.persistent.length === 1);
-	assert(report.persistent[0].result.status === "completed");
+	assert(report.activations.length === 1);
+	assert(report.activations[0].result.status === "completed");
 	assert(f.calls.ticks === 1);
 	assert(f.calls.reports === 1);
 }
@@ -231,7 +257,7 @@ function testInterruptedTickRecoversWithoutRedispatch(tw) {
 
 	assert(injected);
 
-	var failed = report.persistent[0].result;
+	var failed = report.activations[0].result;
 
 	assert(failed.status === "failed");
 	assert(failed.phase === "materialization");
@@ -252,7 +278,9 @@ function testInterruptedTickRecoversWithoutRedispatch(tw) {
 
 	var delivered = restarted.drainFlows();
 
-	assert(delivered.errors.length === 0);
+	assert(
+		observation.attempts(delivered).errors.length === 0
+	);
 	assert(f.calls.ticks === 1);
 	assert(f.calls.reports === 1);
 	assert(!f.wiki.getTiddler(failed.obligation));

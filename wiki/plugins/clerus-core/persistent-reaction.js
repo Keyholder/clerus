@@ -440,16 +440,10 @@ function execute(options) {
 				};
 			}
 		} else if (
-			proposal.plan.messages.length > 0 ||
-			proposal.plan.deferred.length > 0
+			proposal.plan.effects.length === 0 &&
+			proposal.plan.messages.length === 0 &&
+			proposal.plan.deferred.length === 0
 		) {
-			/*
-				Automatic event-producing roots remain on v1
-				until v2 supports the full recipient effect set.
-			*/
-			flow = true;
-			title = flows.register(proposal);
-		} else if (proposal.plan.effects.length === 0) {
 			title = null;
 		} else {
 			var work = proposalWork.convert(
@@ -489,11 +483,27 @@ function execute(options) {
 			};
 		}
 
+		var results = manager.resume(title);
+		var remaining = options.store.read(title);
+		var pending = [];
+
+		if (
+			remaining.kind === "materialized" &&
+			remaining.fields["clerus-custody"] === options.platform
+		) {
+			pending = manager.pending(title).map(function (entry) {
+				return Object.assign(
+					{ id: entry.id },
+					entry.event
+				);
+			});
+		}
+
 		return {
 			status: "completed",
 			obligation: title,
-			results: manager.resume(title),
-			pending: []
+			results: results,
+			pending: pending
 		};
 	} catch (error) {
 		return failed("materialization", error, title);

@@ -10,6 +10,9 @@ var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
 var planned = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
 );
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -136,8 +139,10 @@ function testPendingMessageDoesNotRetainFormerSender(tw) {
 
 	var sent = f.runtime.dispatch(source, { type: "test" });
 
-	assert(sent.flow.unavailable.length === 1);
-	assert(sent.flow.remaining === 1);
+	assert(
+		observation.attempts(sent.flow).unavailable.length === 1
+	);
+	assert(sent.flow.summary.waiting.deliveries.ready === 1);
 
 	var collected = f.runtime.collect();
 
@@ -152,9 +157,10 @@ function testPendingMessageDoesNotRetainFormerSender(tw) {
 	};
 
 	var delivered = f.runtime.drainFlows();
+	var attempts = observation.attempts(delivered);
 
-	assert(delivered.errors.length === 0);
-	assert(delivered.completed.length === 1);
+	assert(attempts.errors.length === 0);
+	assert(attempts.completed.length === 1);
 	assert(!f.wiki.getTiddler(sent.obligation));
 
 	var registry = JSON.parse(
@@ -195,7 +201,9 @@ function testPersistentTickRetainsAddressedJob(tw) {
 
 	var activated = f.runtime.runDeferred();
 
-	assert(activated.persistent[0].result.status === "completed");
+	assert(
+		activated.activations[0].result.status === "completed"
+	);
 	assert(ticks === 1);
 
 	var second = f.runtime.collect();
@@ -272,7 +280,9 @@ function testAcceptedBirthProtectsUnreferencedChild(tw) {
 	}
 
 	assert(injected);
-	assert(founded.flow.errors.length === 1);
+	assert(
+		observation.attempts(founded.flow).errors.length === 1
+	);
 	assert(initializations === 1);
 
 	var child = founded.pending[0].recipient.title;

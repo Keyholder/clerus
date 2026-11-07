@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var observation = require(
+	"$:/plugins/clerus/tests/protocol-observation.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -198,8 +201,12 @@ function testFoundingAndReport(tw) {
 	);
 
 	assert(founded.status === "completed");
-	assert(founded.flow.errors.length === 0);
-	assert(founded.flow.completed.length === 1);
+
+	var attempts = observation.attempts(founded.flow);
+
+	assert(attempts.errors.length === 0);
+	assert(attempts.completed.length === 1);
+
 	assert(f.initialized() === 1);
 
 	var worker = f.workerTitle();
@@ -237,8 +244,11 @@ function testFailedInitializationPreservesDocuments(tw) {
 		{ type: "found" }
 	);
 
-	assert(result.flow.errors.length === 1);
-	assert(result.flow.errors[0].result.lifecycle.dismissed);
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.lifecycle.dismissed);
+
 	assert(f.initialized() === 1);
 	assert(f.dismissed() === 1);
 
@@ -261,7 +271,17 @@ function testFailedInitializationPreservesDocuments(tw) {
 	var journal = f.wiki.getTiddler(result.obligation);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(JSON.parse(journal.fields.text).errors.length === 1);
+
+	var record = JSON.parse(journal.fields.text);
+	var ids = Object.keys(record.events);
+
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(record.diagnostics.length === 1);
+	assert(ids.length === 1);
+	assert(record.events[ids[0]].mode === "paused");
+	assert(record.events[ids[0]].event.establishing === true);
 }
 
 function testInterruptedBirthDoesNotReinitialize(tw) {
@@ -297,11 +317,12 @@ function testInterruptedBirthDoesNotReinitialize(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
-	assert(
-		result.flow.errors[0].result.phase === "materialization"
-	);
-	assert(!result.flow.errors[0].result.lifecycle);
+
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.phase === "materialization");
+	assert(!attempts.errors[0].result.lifecycle);
 
 	assert(f.initialized() === 1);
 	assert(f.dismissed() === 0);
@@ -318,25 +339,52 @@ function testInterruptedBirthDoesNotReinitialize(tw) {
 	assert(!registry.result);
 
 	var body = worker.fields.text;
-	var pending = f.runtime.flows.pending(result.obligation);
+	var pending = f.runtime.continuations.pending(
+		result.obligation
+	);
 
 	assert(pending.length === 1);
-	assert(pending[0].establishing);
-	assert(pending[0].registry.contract.form === "contract");
-	assert(pending[0].registry.assignment.form === "mission");
+	assert(pending[0].event.establishing);
+	assert(pending[0].event.registry.contract.form === "contract");
+	assert(pending[0].event.registry.assignment.form === "mission");
 
 	var retried = f.runtime.drainFlows();
+	var retriedAttempts = observation.attempts(retried);
 
-	assert(retried.unavailable.length === 1);
+	assert(retriedAttempts.unavailable.length === 1);
 	assert(
-		retried.unavailable[0].reason ===
+		retriedAttempts.unavailable[0].reason ===
 			"establishment-target-occupied"
 	);
-	assert(retried.remaining === 1);
+	assert(retried.summary.waiting.deliveries.ready === 1);
 
 	assert(f.initialized() === 1);
 	assert(f.dismissed() === 0);
 	assert(f.wiki.getTiddler(workerTitle).fields.text === body);
+}
+
+function isBirthAcknowledgement(effect) {
+	if (
+		!effect.before ||
+		!effect.after ||
+		effect.before["clerus-wal-kind"] !== "continuation" ||
+		effect.after["clerus-wal-kind"] !== "continuation"
+	) {
+		return false;
+	}
+
+	var before = JSON.parse(effect.before.text);
+	var after = JSON.parse(effect.after.text);
+	var ids = Object.keys(before.events);
+
+	return (
+		before.work === null &&
+		ids.length === 1 &&
+		before.events[ids[0]].mode === "ready" &&
+		before.events[ids[0]].event.establishing === true &&
+		after.work === null &&
+		Object.keys(after.events).length === 0
+	);
 }
 
 function testUnrecordedAcknowledgementPreservesObligation(tw) {
@@ -347,19 +395,13 @@ function testUnrecordedAcknowledgementPreservesObligation(tw) {
 	f.runtime.store.apply = function (effect) {
 		if (
 			!injected &&
-			effect.after &&
-			effect.after["clerus-wal-kind"] === "flow"
+			isBirthAcknowledgement(effect)
 		) {
-			var record = JSON.parse(effect.after.text);
+			injected = true;
 
-			if (
-				record.active === null &&
-				record.pending.length === 0 &&
-				record.errors.length === 0
-			) {
-				injected = true;
-				throw new Error("Interrupted before birth acknowledgement");
-			}
+			throw new Error(
+				"Interrupted before birth acknowledgement"
+			);
 		}
 
 		return originalApply.call(this, effect);
@@ -377,11 +419,13 @@ function testUnrecordedAcknowledgementPreservesObligation(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
-	assert(
-		result.flow.errors[0].result.phase === "acknowledgement"
-	);
-	assert(result.flow.errors[0].result.acceptanceUncertain);
+
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.phase === "acknowledgement");
+	assert(attempts.errors[0].result.acceptanceUncertain);
+
 	assert(f.initialized() === 1);
 
 	var workerTitle = f.workerTitle();
@@ -392,7 +436,11 @@ function testUnrecordedAcknowledgementPreservesObligation(tw) {
 	assert(registry.charter.status.phase === "running");
 	assert(registry.mission);
 	assert(registry.result.data.value === 42);
-	assert(f.runtime.flows.pending(result.obligation).length === 1);
+	assert(
+		f.runtime.continuations.pending(
+			result.obligation
+		).length === 1
+	);
 
 	/*
 		Recovery cannot infer successful initialization merely
@@ -402,8 +450,10 @@ function testUnrecordedAcknowledgementPreservesObligation(tw) {
 
 	var retried = f.runtime.drainFlows();
 
-	assert(retried.unavailable.length === 1);
-	assert(retried.remaining === 1);
+	assert(
+		observation.attempts(retried).unavailable.length === 1
+	);
+	assert(retried.summary.waiting.deliveries.ready === 1);
 	assert(f.initialized() === 1);
 	assert(f.dismissed() === 0);
 	assert(f.wiki.getTiddler(workerTitle).fields.text === body);
@@ -419,19 +469,13 @@ function testRecordedAcknowledgementFinishesWithoutReinitialization(tw) {
 
 		if (
 			!injected &&
-			effect.after &&
-			effect.after["clerus-wal-kind"] === "flow"
+			isBirthAcknowledgement(effect)
 		) {
-			var record = JSON.parse(effect.after.text);
+			injected = true;
 
-			if (
-				record.active === null &&
-				record.pending.length === 0 &&
-				record.errors.length === 0
-			) {
-				injected = true;
-				throw new Error("Interrupted after birth acknowledgement");
-			}
+			throw new Error(
+				"Interrupted after birth acknowledgement"
+			);
 		}
 
 		return result;
@@ -449,18 +493,22 @@ function testRecordedAcknowledgementFinishesWithoutReinitialization(tw) {
 	}
 
 	assert(injected);
-	assert(result.flow.errors.length === 1);
-	assert(
-		result.flow.errors[0].result.phase === "acknowledgement"
-	);
+
+	var attempts = observation.attempts(result.flow);
+
+	assert(attempts.errors.length === 1);
+	assert(attempts.errors[0].result.phase === "acknowledgement");
+
 	assert(f.initialized() === 1);
 
 	var journal = f.wiki.getTiddler(result.obligation);
 	var record = JSON.parse(journal.fields.text);
 
-	assert(record.active === null);
-	assert(record.pending.length === 0);
-	assert(record.errors.length === 0);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(Object.keys(record.events).length === 0);
+	assert(record.diagnostics.length === 0);
 
 	var workerTitle = f.workerTitle();
 	var body = f.wiki.getTiddler(workerTitle).fields.text;
@@ -479,8 +527,10 @@ function testRecordedAcknowledgementFinishesWithoutReinitialization(tw) {
 
 	var drained = f.runtime.drainFlows();
 
-	assert(drained.completed.length === 0);
-	assert(drained.remaining === 0);
+	assert(
+		observation.attempts(drained).completed.length === 0
+	);
+	assert(drained.summary.waiting.deliveries.ready === 0);
 }
 
 exports.run = function (tw) {
