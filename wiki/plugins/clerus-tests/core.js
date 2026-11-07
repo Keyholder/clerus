@@ -89,6 +89,7 @@ var SUITES = Object.freeze([
 	"custody-transfer",
 	"custody-management",
 	"custody-roundtrip",
+	"custody-binding",
     "persistent-reaction",
     "persistent-flow-reaction",
     "flow-scheduler",
