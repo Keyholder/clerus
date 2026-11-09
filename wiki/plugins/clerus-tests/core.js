@@ -111,7 +111,9 @@ var SUITES = Object.freeze([
 	"runtime-persistent",
 	"persistent-suspension",
 	"persistent-resumption",
-	"management"
+
+	"management",
+	"management-integration"
 ]);
 
 function describe(error) {

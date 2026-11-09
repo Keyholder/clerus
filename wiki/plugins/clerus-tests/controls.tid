@@ -36,6 +36,14 @@ type: text/vnd.tiddlywiki
 Подключение рантайма
 </$button>
 
+<$button>
+<$action-sendmessage
+  $message="tm-clerus-tests"
+  suite="management-integration"
+/>
+Интеграция с уведомлениями TW5
+</$button>
+
 <$codeblock
   code={{$:/temp/clerus/tests/report}}
   language="json"
