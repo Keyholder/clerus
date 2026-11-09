@@ -44,6 +44,14 @@ type: text/vnd.tiddlywiki
 Интеграция с уведомлениями TW5
 </$button>
 
+<$button>
+<$action-sendmessage
+  $message="tm-clerus-tests"
+  suite="prototype-wal-receipts"
+/>
+Прототипные свидетельства переезда
+</$button>
+
 <$codeblock
   code={{$:/temp/clerus/tests/report}}
   language="json"

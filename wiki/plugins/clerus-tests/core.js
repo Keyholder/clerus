@@ -113,7 +113,8 @@ var SUITES = Object.freeze([
 	"persistent-resumption",
 
 	"management",
-	"management-integration"
+	"management-integration",
+	"prototype-wal-receipts"
 ]);
 
 function describe(error) {

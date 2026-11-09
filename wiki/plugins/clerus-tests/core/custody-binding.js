@@ -282,6 +282,61 @@ function testValidBinding(tw) {
 	assert(f.calls() === 0);
 }
 
+function testMissingTransferDeadline(tw) {
+	assertRejected(tw, function (record) {
+		record.retainUntil = Date.now() + 150000;
+
+		// The transfer marker deliberately has no deadline.
+	});
+}
+
+function testDifferentTransferDeadline(tw) {
+	assertRejected(tw, function (record) {
+		record.retainUntil = Date.now() + 150000;
+
+		mutateMarker(record, function (marker) {
+			marker.retainUntil = record.retainUntil + 1;
+		});
+	});
+}
+
+function testTimedBindingMaterializesImmediately(tw) {
+	var f = fixture(tw);
+	var record = clone(f.record);
+
+	record.retainUntil = Date.now() + 150000;
+
+	mutateMarker(record, function (marker) {
+		marker.retainUntil = record.retainUntil;
+	});
+
+	f.publish(record);
+	f.runtime.recover();
+
+	assert(
+		f.runtime.store.read(f.target)
+			.fields["clerus-custody"] === f.destination
+	);
+
+	var remaining = JSON.parse(
+		f.wiki.getTiddlerText(f.journal)
+	);
+
+	assert(remaining.work === null);
+	assert(Object.keys(remaining.events).length === 0);
+	assert(remaining.retainUntil === record.retainUntil);
+
+	/*
+	The envelope is retained, but the active work is gone.
+	The source must not retain custody until the deadline.
+	*/
+	assert(!f.runtime.custody.owns(
+		f.runtime.store.read(f.target).fields
+	));
+
+	assert(f.calls() === 0);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["transfer must name its actual journal", testWrongJournal],
@@ -291,7 +346,10 @@ exports.run = function (tw) {
 		["ordinary work cannot rewrite the marker alone", testMarkerOnlyRewrite],
 		["birth cannot smuggle a transfer marker", testBirthCannotSmuggleTransferMarker],
 		["invalid journal cannot grant source ownership", testInvalidJournalCannotGrantSourceOwnership],
-		["valid binding materializes without executor invocation", testValidBinding]
+		["valid binding materializes without executor invocation", testValidBinding],
+		["timed continuation requires a transfer deadline", testMissingTransferDeadline],
+		["transfer deadline must match its continuation", testDifferentTransferDeadline],
+		["timed binding materializes before the deletion deadline", testTimedBindingMaterializesImmediately]
 	];
 
 	var results = cases.map(function (item) {
