@@ -38,7 +38,8 @@ exports.startup = function () {
 		try {
 			management.command(
 				parameters.command,
-				parameters.title
+				parameters.title,
+				parameters.eventId
 			);
 		} catch (error) {
 			console.error("Clerus management:", error);

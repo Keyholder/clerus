@@ -305,6 +305,167 @@ function testDisposeCancelsScheduledExecution(tw) {
 	assert(f.wiki.tiddlerExists(demo.journal));
 }
 
+function pausedActivation(f, tw) {
+	var demo = f.adapter.command("demo");
+
+	f.adapter.command("release", demo.journal);
+	f.adapter.command("hold", demo.journal);
+
+	var record = f.record(demo.journal);
+	var ids = Object.keys(record.events);
+
+	assert(ids.length === 1);
+
+	record.events[ids[0]].mode = "paused";
+	record.diagnostics.push({
+		event: ids[0],
+		phase: "reaction",
+		error: {
+			name: "Error",
+			message: "Synthetic repair fixture"
+		}
+	});
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(demo.journal),
+		{ text: JSON.stringify(record) }
+	));
+
+	return {
+		journal: demo.journal,
+		job: demo.job,
+		id: ids[0]
+	};
+}
+
+function throws(fn, fragment) {
+	var caught = null;
+
+	try {
+		fn();
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught, "Expected an exception");
+
+	if (fragment) {
+		assert(
+			String(caught.message).indexOf(fragment) !== -1,
+			"Unexpected exception: " + caught.message
+		);
+	}
+}
+
+function testRetryPreservesNormativeContent(tw) {
+	var f = fixture(tw);
+	f.adapter.start();
+
+	var paused = pausedActivation(f, tw);
+	var before = f.record(paused.journal);
+
+	f.adapter.command("retry", paused.journal, paused.id);
+
+	var after = f.record(paused.journal);
+
+	assert(
+		f.wiki.getTiddler(paused.journal)
+			.fields["clerus-custody"] === "user"
+	);
+	assert(after.events[paused.id].mode === "ready");
+
+	/*
+	After accounting for the one permitted change, the whole
+	normalized continuation must still be identical.
+	*/
+	after.events[paused.id].mode = "paused";
+
+	assert(JSON.stringify(after) === JSON.stringify(before));
+
+	f.adapter.dispose();
+}
+
+function testRetryDoesNotExecuteUntilRelease(tw) {
+	var f = fixture(tw);
+	f.adapter.start();
+
+	var paused = pausedActivation(f, tw);
+
+	f.adapter.command("retry", paused.journal, paused.id);
+
+	f.notify([paused.journal]);
+	f.flush();
+
+	f.adapter.command("service");
+	f.adapter.command("deferred");
+
+	assert(f.record(paused.job).charter.status.completed === 0);
+
+	f.adapter.command("release", paused.journal);
+
+	// Release performs delivery, not deferred activation.
+	assert(f.record(paused.job).charter.status.completed === 0);
+
+	f.adapter.command("deferred");
+
+	assert(f.record(paused.job).charter.status.completed === 1);
+
+	f.adapter.dispose();
+}
+
+function testRetryRejectsInvalidStateWithoutChangingWal(tw) {
+	var f = fixture(tw);
+	f.adapter.start();
+
+	var paused = pausedActivation(f, tw);
+	var before = f.wiki.getTiddlerText(paused.journal);
+
+	throws(function () {
+		f.adapter.command(
+			"retry",
+			paused.journal,
+			"management-unknown-event-0001"
+		);
+	}, "Select a paused event");
+
+	assert(f.wiki.getTiddlerText(paused.journal) === before);
+
+	f.adapter.command("retry", paused.journal, paused.id);
+	before = f.wiki.getTiddlerText(paused.journal);
+
+	throws(function () {
+		f.adapter.command("retry", paused.journal, paused.id);
+	}, "Select a paused event");
+
+	assert(f.wiki.getTiddlerText(paused.journal) === before);
+
+	// Restore a paused event, but give the WAL to the runtime.
+	var record = f.record(paused.journal);
+	record.events[paused.id].mode = "paused";
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(paused.journal),
+		{
+			"clerus-custody": f.platform,
+			text: JSON.stringify(record)
+		}
+	));
+
+	before = f.wiki.getTiddlerText(paused.journal);
+
+	throws(function () {
+		f.adapter.command("retry", paused.journal, paused.id);
+	}, "under user custody");
+
+	assert(f.wiki.getTiddlerText(paused.journal) === before);
+	assert(
+		f.wiki.getTiddler(paused.journal)
+			.fields["clerus-custody"] === f.platform
+	);
+
+	f.adapter.dispose();
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -313,7 +474,10 @@ exports.run = function (tw) {
 		["management: own notifications do not repeat service", testOwnNotificationsDoNotRepeatService],
 		["management: external WAL changes schedule service", testExternalWalChangeSchedulesService],
 		["management: release does not resume paused events", testReleasePreservesPausedEvent],
-		["management: dispose cancels scheduled execution", testDisposeCancelsScheduledExecution]
+		["management: dispose cancels scheduled execution", testDisposeCancelsScheduledExecution],
+		["management: retry preserves normative content and diagnostics", testRetryPreservesNormativeContent],
+		["management: retry waits for separate release", testRetryDoesNotExecuteUntilRelease],
+		["management: invalid retry does not change WAL", testRetryRejectsInvalidStateWithoutChangingWal]
 	];
 
 	var results = cases.map(function (item) {

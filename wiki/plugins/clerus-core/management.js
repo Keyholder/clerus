@@ -226,7 +226,68 @@ function create(options) {
 		};
 	}
 
-	function command(name, title) {
+	function retryEvent(title, eventId) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf(prefix) !== 0 ||
+			title.length === prefix.length
+		) {
+			throw new Error("Select a WAL belonging to this platform");
+		}
+
+		if (!wiki.tiddlerExists(title)) {
+			throw new Error("WAL is not materialized");
+		}
+
+		var tiddler = wiki.getTiddler(title);
+
+		if (
+			tiddler.fields.type !== "application/json" ||
+			tiddler.fields["clerus-wal-kind"] !== "continuation" ||
+			tiddler.fields["clerus-custody"] !== "user"
+		) {
+			throw new Error(
+				"Event repair requires a continuation under user custody"
+			);
+		}
+
+		var record = continuations.validate(
+			JSON.parse(tiddler.fields.text),
+			platform,
+			title
+		);
+
+		if (record.work !== null) {
+			throw new Error(
+				"Cannot retry an event during active materialization"
+			);
+		}
+
+		if (
+			typeof eventId !== "string" ||
+			!Object.prototype.hasOwnProperty.call(record.events, eventId) ||
+			record.events[eventId].mode !== "paused"
+		) {
+			throw new Error("Select a paused event");
+		}
+
+		record.events[eventId].mode = "ready";
+
+		record = continuations.validate(record, platform, title);
+
+		wiki.addTiddler(new tw.Tiddler(tiddler, {
+			text: JSON.stringify(record, null, 2)
+		}));
+
+		return {
+			journal: title,
+			eventId: eventId,
+			mode: "ready",
+			custody: "user"
+		};
+	}
+
+	function command(name, title, eventId) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
 		}
@@ -268,6 +329,10 @@ function create(options) {
 
 				case "hold":
 					result = changeCustody(title, "user");
+					break;
+
+				case "retry":
+					result = retryEvent(title, eventId);
 					break;
 
 				default:
