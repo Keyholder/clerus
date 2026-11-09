@@ -466,6 +466,132 @@ function testRetryRejectsInvalidStateWithoutChangingWal(tw) {
 	f.adapter.dispose();
 }
 
+function testSuspensionRepairAndRetry(tw) {
+	var f = fixture(tw);
+	f.adapter.start();
+
+	var demo = f.adapter.command("demo");
+	f.adapter.command("release", demo.journal);
+
+	/*
+	Simulate an operator edit that leaves valid JSON but breaks
+	the demo executor's expectations.
+	*/
+	var registry = f.record(demo.job);
+	registry.charter.status = null;
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(demo.job),
+		{ text: JSON.stringify(registry) }
+	));
+
+	f.adapter.command("deferred");
+
+	var job = f.wiki.getTiddler(demo.job);
+	var journal = f.record(demo.journal);
+	var ids = Object.keys(journal.events);
+
+	assert(job.fields["clerus-custody"] === "user");
+	assert(job.fields["clerus-suspended"] === "yes");
+	assert(ids.length === 1);
+
+	var eventId = ids[0];
+
+	assert(journal.events[eventId].mode === "paused");
+	assert(
+		f.wiki.getTiddler(demo.journal)
+			.fields["clerus-custody"] === "user"
+	);
+
+	var eventBefore = JSON.stringify(journal.events[eventId].event);
+	var identityBefore = journal.evidence.identities[eventId];
+
+	// Repair the executor's operational state under user custody.
+	registry = f.record(demo.job);
+	registry.charter.status = {
+		phase: "waiting",
+		completed: 0
+	};
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(demo.job),
+		{ text: JSON.stringify(registry) }
+	));
+
+	/*
+	Keep the WAL under user custody while resuming the job.
+	The resumption notification must not replay the failed tick.
+	*/
+	f.adapter.command("resume", demo.job);
+
+	job = f.wiki.getTiddler(demo.job);
+
+	assert(job.fields["clerus-custody"] === f.platform);
+	assert(job.fields["clerus-suspended"] !== "yes");
+	assert(f.record(demo.job).charter.status.completed === 0);
+
+	journal = f.record(demo.journal);
+
+	assert(journal.events[eventId].mode === "paused");
+
+	// Prepare the original event for another attempt.
+	f.adapter.command("retry", demo.journal, eventId);
+
+	journal = f.record(demo.journal);
+
+	assert(journal.events[eventId].mode === "ready");
+	assert(
+		JSON.stringify(journal.events[eventId].event) === eventBefore
+	);
+	assert(journal.evidence.identities[eventId] === identityBefore);
+
+	f.adapter.command("release", demo.journal);
+
+	assert(f.record(demo.job).charter.status.completed === 0);
+
+	f.adapter.command("deferred");
+
+	assert(f.record(demo.job).charter.status.completed === 1);
+
+	journal = f.record(demo.journal);
+
+	assert(
+		!Object.prototype.hasOwnProperty.call(
+			journal.events,
+			eventId
+		)
+	);
+
+	// Historical diagnostics survive successful repair.
+	assert(journal.diagnostics.some(function (entry) {
+		return entry.event === eventId;
+	}));
+
+	f.adapter.dispose();
+}
+
+function testResumeRejectsActiveJob(tw) {
+	var f = fixture(tw);
+	f.adapter.start();
+
+	var demo = f.adapter.command("demo");
+	f.adapter.command("release", demo.journal);
+
+	var before = JSON.stringify(
+		f.wiki.getTiddler(demo.job).fields
+	);
+
+	throws(function () {
+		f.adapter.command("resume", demo.job);
+	}, "suspended persistent job");
+
+	assert(
+		JSON.stringify(f.wiki.getTiddler(demo.job).fields) === before
+	);
+
+	f.adapter.dispose();
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -477,7 +603,9 @@ exports.run = function (tw) {
 		["management: dispose cancels scheduled execution", testDisposeCancelsScheduledExecution],
 		["management: retry preserves normative content and diagnostics", testRetryPreservesNormativeContent],
 		["management: retry waits for separate release", testRetryDoesNotExecuteUntilRelease],
-		["management: invalid retry does not change WAL", testRetryRejectsInvalidStateWithoutChangingWal]
+		["management: invalid retry does not change WAL", testRetryRejectsInvalidStateWithoutChangingWal],
+		["management: suspended job repair and original event retry", testSuspensionRepairAndRetry],
+		["management: active job cannot be administratively resumed", testResumeRejectsActiveJob]
 	];
 
 	var results = cases.map(function (item) {

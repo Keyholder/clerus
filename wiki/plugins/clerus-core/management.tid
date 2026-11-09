@@ -120,3 +120,35 @@ type: text/vnd.tiddlywiki
 <$codeblock code={{!!text}} language="json"/>
 
 </$list>
+
+!! Отстранённые персистентные должности
+
+Перед возобновлением исправьте причину ошибки в состоянии должности.
+Эта кнопка передаёт должность браузеру и запрашивает её возобновление.
+Используйте её только для должностей, которые должны работать в браузере.
+
+Она не подготавливает повтор приостановленных событий.
+
+<$list
+  filter="[all[tiddlers]prefix[$:/clerus/jobs/]field:clerus-suspended[yes]sort[title]]"
+  emptyMessage="Нет отстранённых персистентных должностей."
+>
+
+<div class="tc-message-box">
+
+<$link><$view field="title"/></$link>
+
+Распорядитель: <$view field="clerus-custody"/>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="resume"
+  title=<<currentTiddler>>
+/>
+Возобновить в браузере
+</$button>
+
+</div>
+
+</$list>

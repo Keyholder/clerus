@@ -287,6 +287,65 @@ function create(options) {
 		};
 	}
 
+	function resumeJob(title) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf("$:/clerus/jobs/") !== 0 ||
+			title.length === "$:/clerus/jobs/".length
+		) {
+			throw new Error("Select a persistent job");
+		}
+
+		if (!wiki.tiddlerExists(title)) {
+			throw new Error("Job is not materialized");
+		}
+
+		var tiddler = wiki.getTiddler(title);
+		var fields = tiddler.fields;
+
+		if (
+			fields.type !== "application/json" ||
+			typeof fields["clerus-executor"] !== "string" ||
+			fields["clerus-executor"].length === 0 ||
+			fields["clerus-suspended"] !== "yes"
+		) {
+			throw new Error("Select a suspended persistent job");
+		}
+
+		if (fields["clerus-custody-transfer"] !== undefined) {
+			throw new Error(
+				"This control does not support jobs with custody-transfer markers"
+			);
+		}
+
+		if (
+			fields["clerus-custody"] !== "user" &&
+			fields["clerus-custody"] !== platform
+		) {
+			throw new Error("Cannot resume a job owned by another platform");
+		}
+
+		if (
+			typeof resolveExecutor(fields["clerus-executor"]) !==
+				"function"
+		) {
+			throw new Error("Executor is unavailable on this platform");
+		}
+
+		if (fields["clerus-custody"] === "user") {
+			wiki.addTiddler(new tw.Tiddler(tiddler, {
+				"clerus-custody": platform
+			}));
+		}
+
+		/*
+		Custody transfer above is an explicit administrative edit.
+		It is not rolled back if resumption fails or remains blocked.
+		The runtime owns the resumption protocol and diagnostics.
+		*/
+		return runtime.resume(title);
+	}
+
 	function command(name, title, eventId) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
@@ -333,6 +392,10 @@ function create(options) {
 
 				case "retry":
 					result = retryEvent(title, eventId);
+					break;
+
+				case "resume":
+					result = resumeJob(title);
 					break;
 
 				default:
