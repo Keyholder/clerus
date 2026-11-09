@@ -25,6 +25,32 @@ type: text/vnd.tiddlywiki
 Инспекция
 </$button>
 
+!! Автоматические отложенные проходы
+
+Автоматика локальна для этой браузерной вкладки и выключена после перезагрузки.
+Между завершением прохода и запуском следующего выдерживается интервал около секунды.
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="automatic-start"
+/>
+Включить автоматические проходы
+</$button>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="automatic-stop"
+/>
+Остановить автоматические проходы
+</$button>
+
+Состояние:
+<$text text={{{ [[$:/temp/clerus/management/browser]get[text]jsonget[automatic],[enabled]] }}}/>
+
+Остановка не отменяет сохранённых активаций и не прерывает уже выполняющийся синхронный проход.
+
 !! Демонстрация
 
 <$button>

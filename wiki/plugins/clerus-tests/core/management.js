@@ -20,6 +20,8 @@ function fixture(tw) {
 	var callbacks = [];
 	var listeners = [];
 	var sequence = 0;
+	var timers = new Map();
+	var timerSequence = 0;
 
 	/*
 	Intercept only this isolated wiki's change subscription.
@@ -54,6 +56,21 @@ function fixture(tw) {
 
 		schedule: function (callback) {
 			callbacks.push(callback);
+		},
+
+		setTimer: function (callback, milliseconds) {
+			timerSequence++;
+
+			timers.set(timerSequence, {
+				callback: callback,
+				milliseconds: milliseconds
+			});
+
+			return timerSequence;
+		},
+
+		clearTimer: function (handle) {
+			timers.delete(handle);
 		}
 	});
 
@@ -103,6 +120,20 @@ function fixture(tw) {
 
 		scheduledCount: function () {
 			return callbacks.length;
+		},
+
+		timerCount: function () {
+			return timers.size;
+		},
+
+		runTimer: function () {
+			assert(timers.size === 1, "Expected one automatic timer");
+
+			var entry = timers.entries().next().value;
+			timers.delete(entry[0]);
+
+			assert(entry[1].milliseconds === 1000);
+			entry[1].callback();
 		}
 	};
 }
@@ -592,6 +623,91 @@ function testResumeRejectsActiveJob(tw) {
 	f.adapter.dispose();
 }
 
+function testAutomaticPassesAreExplicitAndBounded(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+		f.adapter.command("release", demo.journal);
+
+		assert(f.timerCount() === 0);
+
+		f.adapter.command("automatic-start");
+		f.adapter.command("automatic-start");
+
+		// Enabling twice must neither run a tick nor duplicate timers.
+		assert(f.timerCount() === 1);
+		assert(f.record(demo.job).charter.status.completed === 0);
+
+		for (var step = 1; step <= 3; step++) {
+			f.runTimer();
+
+			assert(
+				f.record(demo.job).charter.status.completed === step
+			);
+			assert(f.timerCount() === 1);
+		}
+
+		assert(!f.wiki.tiddlerExists(demo.journal));
+
+		f.adapter.command("automatic-stop");
+
+		assert(f.timerCount() === 0);
+		assert(
+			f.record(f.adapter.reportTitle).automatic.enabled === false
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testAutomaticStopPreservesPendingActivation(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+		f.adapter.command("release", demo.journal);
+
+		f.adapter.command("automatic-start");
+		f.runTimer();
+
+		assert(f.record(demo.job).charter.status.completed === 1);
+
+		var before = f.wiki.getTiddlerText(demo.journal);
+
+		f.adapter.command("automatic-stop");
+
+		assert(f.timerCount() === 0);
+		assert(f.wiki.getTiddlerText(demo.journal) === before);
+
+		// Manual execution remains available after stopping the driver.
+		f.adapter.command("deferred");
+
+		assert(f.record(demo.job).charter.status.completed === 2);
+		assert(f.timerCount() === 0);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testDisposeStopsAutomaticTimer(tw) {
+	var f = fixture(tw);
+
+	f.adapter.start();
+	f.adapter.command("automatic-start");
+
+	assert(f.timerCount() === 1);
+
+	f.adapter.dispose();
+
+	assert(f.timerCount() === 0);
+	assert(f.listenerCount() === 0);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -605,7 +721,10 @@ exports.run = function (tw) {
 		["management: retry waits for separate release", testRetryDoesNotExecuteUntilRelease],
 		["management: invalid retry does not change WAL", testRetryRejectsInvalidStateWithoutChangingWal],
 		["management: suspended job repair and original event retry", testSuspensionRepairAndRetry],
-		["management: active job cannot be administratively resumed", testResumeRejectsActiveJob]
+		["management: active job cannot be administratively resumed", testResumeRejectsActiveJob],
+		["management: automatic passes are explicit and bounded", testAutomaticPassesAreExplicitAndBounded],
+		["management: stopping automation preserves pending activation", testAutomaticStopPreservesPendingActivation],
+		["management: disposal stops the automatic timer", testDisposeStopsAutomaticTimer]
 	];
 
 	var results = cases.map(function (item) {

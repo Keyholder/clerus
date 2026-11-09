@@ -50,6 +50,37 @@ function create(options) {
 		return setTimeout(callback, 0);
 	};
 
+	var setTimer = options.setTimer || function (callback, milliseconds) {
+		return setTimeout(callback, milliseconds);
+	};
+
+	var clearTimer = options.clearTimer || function (handle) {
+		clearTimeout(handle);
+	};
+
+	var automaticDelay = options.automaticDelay === undefined
+		? 1000
+		: options.automaticDelay;
+
+	if (
+		!Number.isInteger(automaticDelay) ||
+		automaticDelay < 100 ||
+		automaticDelay > 60000
+	) {
+		throw new Error(
+			"Automatic pass delay must be between 100 and 60000 milliseconds"
+		);
+	}
+
+	if (
+		typeof setTimer !== "function" ||
+		typeof clearTimer !== "function"
+	) {
+		throw new Error("Automatic passes require timer functions");
+	}
+
+	var automaticEnabled = false;
+	var automaticTimer = null;
 	var prefix = "$:/clerus/wal/" + platform + "/";
 	var reportTitle = "$:/temp/clerus/management/" + platform;
 	var busy = false;
@@ -105,6 +136,7 @@ function create(options) {
 			text: JSON.stringify({
 				platform: platform,
 				command: command,
+				automatic: automaticState(),
 				result: result === undefined ? null : result,
 				error: error ? String(error.stack || error) : null
 			}, null, 2)
@@ -346,6 +378,72 @@ function create(options) {
 		return runtime.resume(title);
 	}
 
+	function automaticState() {
+		return {
+			enabled: automaticEnabled,
+			delay: automaticDelay
+		};
+	}
+
+	function stopAutomatic() {
+		automaticEnabled = false;
+
+		if (automaticTimer !== null) {
+			clearTimer(automaticTimer);
+			automaticTimer = null;
+		}
+
+		return automaticState();
+	}
+
+	function scheduleAutomatic() {
+		if (
+			disposed ||
+			!automaticEnabled ||
+			automaticTimer !== null
+		) {
+			return;
+		}
+
+		automaticTimer = setTimer(function () {
+			automaticTimer = null;
+
+			if (disposed || !automaticEnabled) {
+				return;
+			}
+
+			if (busy) {
+				scheduleAutomatic();
+				return;
+			}
+
+			try {
+				command("deferred");
+			} catch (error) {
+				/*
+				An uncaught adapter/runtime exception stops the
+				automatic driver. Existing obligations remain.
+				*/
+				stopAutomatic();
+				publish("automatic-stopped", null, error);
+				return;
+			}
+
+			/*
+			Newly scheduled activations can run only in a later
+			pass, after another full timer interval.
+			*/
+			scheduleAutomatic();
+		}, automaticDelay);
+	}
+
+	function startAutomatic() {
+		automaticEnabled = true;
+		scheduleAutomatic();
+
+		return automaticState();
+	}
+
 	function command(name, title, eventId) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
@@ -396,6 +494,14 @@ function create(options) {
 
 				case "resume":
 					result = resumeJob(title);
+					break;
+
+				case "automatic-start":
+					result = startAutomatic();
+					break;
+
+				case "automatic-stop":
+					result = stopAutomatic();
 					break;
 
 				default:
@@ -479,6 +585,7 @@ function create(options) {
 			return;
 		}
 
+		stopAutomatic();
 		disposed = true;
 
 		if (started) {
