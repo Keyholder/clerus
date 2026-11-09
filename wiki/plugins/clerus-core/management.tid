@@ -1,0 +1,88 @@
+title: $:/plugins/clerus/core/management
+caption: Clerus
+tags: $:/tags/ControlPanel
+type: text/vnd.tiddlywiki
+
+! Clerus
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="service"/>
+Восстановить работу и доставить сообщения
+</$button>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="deferred"/>
+Один отложенный проход
+</$button>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="observe"/>
+Наблюдение
+</$button>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="inspect"/>
+Инспекция
+</$button>
+
+!! Демонстрация
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="demo"/>
+Подготовить новый пример
+</$button>
+
+Новый журнал создаётся под опекой пользователя. Перед исполнением можно открыть его и осмотреть принятую работу.
+
+После передачи журнала браузеру должность учреждается, но первая активация ждёт отдельного отложенного прохода. Для завершения примера нужны три прохода.
+
+!! Продолжения браузера
+
+<$list filter="[all[tiddlers]prefix[$:/clerus/wal/browser/]field:clerus-wal-kind[continuation]sort[title]]">
+
+<div class="tc-message-box">
+
+<$link><$view field="title"/></$link>
+
+Распорядитель: <$view field="clerus-custody"/>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="release"
+  title=<<currentTiddler>>
+/>
+Передать браузеру
+</$button>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="hold"
+  title=<<currentTiddler>>
+/>
+Взять под опеку
+</$button>
+
+</div>
+
+</$list>
+
+Передача журнала пользователю не отменяет обязательств и удержаний. Передача браузеру не переводит приостановленные события в готовые.
+
+!! Последний результат браузера
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser}}
+  language="json"
+/>
+
+!! Демонстрационные должности
+
+<$list filter="[all[tiddlers]prefix[$:/clerus/jobs/demo-]sort[title]]">
+
+<$link><$view field="title"/></$link>
+
+<$codeblock code={{!!text}} language="json"/>
+
+</$list>

@@ -1,0 +1,34 @@
+title: $:/plugins/clerus/tests/controls
+caption: Clerus Tests
+tags: $:/tags/ControlPanel
+type: text/vnd.tiddlywiki
+
+! Интеграционные тесты Clerus
+
+Тесты запускаются вручную. Полный прогон может временно блокировать интерфейс браузера.
+
+<$button>
+<$action-sendmessage $message="tm-clerus-tests"/>
+Запустить все тесты
+</$button>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus-tests"
+  suite="continuation-establishment"
+/>
+Учреждение через продолжение
+</$button>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus-tests"
+  suite="continuation-activations"
+/>
+Отложенные активации
+</$button>
+
+<$codeblock
+  code={{$:/temp/clerus/tests/report}}
+  language="json"
+/>
