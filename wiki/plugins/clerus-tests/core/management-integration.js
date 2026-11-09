@@ -84,7 +84,9 @@ function fixture(tw) {
 
 			return "management-integration-" +
 				String(sequence).padStart(12, "0");
-		}
+		},
+
+		prototypeWalReceipts: false
 	});
 
 	return {

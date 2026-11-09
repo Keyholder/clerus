@@ -51,11 +51,19 @@ function journalPlatform(title) {
 	return platform;
 }
 
+function retainUntil(value) {
+	if (!Number.isSafeInteger(value) || value < 0) {
+		throw new Error("Invalid custody retention deadline");
+	}
+
+	return value;
+}
+
 function transfer(value) {
 	var record = schemas.copyJSON(value);
 
 	fieldsOnly(record, [
-		"version", "journal", "work", "from", "to"
+		"version", "journal", "work", "from", "to", "retainUntil"
 	], "custody transfer");
 
 	if (record.version !== 1) {
@@ -73,13 +81,19 @@ function transfer(value) {
 		throw new Error("Invalid custody transfer direction");
 	}
 
-	return schemas.copyJSON({
+	var result = {
 		version: 1,
 		journal: record.journal,
 		work: record.work,
 		from: record.from,
 		to: record.to
-	});
+	};
+
+	if (hasOwn(record, "retainUntil")) {
+		result.retainUntil = retainUntil(record.retainUntil);
+	}
+
+	return schemas.copyJSON(result);
 }
 
 /*
@@ -206,11 +220,15 @@ function readDeletion(fields, platform) {
 	return record;
 }
 
-function assertWorkBinding(work, platform, journal) {
+function assertWorkBinding(work, platform, journal, deadline) {
 	schemas.assertPlatform(platform);
 
 	if (journalPlatform(journal) !== platform) {
 		throw new Error("Work journal belongs to another platform");
+	}
+
+	if (deadline !== undefined) {
+		retainUntil(deadline);
 	}
 
 	work.transitions.forEach(function (effect) {
@@ -232,7 +250,8 @@ function assertWorkBinding(work, platform, journal) {
 			marker.work !== work.id ||
 			marker.from !== platform ||
 			marker.from !== effect.before["clerus-custody"] ||
-			marker.to !== effect.after["clerus-custody"]
+			marker.to !== effect.after["clerus-custody"] ||
+			marker.retainUntil !== deadline
 		) {
 			throw new Error(
 				"Custody transfer is not bound to its accepted work journal"
@@ -243,6 +262,48 @@ function assertWorkBinding(work, platform, journal) {
 	return true;
 }
 
+/*
+Only for preparation, before work acceptance.
+
+Never apply this transformation to already accepted work.
+*/
+function withRetention(value, deadline) {
+	retainUntil(deadline);
+
+	var work = schemas.copyJSON(value);
+
+	work.transitions.forEach(function (effect) {
+		if (
+			!jobTitles.isJobTitle(effect.title) ||
+			effect.before === null ||
+			effect.after === null ||
+			effect.before["clerus-custody"] ===
+				effect.after["clerus-custody"]
+		) {
+			return;
+		}
+
+		var marker = readTransfer(effect.after);
+
+		if (marker === null) {
+			throw new Error("Custody change requires a transfer marker");
+		}
+
+		if (
+			marker.retainUntil !== undefined &&
+			marker.retainUntil !== deadline
+		) {
+			throw new Error("Custody retention deadline mismatch");
+		}
+
+		marker.retainUntil = deadline;
+
+		effect.after[TRANSFER_FIELD] = JSON.stringify(marker);
+	});
+
+	return work;
+}
+
 exports.TRANSFER_FIELD = TRANSFER_FIELD;
 exports.transfer = transfer;
 exports.readTransfer = readTransfer;
@@ -250,3 +311,5 @@ exports.deletion = deletion;
 exports.deletionTitle = deletionTitle;
 exports.readDeletion = readDeletion;
 exports.assertWorkBinding = assertWorkBinding;
+exports.retainUntil = retainUntil;
+exports.withRetention = withRetention;

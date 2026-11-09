@@ -71,7 +71,9 @@ function fixture(tw) {
 
 		clearTimer: function (handle) {
 			timers.delete(handle);
-		}
+		},
+
+		prototypeWalReceipts: false
 	});
 
 	function notify(titles) {

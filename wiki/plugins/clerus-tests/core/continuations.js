@@ -19,7 +19,7 @@ function assert(condition, message) {
 	}
 }
 
-function fixture(tw) {
+function fixture(tw, retention) {
 	var wiki = new tw.Wiki();
 	var platform = tw.browser ? "browser" : "node";
 	var first = "$:/clerus/jobs/continuation-first";
@@ -58,7 +58,8 @@ function fixture(tw) {
 						"Material recovery must not invoke executors"
 					);
 				};
-			}
+			},
+			continuationRetention: retention
 		});
 	}
 
@@ -94,23 +95,29 @@ function fixture(tw) {
 	function publish(name, value, custody) {
 		var title = "$:/clerus/wal/" + platform + "/" + name;
 
+		var record = {
+			version: 2,
+			kind: "continuation",
+			platform: platform,
+			work: value,
+			events: {},
+			evidence: {
+				identities: {},
+				receipts: {}
+			},
+			diagnostics: []
+		};
+
+		if (retention && retention.delay > 0) {
+			record.retainUntil = retention.now() + retention.delay;
+		}
+
 		wiki.addTiddler(new tw.Tiddler({
 			title: title,
 			type: "application/json",
 			"clerus-custody": custody || platform,
 			"clerus-wal-kind": "continuation",
-			text: JSON.stringify({
-				version: 2,
-				kind: "continuation",
-				platform: platform,
-				work: value,
-				events: {},
-				evidence: {
-					identities: {},
-					receipts: {}
-				},
-				diagnostics: []
-			})
+			text: JSON.stringify(record)
 		}));
 
 		return title;
@@ -336,6 +343,59 @@ function testUnknownWalPreventsWrites(tw) {
 	);
 }
 
+function testRetainedEmptyJournal(tw) {
+	var now = 1000000;
+
+	var f = fixture(tw, {
+		delay: 150000,
+		now: function () {
+			return now;
+		}
+	});
+
+	var title = f.publish(
+		"retained-empty",
+		f.work("continuation-retained-0001")
+	);
+
+	f.runtime.recover();
+
+	var tiddler = f.wiki.getTiddler(title);
+	var record = JSON.parse(tiddler.fields.text);
+
+	assert(record.work === null);
+	assert(Object.keys(record.events).length === 0);
+	assert(record.retainUntil === 1150000);
+
+	// Repeated servicing must not move the deadline.
+	now = 1100000;
+	f.runtime.recover();
+
+	assert(
+		JSON.parse(f.wiki.getTiddlerText(title)).retainUntil === 1150000
+	);
+
+	// User custody forbids timed deletion.
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(title),
+		{ "clerus-custody": "user" }
+	));
+
+	now = 1200000;
+	f.runtime.recover();
+
+	assert(f.wiki.tiddlerExists(title));
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(title),
+		{ "clerus-custody": f.platform }
+	));
+
+	f.runtime.recover();
+
+	assert(!f.wiki.tiddlerExists(title));
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime recovers a material continuation", testRuntimeRecovery],
@@ -343,7 +403,8 @@ exports.run = function (tw) {
 		["partial materialization survives restart", testInterruptedRecovery],
 		["conflicting journals have no automatic winner", testConflictingJournalsHaveNoWinner],
 		["unrelated works can complete", testUnrelatedWorksCanComplete],
-		["unknown WAL prevents writes", testUnknownWalPreventsWrites]
+		["unknown WAL prevents writes", testUnknownWalPreventsWrites],
+		["exhausted journal retention survives repeated servicing", testRetainedEmptyJournal]
 	];
 
 	var results = cases.map(function (item) {

@@ -103,20 +103,47 @@ function create(options) {
 			: undefined;
 	}
 
+	var prototypeWalReceipts = options.prototypeWalReceipts !== false;
+	var cleanupTimer = null;
+
 	var runtime = api.create({
 		wiki: wiki,
 		Tiddler: tw.Tiddler,
 		platform: platform,
 		newId: newId,
 		resolveExecutor: resolveExecutor,
-		autoCollectJobs: false
+		autoCollectJobs: false,
+
+		continuationRetention: prototypeWalReceipts
+			? {
+				delay: 150000,
+				now: Date.now
+			}
+			: undefined
 	});
+
+	var receiptHeuristic = prototypeWalReceipts
+		? require(
+			"$:/plugins/clerus/core/prototype-wal-receipts.js"
+		).create({
+			wiki: wiki,
+			platform: platform,
+			recordWalDeletion: runtime.recordWalDeletion
+		})
+		: null;
 
 	function walSignature() {
 		var values = [];
 
 		wiki.each(function (tiddler, title) {
-			if (title.indexOf(prefix) === 0) {
+			var relevant = prototypeWalReceipts
+				? (
+					title.indexOf("$:/clerus/wal/") === 0 ||
+					title.indexOf("$:/clerus/jobs/") === 0
+				)
+				: title.indexOf(prefix) === 0;
+
+			if (relevant) {
 				values.push([title, stores.capture(tiddler)]);
 			}
 		});
@@ -144,7 +171,12 @@ function create(options) {
 	}
 
 	function service() {
+		var receipts = receiptHeuristic
+			? receiptHeuristic.scan()
+			: null;
+
 		return {
+			prototypeReceipts: receipts,
 			recovery: runtime.recover(),
 			delivery: runtime.drainFlows()
 		};
@@ -163,12 +195,7 @@ function create(options) {
 			throw new Error("Generated demonstration identity is occupied");
 		}
 
-		/*
-		The event starts as an emission of accepted work.
-		Recovery will register its fingerprint before publishing it
-		as a waiting event.
-		*/
-		var record = continuations.validate({
+		var initial = {
 			version: 2,
 			kind: "continuation",
 			platform: platform,
@@ -205,7 +232,17 @@ function create(options) {
 				receipts: {}
 			},
 			diagnostics: []
-		}, platform, journal);
+		};
+
+		if (prototypeWalReceipts) {
+			initial.retainUntil = Date.now() + 150000;
+		}
+
+		var record = continuations.validate(
+			initial,
+			platform,
+			journal
+		);
 
 		wiki.addTiddler(new tw.Tiddler({
 			title: journal,
@@ -559,10 +596,94 @@ function create(options) {
 
 	function onChange(changes) {
 		if (Object.keys(changes).some(function (title) {
-			return title.indexOf(prefix) === 0;
+			return prototypeWalReceipts
+				? (
+					title.indexOf("$:/clerus/wal/") === 0 ||
+					title.indexOf("$:/clerus/jobs/") === 0
+				)
+				: title.indexOf(prefix) === 0;
 		})) {
 			requestService();
 		}
+	}
+
+	function hasExpiredWal() {
+		var expired = false;
+		var now = Date.now();
+
+		wiki.each(function (tiddler, title) {
+			if (
+				title.indexOf(prefix) !== 0 ||
+				tiddler.fields["clerus-custody"] !== platform ||
+				tiddler.fields["clerus-wal-kind"] !== "continuation"
+			) {
+				return;
+			}
+
+			try {
+				var record = continuations.validate(
+					JSON.parse(tiddler.fields.text),
+					platform,
+					title
+				);
+
+				if (
+					record.work === null &&
+					Object.keys(record.events).length === 0 &&
+					record.retainUntil !== undefined &&
+					record.retainUntil <= now
+				) {
+					expired = true;
+				}
+			} catch (error) {
+				// A malformed WAL is not a deletion candidate.
+			}
+		});
+
+		return expired;
+	}
+
+	function scheduleCleanup() {
+		if (
+			!prototypeWalReceipts ||
+			disposed ||
+			cleanupTimer !== null
+		) {
+			return;
+		}
+
+		cleanupTimer = setTimeout(function () {
+			cleanupTimer = null;
+
+			if (disposed) {
+				return;
+			}
+
+			try {
+				if (!busy) {
+					var receipts = receiptHeuristic.scan();
+
+					if (receipts.errors.length > 0) {
+						publish(
+							"prototype-receipts",
+							receipts,
+							null
+						);
+					}
+
+					if (
+						receipts.received.length > 0 ||
+						hasExpiredWal()
+					) {
+						command("service");
+					}
+				}
+			} catch (error) {
+				publish("prototype-maintenance", null, error);
+			} finally {
+				scheduleCleanup();
+			}
+		}, 1000);
 	}
 
 	function start() {
@@ -578,6 +699,8 @@ function create(options) {
 		} catch (error) {
 			// The adapter remains available for inspection and repair.
 		}
+
+		scheduleCleanup();
 	}
 
 	function dispose() {

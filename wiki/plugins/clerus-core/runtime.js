@@ -127,6 +127,29 @@ function Runtime(options) {
 		Tiddler: options.Tiddler
 	});
 
+	/*
+	Infrastructure policy shared by continuation managers using
+	this store. The authoritative deletion deadline lives in WAL,
+	not in this object.
+	*/
+	var retention = options.continuationRetention;
+
+	if (retention !== undefined) {
+		if (
+			!retention ||
+			!Number.isSafeInteger(retention.delay) ||
+			retention.delay < 0 ||
+			typeof retention.now !== "function"
+		) {
+			throw new Error("Invalid continuation retention policy");
+		}
+
+		this.store.continuationRetention = Object.freeze({
+			delay: retention.delay,
+			now: retention.now
+		});
+	}
+
 	this.custodyEvidence = custodyEvidence.create({
 		store: this.store,
 		platform: this.platform

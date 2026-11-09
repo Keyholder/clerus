@@ -67,6 +67,27 @@ function create(options) {
 	var recovering = false;
 	var used = new Set();
 
+	var retention = options.store.continuationRetention || {
+		delay: 0,
+		now: Date.now
+	};
+
+	function currentTime() {
+		var now = retention.now();
+
+		if (!Number.isSafeInteger(now) || now < 0) {
+			throw new Error("Invalid continuation retention clock");
+		}
+
+		return now;
+	}
+
+	function newDeadline() {
+		var deadline = currentTime() + retention.delay;
+
+		return custodySchema.retainUntil(deadline);
+	}
+
 	function accept(value) {
 		if (typeof options.newId !== "function") {
 			throw new Error(
@@ -74,7 +95,7 @@ function create(options) {
 			);
 		}
 
-		var record = continuationSchema.validate({
+		var initial = {
 			version: 2,
 			kind: "continuation",
 			platform: options.platform,
@@ -85,7 +106,23 @@ function create(options) {
 				receipts: {}
 			},
 			diagnostics: []
-		}, options.platform);
+		};
+
+		if (retention.delay > 0) {
+			initial.retainUntil = newDeadline();
+
+			if (initial.work !== null) {
+				initial.work = custodySchema.withRetention(
+					initial.work,
+					initial.retainUntil
+				);
+			}
+		}
+
+		var record = continuationSchema.validate(
+			initial,
+			options.platform
+		);
 
 		if (record.work === null) {
 			throw new Error(
@@ -129,7 +166,8 @@ function create(options) {
 		custodySchema.assertWorkBinding(
 			record.work,
 			options.platform,
-			title
+			title,
+			record.retainUntil
 		);
 
 		var fields = {
@@ -300,7 +338,14 @@ function create(options) {
 				title
 			);
 
-			if (Object.keys(record.events).length === 0) {
+			var empty = Object.keys(record.events).length === 0;
+
+			var canDelete = empty && (
+				record.retainUntil === undefined ||
+				currentTime() >= record.retainUntil
+			);
+
+			if (canDelete) {
 				options.store.apply(stores.transition(
 					title,
 					loaded.fields,
@@ -565,6 +610,16 @@ function create(options) {
 			options.platform,
 			birth
 		);
+
+		if (
+			work !== null &&
+			record.retainUntil !== undefined
+		) {
+			work = custodySchema.withRetention(
+				work,
+				record.retainUntil
+			);
+		}
 
 		if (work !== null) {
 			compatibility.check({

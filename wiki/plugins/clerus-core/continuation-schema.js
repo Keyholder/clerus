@@ -49,7 +49,8 @@ function validate(value, platform, journal) {
 		"work",
 		"events",
 		"evidence",
-		"diagnostics"
+		"diagnostics",
+		"retainUntil"
 	], "continuation");
 
 	if (
@@ -65,6 +66,10 @@ function validate(value, platform, journal) {
 		"identities", "receipts"
 	], "continuation evidence");
 
+	var deadline = hasOwn(record, "retainUntil")
+		? custodySchema.retainUntil(record.retainUntil)
+		: undefined;
+
 	var work = record.work === null
 		? null
 		: works.validate(record.work);
@@ -73,7 +78,8 @@ function validate(value, platform, journal) {
 		custodySchema.assertWorkBinding(
 			work,
 			platform,
-			journal
+			journal,
+			deadline
 		);
 	}
 
@@ -180,7 +186,7 @@ function validate(value, platform, journal) {
 		return entry;
 	});
 
-	return schemas.copyJSON({
+	var result = {
 		version: 2,
 		kind: "continuation",
 		platform: platform,
@@ -194,7 +200,13 @@ function validate(value, platform, journal) {
 			)
 		},
 		diagnostics: diagnostics
-	});
+	};
+
+	if (deadline !== undefined) {
+		result.retainUntil = deadline;
+	}
+
+	return schemas.copyJSON(result);
 }
 
 exports.validate = validate;
