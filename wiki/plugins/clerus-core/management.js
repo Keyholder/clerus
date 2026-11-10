@@ -624,6 +624,225 @@ function create(options) {
 		};
 	}
 
+	function publishProjectDemoWork(work, journal) {
+		var record = {
+			version: 2,
+			kind: "continuation",
+			platform: platform,
+			work: work,
+			events: {},
+			evidence: {
+				identities: {},
+				receipts: {}
+			},
+			diagnostics: []
+		};
+
+		if (prototypeWalReceipts) {
+			record.retainUntil = Date.now() + 150000;
+		}
+
+		record = continuations.validate(
+			record,
+			platform,
+			journal
+		);
+
+		var store = new stores.Store({
+			wiki: wiki,
+			Tiddler: tw.Tiddler
+		});
+
+		require(
+			"$:/plugins/clerus/core/work-compatibility.js"
+		).check({
+			store: store,
+			work: record.work
+		});
+
+		require(
+			"$:/plugins/clerus/core/work-materializer.js"
+		).check({
+			store: store,
+			platform: platform,
+			work: record.work
+		});
+
+		store.apply(stores.transition(journal, null, {
+			title: journal,
+			type: "application/json",
+			"clerus-custody": "user",
+			"clerus-wal-kind": "continuation",
+			text: JSON.stringify(record, null, 2)
+		}));
+	}
+
+	function prepareProjectDemo() {
+		var executor = "$:/plugins/clerus/core/project-demo-executor.js";
+		var project = "Clerus Demo Project " + newId();
+		var root = "$:/clerus/jobs/project-demo-root-" + newId();
+		var journal = prefix + "project-demo-" + newId();
+
+		var projectFields = {
+			title: project,
+			type: "application/json",
+			"clerus-custody": platform,
+			text: JSON.stringify({
+				task: { purpose: "Compute three squares" },
+				parts: {
+					first: {
+						task: { value: 2 },
+						parts: {}
+					},
+					second: {
+						task: { value: 3 },
+						parts: {}
+					},
+					third: {
+						task: { value: 5 },
+						parts: {}
+					}
+				}
+			}, null, 2)
+		};
+
+		if (
+			wiki.tiddlerExists(root) ||
+			wiki.isShadowTiddler(root)
+		) {
+			throw new Error("Generated root title is occupied");
+		}
+
+		publishProjectDemoWork({
+			version: 2,
+			id: newId(),
+			checks: [],
+			transitions: [
+				stores.transition(project, null, projectFields)
+			],
+			blocks: [],
+			emits: [{
+				id: newId(),
+				event: {
+					kind: "delivery",
+					type: "order",
+					establishing: true,
+					recipient: {
+						title: root,
+						executor: executor
+					},
+					registry: {
+						contract: {
+							form: "contract",
+							executor: executor,
+							temp: false,
+							book: {
+								kind: "project-demo-root",
+								project: project
+							}
+						},
+						assignment: {
+							form: "mission",
+							project: project,
+							role: [],
+							link: "1",
+							issued: "0",
+							children: {}
+						}
+					}
+				}
+			}]
+		}, journal);
+
+		return {
+			project: project,
+			root: root,
+			journal: journal
+		};
+	}
+
+	function prepareProjectResources(title) {
+		var executor = "$:/plugins/clerus/core/project-demo-executor.js";
+		var store = new stores.Store({
+			wiki: wiki,
+			Tiddler: tw.Tiddler
+		});
+
+		var current = store.read(title);
+
+		if (
+			current.kind !== "materialized" ||
+			title.indexOf("$:/clerus/jobs/project-demo-root-") !== 0 ||
+			current.fields["clerus-executor"] !== executor
+		) {
+			throw new Error("Select a project demo root");
+		}
+
+		var registry = JSON.parse(current.fields.text);
+
+		if (
+			!registry.charter ||
+			!registry.charter.book ||
+			registry.charter.book.kind !== "project-demo-root" ||
+			!registry.charter.status ||
+			registry.charter.status.phase !== "awaiting-resources"
+		) {
+			throw new Error("Project is not awaiting resources");
+		}
+
+		var custody = require(
+			"$:/plugins/clerus/core/local-custody.js"
+		).create({
+			store: store,
+			platform: platform
+		});
+
+		if (!custody.owns(current.fields)) {
+			throw new Error("Project root is not locally owned");
+		}
+
+		var contracts = {};
+
+		["first", "second", "third"].forEach(function (segment) {
+			contracts["contract-" + segment] = {
+				form: "contract",
+				executor: executor,
+				temp: false,
+				book: { kind: "project-demo-worker" }
+			};
+		});
+
+		var journal = prefix + "project-resources-" + newId();
+
+		publishProjectDemoWork({
+			version: 2,
+			id: newId(),
+			checks: [{
+				title: title,
+				state: current.fields
+			}],
+			transitions: [],
+			blocks: [],
+			emits: [{
+				id: newId(),
+				event: {
+					kind: "delivery",
+					type: "order",
+					recipient: {
+						title: title,
+						executor: executor
+					},
+					registry: contracts
+				}
+			}]
+		}, journal);
+
+		return {
+			root: title,
+			journal: journal
+		};
+	}
+
 	function command(name, title, eventId) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
@@ -686,6 +905,14 @@ function create(options) {
 
 				case "prepare-move":
 					result = prepareMove(title);
+					break;
+
+				case "project-demo":
+					result = prepareProjectDemo();
+					break;
+
+				case "project-resources":
+					result = prepareProjectResources(title);
 					break;
 
 				default:

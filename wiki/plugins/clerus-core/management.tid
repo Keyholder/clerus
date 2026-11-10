@@ -212,3 +212,47 @@ type: text/vnd.tiddlywiki
 
 Список показывает кандидатов по полям тиддлеров.
 Фактическое локальное распорядительство и совместимость проверяются командой.
+
+!! Демонстрационный проект
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="project-demo"
+/>
+Подготовить проект
+</$button>
+
+Передайте созданный WAL браузеру.
+После учреждения корня подготовьте приказ снабжения и тоже передайте его браузеру.
+
+<$list filter="[all[tiddlers]prefix[$:/clerus/jobs/project-demo-root-]sort[title]]">
+
+<div class="tc-message-box">
+
+<$link><$view field="title"/></$link>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="project-resources"
+  title=<<currentTiddler>>
+/>
+Подготовить снабжение мандатами
+</$button>
+
+<$codeblock code={{!!text}} language="json"/>
+
+</div>
+
+</$list>
+
+!! Деревья демонстрационных проектов
+
+<$list filter="[all[tiddlers]prefix[Clerus Demo Project ]sort[title]]">
+
+<$link><$view field="title"/></$link>
+
+<$codeblock code={{!!text}} language="json"/>
+
+</$list>
