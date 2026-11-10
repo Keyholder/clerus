@@ -64,6 +64,34 @@ function details(caption, content) {
 	].concat(content));
 }
 
+function commandButton(caption, command, title) {
+	return {
+		type: "button",
+		attributes: {},
+		children: [
+			{
+				type: "action-sendmessage",
+				attributes: {
+					"$message": {
+						type: "string",
+						value: "tm-clerus"
+					},
+					command: {
+						type: "string",
+						value: command
+					},
+					title: {
+						type: "string",
+						value: title
+					}
+				},
+				children: []
+			},
+			text(caption)
+		]
+	};
+}
+
 function holder(view) {
 	var content = [
 		element("div", [link(view.title)]),
@@ -86,6 +114,38 @@ function holder(view) {
 		content.push(element("div", [
 			text("Статус недоступен: " + view.view.reason)
 		]));
+	}
+
+	if (view.suspended) {
+		content.push(element("div", [
+			text("Должность отстранена.")
+		]));
+	}
+
+	var controls = [];
+
+	if (view.actions.prepareMove) {
+		controls.push(commandButton(
+			"Подготовить переезд в " + view.actions.destination,
+			"prepare-move",
+			view.title
+		));
+	}
+
+	if (view.actions.resume) {
+		controls.push(commandButton(
+			"Возобновить на текущей платформе",
+			"resume",
+			view.title
+		));
+	}
+
+	if (controls.length > 0) {
+		content.push(element(
+			"div",
+			controls,
+			"clerus-project-card-actions"
+		));
 	}
 
 	return content;
@@ -158,6 +218,17 @@ ProjectCardWidget.prototype.execute = function () {
 		content = [
 			element("div", [link(model.project)])
 		];
+
+		if (model.projectCustody !== null) {
+			content.push(element("div", [
+				text(
+					"Приписка проекта: " + model.projectCustody + ". " +
+					(model.projectLocallyOwned
+						? "Проект под локальным распорядительством."
+						: "Локальное распорядительство проектом не установлено.")
+				)
+			]));
+		}
 
 		if (model.error) {
 			content.push(element("div", [text(model.error)]));

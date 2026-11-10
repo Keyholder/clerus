@@ -1159,6 +1159,125 @@ function testProjectCardUsesActualAssignments(tw) {
 	}
 }
 
+function testProjectCardActionsFollowCustody(tw) {
+	var f = fixture(tw);
+	var cards = require("$:/plugins/clerus/core/project-card.js");
+
+	function read(project) {
+		return cards.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform,
+			project: project
+		});
+	}
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		organizeProjectDemo(f, project);
+		f.adapter.command("deferred");
+
+		var model = read(project.project);
+		var root = model.tree.assignment.holder;
+
+		assert(root.locallyOwned);
+		assert(root.actions.prepareMove);
+		assert(!root.actions.resume);
+
+		var move = f.adapter.command("prepare-move", project.root);
+		f.adapter.command("release", move.journal);
+
+		model = read(project.project);
+		root = model.tree.assignment.holder;
+
+		// The assignment remains current across relocation.
+		assert(root.title === project.root);
+		assert(!root.locallyOwned);
+		assert(!root.actions.prepareMove);
+		assert(!root.actions.resume);
+
+		// Administrative suspension without a transfer marker.
+		var fields = f.wiki.getTiddler(project.root);
+
+		f.wiki.addTiddler(new tw.Tiddler(fields, {
+			"clerus-custody": "user",
+			"clerus-suspended": "yes",
+			"clerus-custody-transfer": undefined
+		}));
+
+		model = read(project.project);
+		root = model.tree.assignment.holder;
+
+		assert(root.suspended);
+		assert(root.actions.resume);
+		assert(!root.actions.prepareMove);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testProjectCardRendersWithoutExecutingWork(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+
+		var tree = f.record(project.project);
+
+		tree.task.note =
+			"<script>card-escape-sentinel</script>";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(project.project),
+			{ text: JSON.stringify(tree) }
+		));
+
+		var before = f.wiki.getTiddlerText(project.root);
+		var reportBefore = f.wiki.getTiddlerText(
+			f.adapter.reportTitle
+		);
+
+		var html = f.wiki.renderText(
+			"text/html",
+			"text/vnd.tiddlywiki",
+			"<$clerus-project-card project=" +
+				JSON.stringify(project.project) +
+				"/>"
+		);
+
+		assert(html.indexOf("Корневая задача") !== -1);
+		assert(html.indexOf("Подготовить переезд") !== -1);
+		assert(html.indexOf(project.root) !== -1);
+		assert(html.indexOf("card-escape-sentinel") !== -1);
+
+		// Task data must be text, not executable HTML.
+		assert(
+			html.indexOf(
+				"<script>card-escape-sentinel</script>"
+			) === -1
+		);
+
+		assert(f.wiki.getTiddlerText(project.root) === before);
+		assert(
+			f.wiki.getTiddlerText(f.adapter.reportTitle) ===
+				reportBefore
+		);
+
+		organization.workers.forEach(function (title) {
+			assert(
+				f.record(title).charter.status.phase === "waiting"
+			);
+		});
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1182,7 +1301,9 @@ exports.run = function (tw) {
 		["management: project organizes workers and aggregates deferred reports", testProjectDemoLifecycle],
 		["management: project resumes after adapter replacement", testProjectDemoResumesAfterAdapterReplacement],
 		["management: project rejects repeated provisioning", testProjectDemoRejectsRepeatedProvisioning],
-		["management: project card follows actual assignments without executing work", testProjectCardUsesActualAssignments]
+		["management: project card follows actual assignments without executing work", testProjectCardUsesActualAssignments],
+		["management: project card actions follow local custody", testProjectCardActionsFollowCustody],
+		["management: project card renders escaped data without executing work", testProjectCardRendersWithoutExecutingWork]
 	];
 
 	var results = cases.map(function (item) {

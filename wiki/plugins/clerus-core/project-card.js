@@ -68,15 +68,44 @@ function read(options) {
 	function holder(title) {
 		if (!holders.has(title)) {
 			var stored = store.read(title);
+			var fields = stored.fields;
+			var persistent = title.indexOf("$:/clerus/jobs/") === 0;
+
+			var owned = stored.kind === "materialized" &&
+				custody.owns(fields);
+
+			var suspended = fields
+				? fields["clerus-suspended"] === "yes"
+				: false;
+
+			var assignment = fields
+				? fields["clerus-custody"] || "user"
+				: null;
+
+			var canResume = (
+				persistent &&
+				stored.kind === "materialized" &&
+				suspended &&
+				fields["clerus-custody-transfer"] === undefined &&
+				(
+					assignment === "user" ||
+					assignment === options.platform
+				)
+			);
 
 			holders.set(title, {
 				title: title,
 				view: jobView.read(store, title),
-				custody: stored.fields
-					? stored.fields["clerus-custody"] || "user"
-					: null,
-				locallyOwned: stored.kind === "materialized" &&
-					custody.owns(stored.fields)
+				custody: assignment,
+				locallyOwned: owned,
+				suspended: suspended,
+				actions: {
+					prepareMove: persistent && owned && !suspended,
+					resume: canResume,
+					destination: options.platform === "browser"
+						? "node"
+						: "browser"
+				}
 			});
 		}
 
