@@ -1387,6 +1387,107 @@ function testProjectDemoCannotCloseWhileRunning(tw) {
 	}
 }
 
+function testClosedProjectWorkersCanBeCollected(tw) {
+	var f = fixture(tw);
+	var retentionView = require(
+		"$:/plugins/clerus/core/retention-view.js"
+	);
+
+	function readRetention() {
+		return retentionView.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		});
+	}
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+
+		// Running workers have both assignments and pending work.
+		var running = readRetention();
+
+		organization.workers.forEach(function (title) {
+			var job = running.jobs.find(function (entry) {
+				return entry.title === title;
+			});
+
+			assert(job);
+			assert(job.reasons.some(function (reason) {
+				return reason.kind === "active-mission";
+			}));
+			assert(job.reasons.some(function (reason) {
+				return reason.kind === "waiting-event";
+			}));
+		});
+
+		var early = f.adapter.command("collect");
+
+		assert(early.removed.length === 0);
+
+		f.adapter.command("deferred");
+
+		// Completed workers remain assigned and referenced.
+		var completed = f.adapter.command("collect");
+
+		assert(completed.removed.length === 0);
+
+		var close = f.adapter.command("project-close", project.root);
+		f.adapter.command("release", close.journal);
+
+		var before = readRetention();
+
+		assert(before.complete);
+		assert(before.valid);
+
+		organization.workers.forEach(function (title) {
+			var job = before.jobs.find(function (entry) {
+				return entry.title === title;
+			});
+
+			assert(job);
+			assert(job.reasons.length === 0);
+			assert(job.analysisCandidate);
+			assert(job.locallyOwned);
+		});
+
+		var rootBefore = f.wiki.getTiddlerText(project.root);
+		var projectBefore = f.wiki.getTiddlerText(project.project);
+
+		var collected = f.adapter.command("collect");
+
+		assert(collected.blocked.length === 0);
+		assert(collected.failures.length === 0);
+		assert(collected.removed.length === organization.workers.length);
+
+		organization.workers.forEach(function (title) {
+			assert(collected.removed.indexOf(title) !== -1);
+			assert(!f.wiki.tiddlerExists(title));
+		});
+
+		assert(f.wiki.getTiddlerText(project.root) === rootBefore);
+		assert(f.wiki.getTiddlerText(project.project) === projectBefore);
+
+		var after = readRetention();
+		var root = after.jobs.find(function (entry) {
+			return entry.title === project.root;
+		});
+
+		assert(root);
+		assert(root.reasons.some(function (reason) {
+			return reason.kind === "active-mission";
+		}));
+
+		// A second collection has nothing more to remove.
+		assert(f.adapter.command("collect").removed.length === 0);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1414,7 +1515,8 @@ exports.run = function (tw) {
 		["management: project card actions follow local custody", testProjectCardActionsFollowCustody],
 		["management: project card renders escaped data without executing work", testProjectCardRendersWithoutExecutingWork],
 		["management: closing project revokes workers but preserves results", testProjectDemoClosesOrganization],
-		["management: running project cannot be closed", testProjectDemoCannotCloseWhileRunning]
+		["management: running project cannot be closed", testProjectDemoCannotCloseWhileRunning],
+		["management: collection removes released workers and preserves project results", testClosedProjectWorkersCanBeCollected]
 	];
 
 	var results = cases.map(function (item) {

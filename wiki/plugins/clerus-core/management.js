@@ -995,6 +995,10 @@ function create(options) {
 					result = prepareProjectClose(title);
 					break;
 
+				case "collect":
+					result = runtime.collect();
+					break;
+
 				default:
 					throw new Error("Unknown Clerus command: " + name);
 			}
