@@ -481,6 +481,149 @@ function create(options) {
 		return automaticState();
 	}
 
+	function prepareMove(title) {
+		if (
+			typeof title !== "string" ||
+			title.indexOf("$:/clerus/jobs/") !== 0 ||
+			title.length === "$:/clerus/jobs/".length
+		) {
+			throw new Error("Select a persistent job");
+		}
+
+		var store = new stores.Store({
+			wiki: wiki,
+			Tiddler: tw.Tiddler
+		});
+
+		var current = store.read(title);
+
+		if (current.kind !== "materialized") {
+			throw new Error("Job is not materialized");
+		}
+
+		var before = current.fields;
+
+		if (
+			before.type !== "application/json" ||
+			typeof before["clerus-executor"] !== "string" ||
+			before["clerus-executor"].length === 0
+		) {
+			throw new Error("Invalid job header");
+		}
+
+		if (before["clerus-suspended"] === "yes") {
+			throw new Error("Resume the suspended job before moving it");
+		}
+
+		var custody = require(
+			"$:/plugins/clerus/core/local-custody.js"
+		).create({
+			store: store,
+			platform: platform
+		});
+
+		if (!custody.owns(before)) {
+			throw new Error("Job is not locally owned");
+		}
+
+		var destination = platform === "browser"
+			? "node"
+			: "browser";
+
+		var journal = prefix + "move-" + newId();
+		var workId = newId();
+
+		if (store.read(journal).kind !== "absent") {
+			throw new Error("Generated move journal title is occupied");
+		}
+
+		var marker = {
+			version: 1,
+			journal: journal,
+			work: workId,
+			from: platform,
+			to: destination
+		};
+
+		var record = {
+			version: 2,
+			kind: "continuation",
+			platform: platform,
+			work: null,
+			events: {},
+			evidence: {
+				identities: {},
+				receipts: {}
+			},
+			diagnostics: []
+		};
+
+		if (prototypeWalReceipts) {
+			record.retainUntil = Date.now() + 150000;
+			marker.retainUntil = record.retainUntil;
+		}
+
+		var after = Object.assign({}, before, {
+			"clerus-custody": destination,
+			"clerus-custody-transfer": JSON.stringify(marker)
+		});
+
+		record.work = {
+			version: 2,
+			id: workId,
+			checks: [],
+			transitions: [
+				stores.transition(title, before, after)
+			],
+			blocks: [],
+			emits: []
+		};
+
+		record = continuations.validate(
+			record,
+			platform,
+			journal
+		);
+
+		/*
+		Preparation is not acceptance by the runtime, but reject
+		currently visible conflicts before publishing the draft.
+		Execution will check applicability again.
+		*/
+		require(
+			"$:/plugins/clerus/core/work-compatibility.js"
+		).check({
+			store: store,
+			work: record.work
+		});
+
+		require(
+			"$:/plugins/clerus/core/work-materializer.js"
+		).check({
+			store: store,
+			platform: platform,
+			work: record.work
+		});
+
+		store.apply(stores.transition(journal, null, {
+			title: journal,
+			type: "application/json",
+			"clerus-custody": "user",
+			"clerus-wal-kind": "continuation",
+			text: JSON.stringify(record, null, 2)
+		}));
+
+		return {
+			journal: journal,
+			job: title,
+			from: platform,
+			to: destination,
+			retainUntil: record.retainUntil === undefined
+				? null
+				: record.retainUntil
+		};
+	}
+
 	function command(name, title, eventId) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
@@ -539,6 +682,10 @@ function create(options) {
 
 				case "automatic-stop":
 					result = stopAutomatic();
+					break;
+
+				case "prepare-move":
+					result = prepareMove(title);
 					break;
 
 				default:

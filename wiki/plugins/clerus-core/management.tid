@@ -178,3 +178,37 @@ type: text/vnd.tiddlywiki
 </div>
 
 </$list>
+
+!! Подготовка переезда в Node.js
+
+Кнопка создаёт пользовательский WAL с точным снимком должности.
+Сама должность пока не меняется.
+
+После осмотра передайте созданный WAL браузеру для исполнения.
+Если должность успела измениться, работа может оказаться неприменимой:
+старый снимок не будет принудительно записан поверх нового состояния.
+
+<$list
+  filter="[all[tiddlers]prefix[$:/clerus/jobs/]field:clerus-custody[browser]!field:clerus-suspended[yes]sort[title]]"
+  emptyMessage="Нет кандидатов для переезда из браузера."
+>
+
+<div class="tc-message-box">
+
+<$link><$view field="title"/></$link>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="prepare-move"
+  title=<<currentTiddler>>
+/>
+Подготовить переезд в Node.js
+</$button>
+
+</div>
+
+</$list>
+
+Список показывает кандидатов по полям тиддлеров.
+Фактическое локальное распорядительство и совместимость проверяются командой.

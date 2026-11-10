@@ -710,6 +710,140 @@ function testDisposeStopsAutomaticTimer(tw) {
 	assert(f.listenerCount() === 0);
 }
 
+function completedDemo(f) {
+	var demo = f.adapter.command("demo");
+
+	f.adapter.command("release", demo.journal);
+
+	for (var index = 0; index < 3; index++) {
+		f.adapter.command("deferred");
+	}
+
+	assert(!f.wiki.tiddlerExists(demo.journal));
+	assert(f.record(demo.job).charter.status.phase === "completed");
+
+	return demo;
+}
+
+function testMovePreparationDoesNotChangeJob(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = completedDemo(f);
+		var before = f.wiki.getTiddlerText(demo.job);
+		var custodyBefore = f.wiki.getTiddler(demo.job)
+			.fields["clerus-custody"];
+
+		var move = f.adapter.command("prepare-move", demo.job);
+		var journal = f.record(move.journal);
+		var effect = journal.work.transitions[0];
+		var marker = JSON.parse(
+			effect.after["clerus-custody-transfer"]
+		);
+
+		assert(
+			f.wiki.getTiddler(move.journal)
+				.fields["clerus-custody"] === "user"
+		);
+		assert(f.wiki.getTiddlerText(demo.job) === before);
+		assert(
+			f.wiki.getTiddler(demo.job)
+				.fields["clerus-custody"] === custodyBefore
+		);
+
+		assert(effect.title === demo.job);
+		assert(marker.journal === move.journal);
+		assert(marker.work === journal.work.id);
+		assert(marker.from === f.platform);
+		assert(marker.to === move.to);
+
+		f.adapter.command("service");
+
+		// User custody must prevent execution of the prepared move.
+		assert(
+			f.wiki.getTiddler(demo.job)
+				.fields["clerus-custody"] === f.platform
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testPreparedMoveMaterializes(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = completedDemo(f);
+		var originalRegistry = f.wiki.getTiddlerText(demo.job);
+		var move = f.adapter.command("prepare-move", demo.job);
+
+		f.adapter.command("release", move.journal);
+
+		var job = f.wiki.getTiddler(demo.job);
+		var marker = JSON.parse(
+			job.fields["clerus-custody-transfer"]
+		);
+
+		assert(job.fields["clerus-custody"] === move.to);
+		assert(job.fields.text === originalRegistry);
+		assert(marker.journal === move.journal);
+
+		// Prototype retention is disabled in this fixture.
+		assert(!f.wiki.tiddlerExists(move.journal));
+
+		throws(function () {
+			f.adapter.command("prepare-move", demo.job);
+		}, "not locally owned");
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testMoveDoesNotOverwriteChangedBaseline(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = completedDemo(f);
+		var move = f.adapter.command("prepare-move", demo.job);
+
+		var registry = f.record(demo.job);
+
+		registry.charter.status = {
+			phase: "operator-edited",
+			completed: 3
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(demo.job),
+			{ text: JSON.stringify(registry) }
+		));
+
+		f.adapter.command("release", move.journal);
+
+		assert(
+			f.wiki.getTiddler(demo.job)
+				.fields["clerus-custody"] === f.platform
+		);
+		assert(
+			f.record(demo.job).charter.status.phase ===
+				"operator-edited"
+		);
+		assert(
+			f.wiki.getTiddler(move.journal)
+				.fields["clerus-custody"] === "user"
+		);
+		assert(f.record(move.journal).work !== null);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -726,7 +860,10 @@ exports.run = function (tw) {
 		["management: active job cannot be administratively resumed", testResumeRejectsActiveJob],
 		["management: automatic passes are explicit and bounded", testAutomaticPassesAreExplicitAndBounded],
 		["management: stopping automation preserves pending activation", testAutomaticStopPreservesPendingActivation],
-		["management: disposal stops the automatic timer", testDisposeStopsAutomaticTimer]
+		["management: disposal stops the automatic timer", testDisposeStopsAutomaticTimer],
+		["management: move preparation preserves the job", testMovePreparationDoesNotChangeJob],
+		["management: prepared move changes custody without changing registry", testPreparedMoveMaterializes],
+		["management: move cannot overwrite a changed baseline", testMoveDoesNotOverwriteChangedBaseline]
 	];
 
 	var results = cases.map(function (item) {
