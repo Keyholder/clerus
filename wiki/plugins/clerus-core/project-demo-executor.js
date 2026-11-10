@@ -171,6 +171,42 @@ function work(operational) {
 	});
 }
 
+function closeProject(operational, incoming) {
+	var charter = operational.get("charter");
+	var status = charter.status();
+
+	if (status.phase !== "completed") {
+		throw new Error("Only a completed project can be closed");
+	}
+
+	if (
+		incoming.keys().length !== 1 ||
+		incoming.keys()[0] !== "control"
+	) {
+		throw new Error("Closing requires one control memo");
+	}
+
+	var command = incoming.get("control").data();
+
+	if (!command || command.command !== "close") {
+		throw new Error("Unsupported project control");
+	}
+
+	var mission = operational.get("mission");
+
+	SEGMENTS.forEach(function (segment) {
+		mission.revokePart(segment);
+		operational.destroy("worker-" + segment);
+	});
+
+	incoming.destroy("control");
+
+	charter.setStatus({
+		phase: "closed",
+		results: status.results
+	});
+}
+
 function react(event, operational, incoming) {
 	if (
 		event.type === "suspended" ||
@@ -191,7 +227,12 @@ function react(event, operational, incoming) {
 
 	if (kind === "project-demo-root") {
 		if (event.type === "order") {
-			organize(operational, incoming);
+			if (incoming.keys().indexOf("control") !== -1) {
+				closeProject(operational, incoming);
+			} else {
+				organize(operational, incoming);
+			}
+
 			return;
 		}
 

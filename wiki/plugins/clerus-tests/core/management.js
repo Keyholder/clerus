@@ -1278,6 +1278,115 @@ function testProjectCardRendersWithoutExecutingWork(tw) {
 	}
 }
 
+function testProjectDemoClosesOrganization(tw) {
+	var f = fixture(tw);
+	var cards = require("$:/plugins/clerus/core/project-card.js");
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+
+		f.adapter.command("deferred");
+		assertProjectCompleted(f, project, organization);
+
+		var resultsBefore = JSON.stringify(
+			f.record(project.root).charter.status.results
+		);
+
+		var close = f.adapter.command(
+			"project-close",
+			project.root
+		);
+
+		// Preparation has not changed the organization.
+		assert(
+			f.record(project.root).charter.status.phase ===
+				"completed"
+		);
+		assert(f.record(project.root)["worker-first"]);
+
+		f.adapter.command("release", close.journal);
+
+		var root = f.record(project.root);
+
+		assert(root.charter.status.phase === "closed");
+		assert(
+			JSON.stringify(root.charter.status.results) ===
+				resultsBefore
+		);
+		assert(
+			Object.keys(root).sort().join(",") === "charter,mission"
+		);
+		assert(Object.keys(root.mission.children).length === 0);
+
+		var inspection = f.adapter.command("inspect");
+		var active = inspection.missions.active.filter(function (entry) {
+			return entry.project === project.project;
+		});
+
+		assert(active.length === 1);
+		assert(active[0].title === project.root);
+		assert(active[0].role.length === 0);
+
+		organization.workers.forEach(function (title) {
+			// Automatic collection is still disabled.
+			assert(f.wiki.tiddlerExists(title));
+
+			assert(!inspection.missions.active.some(function (entry) {
+				return entry.title === title &&
+					entry.project === project.project;
+			}));
+		});
+
+		var card = cards.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform,
+			project: project.project
+		});
+
+		assert(card.tree.assignment.title === project.root);
+
+		card.tree.children.forEach(function (node) {
+			assert(node.assignment === null);
+		});
+
+		throws(function () {
+			f.adapter.command("project-close", project.root);
+		}, "Only a completed project");
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testProjectDemoCannotCloseWhileRunning(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+		var before = f.wiki.getTiddlerText(project.root);
+
+		throws(function () {
+			f.adapter.command("project-close", project.root);
+		}, "Only a completed project");
+
+		assert(f.wiki.getTiddlerText(project.root) === before);
+
+		organization.workers.forEach(function (title) {
+			assert(
+				f.record(title).charter.status.phase === "waiting"
+			);
+		});
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1303,7 +1412,9 @@ exports.run = function (tw) {
 		["management: project rejects repeated provisioning", testProjectDemoRejectsRepeatedProvisioning],
 		["management: project card follows actual assignments without executing work", testProjectCardUsesActualAssignments],
 		["management: project card actions follow local custody", testProjectCardActionsFollowCustody],
-		["management: project card renders escaped data without executing work", testProjectCardRendersWithoutExecutingWork]
+		["management: project card renders escaped data without executing work", testProjectCardRendersWithoutExecutingWork],
+		["management: closing project revokes workers but preserves results", testProjectDemoClosesOrganization],
+		["management: running project cannot be closed", testProjectDemoCannotCloseWhileRunning]
 	];
 
 	var results = cases.map(function (item) {

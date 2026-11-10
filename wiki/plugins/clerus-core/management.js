@@ -843,6 +843,82 @@ function create(options) {
 		};
 	}
 
+	function prepareProjectClose(title) {
+		var executor = "$:/plugins/clerus/core/project-demo-executor.js";
+		var store = new stores.Store({
+			wiki: wiki,
+			Tiddler: tw.Tiddler
+		});
+
+		var current = store.read(title);
+
+		if (
+			current.kind !== "materialized" ||
+			title.indexOf("$:/clerus/jobs/project-demo-root-") !== 0 ||
+			current.fields["clerus-executor"] !== executor
+		) {
+			throw new Error("Select a project demo root");
+		}
+
+		var registry = JSON.parse(current.fields.text);
+
+		if (
+			!registry.charter ||
+			!registry.charter.book ||
+			registry.charter.book.kind !== "project-demo-root" ||
+			!registry.charter.status ||
+			registry.charter.status.phase !== "completed"
+		) {
+			throw new Error("Only a completed project can be closed");
+		}
+
+		var custody = require(
+			"$:/plugins/clerus/core/local-custody.js"
+		).create({
+			store: store,
+			platform: platform
+		});
+
+		if (!custody.owns(current.fields)) {
+			throw new Error("Project root is not locally owned");
+		}
+
+		var journal = prefix + "project-close-" + newId();
+
+		publishProjectDemoWork({
+			version: 2,
+			id: newId(),
+			checks: [{
+				title: title,
+				state: current.fields
+			}],
+			transitions: [],
+			blocks: [],
+			emits: [{
+				id: newId(),
+				event: {
+					kind: "delivery",
+					type: "order",
+					recipient: {
+						title: title,
+						executor: executor
+					},
+					registry: {
+						control: {
+							form: "memo",
+							data: { command: "close" }
+						}
+					}
+				}
+			}]
+		}, journal);
+
+		return {
+			root: title,
+			journal: journal
+		};
+	}
+
 	function command(name, title, eventId) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
@@ -913,6 +989,10 @@ function create(options) {
 
 				case "project-resources":
 					result = prepareProjectResources(title);
+					break;
+
+				case "project-close":
+					result = prepareProjectClose(title);
 					break;
 
 				default:
