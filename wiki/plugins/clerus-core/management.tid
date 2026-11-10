@@ -251,8 +251,6 @@ type: text/vnd.tiddlywiki
 
 <$list filter="[all[tiddlers]prefix[Clerus Demo Project ]sort[title]]">
 
-<$link><$view field="title"/></$link>
-
-<$codeblock code={{!!text}} language="json"/>
+<$clerus-project-card project=<<currentTiddler>>/>
 
 </$list>

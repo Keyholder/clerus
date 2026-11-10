@@ -844,6 +844,321 @@ function testMoveDoesNotOverwriteChangedBaseline(tw) {
 	}
 }
 
+function establishProjectDemo(f) {
+	var project = f.adapter.command("project-demo");
+
+	assert(!f.wiki.tiddlerExists(project.project));
+	assert(!f.wiki.tiddlerExists(project.root));
+
+	f.adapter.command("release", project.journal);
+
+	var root = f.record(project.root);
+
+	assert(root.charter.status.phase === "awaiting-resources");
+	assert(root.charter.book.project === project.project);
+	assert(root.mission.project === project.project);
+	assert(root.mission.role.length === 0);
+
+	return project;
+}
+
+function organizeProjectDemo(f, project) {
+	var resources = f.adapter.command(
+		"project-resources",
+		project.root
+	);
+
+	// Preparation alone does not organize the project.
+	assert(
+		f.record(project.root).charter.status.phase ===
+			"awaiting-resources"
+	);
+
+	f.adapter.command("release", resources.journal);
+
+	var root = f.record(project.root);
+	var workers = ["first", "second", "third"].map(function (segment) {
+		var title = root["worker-" + segment];
+
+		assert(typeof title === "string");
+		assert(f.wiki.tiddlerExists(title));
+
+		var worker = f.record(title);
+
+		assert(worker.charter.status.phase === "waiting");
+		assert(worker.mission.project === project.project);
+		assert(worker.mission.role.join("/") === segment);
+
+		return title;
+	});
+
+	assert(root.charter.status.phase === "running");
+	assert(Object.keys(root.charter.status.results).length === 0);
+
+	return {
+		journal: resources.journal,
+		workers: workers
+	};
+}
+
+function assertProjectCompleted(f, project, organization) {
+	var root = f.record(project.root);
+	var results = root.charter.status.results;
+
+	assert(root.charter.status.phase === "completed");
+	assert(Object.keys(results).sort().join(",") === "first,second,third");
+
+	assert(results.first.input === 2);
+	assert(results.first.output === 4);
+	assert(results.second.input === 3);
+	assert(results.second.output === 9);
+	assert(results.third.input === 5);
+	assert(results.third.output === 25);
+
+	organization.workers.forEach(function (title) {
+		assert(f.record(title).charter.status.phase === "completed");
+	});
+
+	/*
+	Incoming result memos were explicitly destroyed, rather than
+	silently retained in the root's operational registry.
+	*/
+	assert(
+		Object.keys(root).sort().join(",") ===
+			"charter,mission,worker-first,worker-second,worker-third"
+	);
+
+	// In this fixture, exhausted WAL is deleted immediately.
+	assert(!f.wiki.tiddlerExists(organization.journal));
+}
+
+function testProjectDemoLifecycle(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+
+		/*
+		Ordinary servicing must not execute the workers' deferred
+		activations or manufacture their reports.
+		*/
+		f.adapter.command("service");
+
+		assert(
+			Object.keys(
+				f.record(project.root).charter.status.results
+			).length === 0
+		);
+
+		organization.workers.forEach(function (title) {
+			assert(
+				f.record(title).charter.status.phase === "waiting"
+			);
+		});
+
+		f.adapter.command("deferred");
+
+		assertProjectCompleted(f, project, organization);
+
+		var view = f.adapter.command("inspect");
+		var holders = view.missions.active.map(function (entry) {
+			return entry.title;
+		});
+
+		assert(holders.indexOf(project.root) !== -1);
+
+		organization.workers.forEach(function (title) {
+			assert(
+				holders.indexOf(title) !== -1,
+				"Completed worker lost its retained assignment"
+			);
+		});
+
+		assert(view.hierarchy.complete);
+		assert(view.missions.complete);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testProjectDemoResumesAfterAdapterReplacement(tw) {
+	var f = fixture(tw);
+	var restarted = null;
+	var sequence = 0;
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+		var rootBefore = f.wiki.getTiddlerText(project.root);
+
+		f.adapter.dispose();
+
+		restarted = management.create({
+			tw: tw,
+			wiki: f.wiki,
+			platform: f.platform,
+			prototypeWalReceipts: false,
+
+			newId: function () {
+				sequence++;
+
+				return "project-demo-restart-" +
+					String(sequence).padStart(12, "0");
+			}
+		});
+
+		restarted.start();
+
+		assert(
+			f.wiki.getTiddlerText(project.root) === rootBefore
+		);
+
+		organization.workers.forEach(function (title) {
+			assert(
+				f.record(title).charter.status.phase === "waiting"
+			);
+		});
+
+		restarted.command("deferred");
+
+		assertProjectCompleted(f, project, organization);
+
+		// No activation remains to repeat the reports.
+		var completed = f.wiki.getTiddlerText(project.root);
+
+		restarted.command("service");
+		restarted.command("deferred");
+
+		assert(
+			f.wiki.getTiddlerText(project.root) === completed
+		);
+	} finally {
+		if (restarted) {
+			restarted.dispose();
+		}
+
+		f.adapter.dispose();
+	}
+}
+
+function testProjectDemoRejectsRepeatedProvisioning(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		organizeProjectDemo(f, project);
+
+		var before = f.wiki.getTiddlerText(project.root);
+		var jobsBefore = f.wiki.filterTiddlers(
+			"[all[tiddlers]prefix[$:/clerus/jobs/]sort[title]]"
+		);
+
+		throws(function () {
+			f.adapter.command("project-resources", project.root);
+		}, "not awaiting resources");
+
+		assert(
+			f.wiki.getTiddlerText(project.root) === before
+		);
+		assert(
+			JSON.stringify(f.wiki.filterTiddlers(
+				"[all[tiddlers]prefix[$:/clerus/jobs/]sort[title]]"
+			)) === JSON.stringify(jobsBefore)
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testProjectCardUsesActualAssignments(tw) {
+	var f = fixture(tw);
+	var cards = require("$:/plugins/clerus/core/project-card.js");
+
+	function read(project) {
+		return cards.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform,
+			project: project
+		});
+	}
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+		var before = f.wiki.getTiddlerText(project.root);
+
+		var model = read(project.project);
+
+		assert(model.error === null);
+		assert(model.tree.assignment.title === project.root);
+		assert(model.tree.children.length === 3);
+
+		model.tree.children.forEach(function (node) {
+			assert(node.assignment !== null);
+			assert(
+				organization.workers.indexOf(
+					node.assignment.title
+				) !== -1
+			);
+			assert(node.assignment.holder.view.readable);
+			assert(node.assignment.holder.view.status.phase === "waiting");
+		});
+
+		// Reading the card must not execute or rewrite anything.
+		assert(f.wiki.getTiddlerText(project.root) === before);
+
+		f.adapter.command("deferred");
+
+		model = read(project.project);
+
+		assert(
+			model.tree.assignment.holder.view.status.phase ===
+				"completed"
+		);
+
+		model.tree.children.forEach(function (node) {
+			assert(
+				node.assignment.holder.view.status.phase ===
+					"completed"
+			);
+		});
+
+		/*
+		Removing a task must not make its still-current assignment
+		disappear from the organizational view.
+		*/
+		var tree = JSON.parse(
+			f.wiki.getTiddlerText(project.project)
+		);
+
+		delete tree.parts.first;
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(project.project),
+			{ text: JSON.stringify(tree) }
+		));
+
+		model = read(project.project);
+
+		assert(model.tree.children.length === 2);
+		assert(model.outsideTree.some(function (entry) {
+			return entry.role.join("/") === "first";
+		}));
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -863,7 +1178,11 @@ exports.run = function (tw) {
 		["management: disposal stops the automatic timer", testDisposeStopsAutomaticTimer],
 		["management: move preparation preserves the job", testMovePreparationDoesNotChangeJob],
 		["management: prepared move changes custody without changing registry", testPreparedMoveMaterializes],
-		["management: move cannot overwrite a changed baseline", testMoveDoesNotOverwriteChangedBaseline]
+		["management: move cannot overwrite a changed baseline", testMoveDoesNotOverwriteChangedBaseline],
+		["management: project organizes workers and aggregates deferred reports", testProjectDemoLifecycle],
+		["management: project resumes after adapter replacement", testProjectDemoResumesAfterAdapterReplacement],
+		["management: project rejects repeated provisioning", testProjectDemoRejectsRepeatedProvisioning],
+		["management: project card follows actual assignments without executing work", testProjectCardUsesActualAssignments]
 	];
 
 	var results = cases.map(function (item) {
