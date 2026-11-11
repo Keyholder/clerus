@@ -67,6 +67,24 @@ function create(options) {
 		clearTimeout(handle);
 	};
 
+	var setCleanupTimer = options.setCleanupTimer || function (
+		callback,
+		milliseconds
+	) {
+		return setTimeout(callback, milliseconds);
+	};
+
+	var clearCleanupTimer = options.clearCleanupTimer || function (handle) {
+		clearTimeout(handle);
+	};
+
+	if (
+		typeof setCleanupTimer !== "function" ||
+		typeof clearCleanupTimer !== "function"
+	) {
+		throw new Error("Cleanup requires timer functions");
+	}
+
 	var automaticDelay = options.automaticDelay === undefined
 		? 1000
 		: options.automaticDelay;
@@ -828,7 +846,7 @@ function create(options) {
 			return;
 		}
 
-		cleanupTimer = setTimeout(function () {
+		cleanupTimer = setCleanupTimer(function () {
 			cleanupTimer = null;
 
 			if (disposed) {
@@ -900,12 +918,26 @@ function create(options) {
 			return;
 		}
 
-		stopAutomatic();
+		/*
+		Disable re-entry and rescheduling before cleanup.
+		Even a reporting failure must not leave a live adapter.
+		*/
 		disposed = true;
+
+		if (cleanupTimer !== null) {
+			clearCleanupTimer(cleanupTimer);
+			cleanupTimer = null;
+		}
 
 		if (started) {
 			wiki.removeEventListener("change", onChange);
 		}
+
+		/*
+		Cancels the activation timer before publishing the
+		disabled state. Reporting may fail independently.
+		*/
+		stopAutomatic();
 	}
 
 	return Object.freeze({
