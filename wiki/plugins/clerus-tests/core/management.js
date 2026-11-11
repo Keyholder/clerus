@@ -1488,6 +1488,109 @@ function testClosedProjectWorkersCanBeCollected(tw) {
 	}
 }
 
+function testAutomaticPassPreservesManualInspection(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+		f.adapter.command("release", demo.journal);
+		f.adapter.command("automatic-start");
+		f.adapter.command("inspect");
+
+		var manualBefore = f.wiki.getTiddlerText(
+			f.adapter.manualReportTitle
+		);
+
+		var inspectionTitle =
+			f.adapter.reportTitle + "/commands/inspect";
+
+		var inspectionBefore = f.wiki.getTiddlerText(
+			inspectionTitle
+		);
+
+		assert(manualBefore);
+		assert(inspectionBefore);
+
+		f.runTimer();
+
+		assert(
+			f.record(demo.job).charter.status.completed === 1
+		);
+
+		assert(
+			f.wiki.getTiddlerText(f.adapter.manualReportTitle) ===
+				manualBefore
+		);
+
+		assert(
+			f.wiki.getTiddlerText(inspectionTitle) ===
+				inspectionBefore
+		);
+
+		var automaticReport = f.record(
+			f.adapter.reportTitle + "/commands/deferred"
+		);
+
+		assert(automaticReport.origin === "automatic");
+
+		var state = f.record(f.adapter.automaticStateTitle);
+
+		assert(state.enabled === true);
+
+		f.adapter.command("automatic-stop");
+
+		assert(
+			f.record(f.adapter.automaticStateTitle).enabled === false
+		);
+		assert(
+			f.record(f.adapter.manualReportTitle).command ===
+				"automatic-stop"
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testBackgroundServicePreservesManualReport(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+		f.adapter.command("inspect");
+
+		var before = f.wiki.getTiddlerText(
+			f.adapter.manualReportTitle
+		);
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(demo.journal),
+			{ "clerus-custody": f.platform }
+		));
+
+		f.notify([demo.journal]);
+		f.flush();
+
+		assert(f.wiki.tiddlerExists(demo.job));
+
+		assert(
+			f.wiki.getTiddlerText(f.adapter.manualReportTitle) ===
+				before
+		);
+
+		var service = f.record(
+			f.adapter.reportTitle + "/commands/service"
+		);
+
+		assert(service.origin === "wiki-change");
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1516,7 +1619,9 @@ exports.run = function (tw) {
 		["management: project card renders escaped data without executing work", testProjectCardRendersWithoutExecutingWork],
 		["management: closing project revokes workers but preserves results", testProjectDemoClosesOrganization],
 		["management: running project cannot be closed", testProjectDemoCannotCloseWhileRunning],
-		["management: collection removes released workers and preserves project results", testClosedProjectWorkersCanBeCollected]
+		["management: collection removes released workers and preserves project results", testClosedProjectWorkersCanBeCollected],
+		["management: automatic pass preserves manual inspection", testAutomaticPassPreservesManualInspection],
+		["management: background service preserves manual report", testBackgroundServicePreservesManualReport]
 	];
 
 	var results = cases.map(function (item) {

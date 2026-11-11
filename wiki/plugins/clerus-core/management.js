@@ -92,6 +92,8 @@ function create(options) {
 	var automaticTimer = null;
 	var prefix = "$:/clerus/wal/" + platform + "/";
 	var reportTitle = "$:/temp/clerus/management/" + platform;
+	var manualReportTitle = reportTitle + "/manual";
+	var automaticStateTitle = reportTitle + "/automatic";
 	var busy = false;
 	var scheduled = false;
 	var started = false;
@@ -166,17 +168,62 @@ function create(options) {
 		return JSON.stringify(values);
 	}
 
-	function publish(command, result, error) {
+	function publish(command, result, error, origin) {
+		var source = origin || "manual";
+
+		var report = {
+			platform: platform,
+			command: command,
+			origin: source,
+			time: clock(),
+			automatic: automaticState(),
+			result: result === undefined ? null : result,
+			error: error ? String(error.stack || error) : null
+		};
+
+		var serialized = JSON.stringify(report, null, 2);
+
+		function write(title) {
+			wiki.addTiddler(new tw.Tiddler({
+				title: title,
+				type: "application/json",
+				text: serialized
+			}));
+		}
+
+		// Compatibility: latest result from any source.
+		write(reportTitle);
+
+		// A background tick cannot overwrite an inspection report.
+		write(
+			reportTitle + "/commands/" +
+			encodeURIComponent(String(command))
+		);
+
+		if (source === "manual") {
+			write(manualReportTitle);
+		}
+
+		publishAutomaticState();
+	}
+
+	function publishAutomaticState() {
+		var serialized = JSON.stringify(automaticState());
+		var current = wiki.getTiddler(automaticStateTitle);
+
+		// Avoid a change notification on every unchanged timer pass.
+		if (
+			current &&
+			current.fields.type === "application/json" &&
+			current.fields.text === serialized
+		) {
+			return;
+		}
+
 		wiki.addTiddler(new tw.Tiddler({
-			title: reportTitle,
+			title: automaticStateTitle,
 			type: "application/json",
-			text: JSON.stringify({
-				platform: platform,
-				command: command,
-				automatic: automaticState(),
-				result: result === undefined ? null : result,
-				error: error ? String(error.stack || error) : null
-			}, null, 2)
+			text: serialized
 		}));
 	}
 
@@ -440,6 +487,7 @@ function create(options) {
 			automaticTimer = null;
 		}
 
+		publishAutomaticState();
 		return automaticState();
 	}
 
@@ -465,14 +513,24 @@ function create(options) {
 			}
 
 			try {
-				command("deferred");
+				command(
+					"deferred",
+					undefined,
+					undefined,
+					"automatic"
+				);
 			} catch (error) {
 				/*
 				An uncaught adapter/runtime exception stops the
 				automatic driver. Existing obligations remain.
 				*/
 				stopAutomatic();
-				publish("automatic-stopped", null, error);
+				publish(
+					"automatic-stopped",
+					null,
+					error,
+					"automatic"
+				);
 				return;
 			}
 
@@ -487,6 +545,7 @@ function create(options) {
 	function startAutomatic() {
 		automaticEnabled = true;
 		scheduleAutomatic();
+		publishAutomaticState();
 
 		return automaticState();
 	}
@@ -929,7 +988,7 @@ function create(options) {
 		};
 	}
 
-	function command(name, title, eventId) {
+	function command(name, title, eventId, origin) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
 		}
@@ -1013,10 +1072,10 @@ function create(options) {
 					throw new Error("Unknown Clerus command: " + name);
 			}
 
-			publish(name, result, null);
+			publish(name, result, null, origin);
 			return result;
 		} catch (error) {
-			publish(name, null, error);
+			publish(name, null, error, origin);
 			throw error;
 		} finally {
 			/*
@@ -1052,7 +1111,12 @@ function create(options) {
 			}
 
 			try {
-				command("service");
+				command(
+					"service",
+					undefined,
+					undefined,
+					"wiki-change"
+				);
 			} catch (error) {
 				/*
 				The command already published its diagnostic.
@@ -1135,7 +1199,8 @@ function create(options) {
 						publish(
 							"prototype-receipts",
 							receipts,
-							null
+							null,
+							"maintenance"
 						);
 					}
 
@@ -1143,11 +1208,21 @@ function create(options) {
 						receipts.received.length > 0 ||
 						hasExpiredWal()
 					) {
-						command("service");
+						command(
+							"service",
+							undefined,
+							undefined,
+							"maintenance"
+						);
 					}
 				}
 			} catch (error) {
-				publish("prototype-maintenance", null, error);
+				publish(
+					"prototype-maintenance",
+					null,
+					error,
+					"maintenance"
+				);
 			} finally {
 				scheduleCleanup();
 			}
@@ -1163,7 +1238,12 @@ function create(options) {
 		wiki.addEventListener("change", onChange);
 
 		try {
-			command("service");
+			command(
+				"service",
+				undefined,
+				undefined,
+				"startup"
+			);
 		} catch (error) {
 			// The adapter remains available for inspection and repair.
 		}
@@ -1187,6 +1267,8 @@ function create(options) {
 	return Object.freeze({
 		platform: platform,
 		reportTitle: reportTitle,
+		manualReportTitle: manualReportTitle,
+		automaticStateTitle: automaticStateTitle,
 		command: command,
 		start: start,
 		dispose: dispose

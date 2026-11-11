@@ -47,7 +47,7 @@ type: text/vnd.tiddlywiki
 </$button>
 
 Состояние:
-<$text text={{{ [[$:/temp/clerus/management/browser]get[text]jsonget[automatic],[enabled]] }}}/>
+<$text text={{{ [[$:/temp/clerus/management/browser/automatic]get[text]jsonget[enabled]] }}}/>
 
 Остановка не отменяет сохранённых активаций и не прерывает уже выполняющийся синхронный проход.
 
@@ -130,12 +130,52 @@ type: text/vnd.tiddlywiki
 Повтор эфемерной реакции может повторить уже состоявшиеся эффекты:
 останов до квитирования не доказывает, что реакция ничего не сделала.
 
-!! Последний результат браузера
+!! Последняя ручная команда
 
 <$codeblock
-  code={{$:/temp/clerus/management/browser}}
+  code={{$:/temp/clerus/management/browser/manual}}
   language="json"
 />
+
+<details>
+<summary>Последняя инспекция</summary>
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/inspect}}
+  language="json"
+/>
+
+</details>
+
+<details>
+<summary>Последняя сборка</summary>
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/collect}}
+  language="json"
+/>
+
+</details>
+
+<details>
+<summary>Последнее обслуживание обязательств</summary>
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/service}}
+  language="json"
+/>
+
+</details>
+
+<details>
+<summary>Последний отложенный проход</summary>
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/deferred}}
+  language="json"
+/>
+
+</details>
 
 !! Демонстрационные должности
 
