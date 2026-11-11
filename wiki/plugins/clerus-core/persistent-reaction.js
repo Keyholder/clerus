@@ -49,6 +49,12 @@ function failed(phase, error, title) {
 }
 
 function messageEvent(message) {
+	if (message.kind === "notification") {
+		return Object.assign({}, message.notification, {
+			id: message.id
+		});
+	}
+
 	if (message.kind === "activation") {
 		return {
 			type: "tick",
@@ -296,9 +302,9 @@ function execute(options) {
 
 			continuationDelivery = true;
 			event = messageEvent(delivery);
-			incoming = delivery.kind === "activation"
-				? undefined
-				: delivery.registry;
+			incoming = delivery.kind === "delivery"
+				? delivery.registry
+				: undefined;
 		} catch (error) {
 			return failed(
 				"preparation",

@@ -51,6 +51,10 @@ function evaluate(options) {
 			activations: {
 				ready: 0,
 				paused: 0
+			},
+			notifications: {
+				ready: 0,
+				paused: 0
 			}
 		},
 		unreadable: []
@@ -163,10 +167,20 @@ function evaluate(options) {
 						continuation.events
 					).forEach(function (id) {
 						var entry = continuation.events[id];
-						var bucket =
-							entry.event.kind === "activation"
-								? result.waiting.activations
-								: result.waiting.deliveries;
+
+						var buckets = {
+							activation: result.waiting.activations,
+							delivery: result.waiting.deliveries,
+							notification: result.waiting.notifications
+						};
+
+						var bucket = buckets[entry.event.kind];
+
+						if (!bucket) {
+							throw new Error(
+								"Unsupported waiting event kind"
+							);
+						}
 
 						bucket[entry.mode]++;
 					});

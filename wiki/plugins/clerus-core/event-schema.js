@@ -12,6 +12,9 @@ var roles = require("$:/plugins/clerus/core/roles.js");
 var establishmentInput = require(
 	"$:/plugins/clerus/core/establishment-input.js"
 );
+var notifications = require(
+	"$:/plugins/clerus/core/notification-schema.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -39,6 +42,43 @@ function identity(value) {
 
 function validate(value) {
 	var event = schemas.copyJSON(value);
+
+	if (
+		schemas.isRecord(event) &&
+		event.kind === "notification"
+	) {
+		fieldsOnly(event, [
+			"kind", "recipient", "notification"
+		], "notification event");
+
+		fieldsOnly(event.recipient, [
+			"title", "executor"
+		], "notification recipient");
+
+		var notificationSpace = jobTitles.classify(
+			event.recipient.title
+		);
+
+		if (
+			!notificationSpace ||
+			!notificationSpace.persistent ||
+			typeof event.recipient.executor !== "string" ||
+			event.recipient.executor.length === 0
+		) {
+			throw new Error(
+				"Notification requires a persistent recipient"
+			);
+		}
+
+		return schemas.copyJSON({
+			kind: "notification",
+			recipient: {
+				title: event.recipient.title,
+				executor: event.recipient.executor
+			},
+			notification: notifications.validate(event.notification)
+		});
+	}
 
 	if (
 		schemas.isRecord(event) &&

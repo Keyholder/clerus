@@ -94,7 +94,14 @@ function eventCard(journal, entry) {
 	var content = [
 		element("div", [
 			text(entry.mode + " · " + event.kind),
-			text(event.kind === "delivery" ? " · " + event.type : "")
+
+			text(
+				event.kind === "delivery"
+					? " · " + event.type
+					: event.kind === "notification"
+						? " · " + event.notification.type
+						: ""
+			)
 		]),
 		element("div", [
 			text("Идентичность: " + entry.id)

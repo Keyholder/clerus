@@ -617,7 +617,8 @@ Runtime.prototype.drainContinuationWork = function () {
 					var entry = pending[eventIndex];
 
 					if (
-						entry.event.kind !== "delivery"
+						entry.event.kind !== "delivery" &&
+						entry.event.kind !== "notification"
 					) {
 						continue;
 					}
@@ -708,10 +709,14 @@ Runtime.prototype.drainContinuationWork = function () {
 			continue;
 		}
 
-		var deliveredEvent = {
-			type: event.type,
-			id: selected.id
-		};
+		var deliveredEvent = event.kind === "notification"
+			? Object.assign({}, event.notification, {
+				id: selected.id
+			})
+			: {
+				type: event.type,
+				id: selected.id
+			};
 
 		if (event.type === "report") {
 			deliveredEvent.project = event.project;
