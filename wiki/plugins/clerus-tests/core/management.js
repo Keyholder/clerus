@@ -1675,11 +1675,10 @@ function testProjectBranchFailureAndRepair(tw) {
 		assert(collected.blocked.length === 0);
 		assert(collected.removed.length === 0);
 
-		/*
-		Explicitly take the remaining obligation under user custody.
-		Repair does not depend on which ready branch ran last.
-		*/
-		f.adapter.command("hold", organization.journal);
+		assert(
+			f.wiki.getTiddler(organization.journal)
+				.fields["clerus-custody"] === "user"
+		);
 
 		// Repair the task, not the accepted event or its identity.
 		tree = f.record(project.project);

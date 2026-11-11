@@ -356,6 +356,17 @@ function create(options) {
 
 				after.text = JSON.stringify(record);
 
+				var waitingIds = Object.keys(record.events);
+
+				if (
+					waitingIds.length > 0 &&
+					waitingIds.every(function (id) {
+						return record.events[id].mode === "paused";
+					})
+				) {
+					after["clerus-custody"] = "user";
+				}
+
 				options.store.apply(stores.transition(
 					title,
 					loaded.fields,

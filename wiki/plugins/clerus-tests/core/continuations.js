@@ -396,6 +396,91 @@ function testRetainedEmptyJournal(tw) {
 	assert(!f.wiki.tiddlerExists(title));
 }
 
+function testPausedRemainderReturnsToUser(tw) {
+	var f = fixture(tw);
+
+	var recipient = {
+		title: "$:/temp/clerus/jobs/" +
+			f.platform + "/paused-remainder-recipient",
+		executor: "paused-remainder-test"
+	};
+
+	var failedId = "paused-remainder-failed-0001";
+	var successfulId = "paused-remainder-success-0001";
+
+	function delivery() {
+		return {
+			kind: "delivery",
+			type: "order",
+			recipient: recipient,
+			registry: {}
+		};
+	}
+
+	var title = f.runtime.continuations.accept({
+		version: 2,
+		id: "paused-remainder-work-0001",
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: [
+			{ id: failedId, event: delivery() },
+			{ id: successfulId, event: delivery() }
+		]
+	});
+
+	f.runtime.recover();
+
+	f.runtime.continuations.failEvent(
+		title,
+		failedId,
+		recipient,
+		new Error("One branch failed")
+	);
+
+	// A different ready branch still permits runtime service.
+	assert(
+		f.wiki.getTiddler(title)
+			.fields["clerus-custody"] === f.platform
+	);
+
+	/*
+	Simulate successful completion of the other ephemeral
+	delivery at the continuation-manager boundary.
+	*/
+	assert(
+		f.runtime.continuations.completeEphemeral(
+			title,
+			successfulId,
+			recipient
+		) === "completed"
+	);
+
+	f.runtime.continuations.resume(title);
+
+	var tiddler = f.wiki.getTiddler(title);
+	var record = JSON.parse(tiddler.fields.text);
+
+	assert(tiddler.fields["clerus-custody"] === "user");
+	assert(record.work === null);
+	assert(Object.keys(record.events).length === 1);
+	assert(record.events[failedId].mode === "paused");
+	assert(record.diagnostics.some(function (entry) {
+		return entry.event === failedId;
+	}));
+
+	// Recovery must not reclaim a user-owned obligation.
+	var before = tiddler.fields.text;
+
+	f.runtime.recover();
+
+	assert(
+		f.wiki.getTiddler(title)
+			.fields["clerus-custody"] === "user"
+	);
+	assert(f.wiki.getTiddlerText(title) === before);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime recovers a material continuation", testRuntimeRecovery],
@@ -404,7 +489,8 @@ exports.run = function (tw) {
 		["conflicting journals have no automatic winner", testConflictingJournalsHaveNoWinner],
 		["unrelated works can complete", testUnrelatedWorksCanComplete],
 		["unknown WAL prevents writes", testUnknownWalPreventsWrites],
-		["exhausted journal retention survives repeated servicing", testRetainedEmptyJournal]
+		["exhausted journal retention survives repeated servicing", testRetainedEmptyJournal],
+		["paused remainder returns to user after another branch completes", testPausedRemainderReturnsToUser]
 	];
 
 	var results = cases.map(function (item) {
