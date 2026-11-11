@@ -235,12 +235,111 @@ function testProjectCustodyIsRequired(tw) {
 	assert(f.wiki.getTiddlerText(f.project) === before);
 }
 
+function testRemovalDoesNotRevokeAssignment(tw) {
+	var f = fixture(tw, false);
+
+	f.execute(function (event, operational) {
+		var mission = operational.get("mission");
+
+		var child = mission.createMission(
+			"existing",
+			operational,
+			"child"
+		);
+
+		assert(child.inspect().active);
+		assert(child.inspect().readable);
+
+		mission.removePart("existing");
+
+		assert(mission.parts().length === 0);
+
+		/*
+		The assignment is still current, but its task has
+		disappeared. This is not implicit revocation.
+		*/
+		assert(child.inspect().active);
+		assert(!child.inspect().readable);
+
+		throws(function () {
+			child.task();
+		}, "Task does not exist");
+
+		// Explicit revocation remains available without the task.
+		mission.revokePart("existing");
+
+		assert(!child.inspect().active);
+	});
+
+	var tree = JSON.parse(f.wiki.getTiddlerText(f.project));
+
+	assert(!Object.prototype.hasOwnProperty.call(
+		tree.parts,
+		"existing"
+	));
+}
+
+function testPlannedRemovalPreservesOriginalUntilAcceptance(tw) {
+	var f = fixture(tw, true);
+	var original = f.wiki.getTiddlerText(f.project);
+
+	var proposal = f.execute(function (event, operational) {
+		var mission = operational.get("mission");
+
+		mission.createPart("kept", { value: 42 });
+		mission.removePart("existing");
+
+		assert(mission.parts().join(",") === "kept");
+		assert(f.wiki.getTiddlerText(f.project) === original);
+	});
+
+	assert(f.wiki.getTiddlerText(f.project) === original);
+
+	var effect = proposal.plan.effects.find(function (entry) {
+		return entry.title === f.project;
+	});
+
+	assert(effect);
+
+	var after = JSON.parse(effect.after.text);
+
+	assert(Object.keys(after.parts).join(",") === "kept");
+	assert(after.parts.kept.task.value === 42);
+}
+
+function testMissingPartRemovalIsAtomic(tw) {
+	var f = fixture(tw, false);
+
+	f.execute(function (event, operational) {
+		var mission = operational.get("mission");
+		var before = f.wiki.getTiddlerText(f.project);
+
+		throws(function () {
+			mission.removePart("missing");
+		}, "Task does not exist");
+
+		assert(f.wiki.getTiddlerText(f.project) === before);
+		assert(mission.parts().join(",") === "existing");
+
+		// The rejected operation did not close or corrupt the scope.
+		mission.createPart("later", { value: 7 });
+	});
+
+	var tree = JSON.parse(f.wiki.getTiddlerText(f.project));
+
+	assert(tree.parts.existing.parts.leaf.task === 7);
+	assert(tree.parts.later.task.value === 7);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["task mutations: immediate changes preserve descendants and isolate values", testImmediateMutation],
 		["task mutations: planned changes are visible before materialization", testPlannedVisibility],
 		["task mutations: failed persistent reaction leaves no project changes", testFailedReactionDiscardsProjectChanges],
-		["task mutations: project custody is checked independently", testProjectCustodyIsRequired]
+		["task mutations: project custody is checked independently", testProjectCustodyIsRequired],
+		["task mutations: task removal does not implicitly revoke assignment", testRemovalDoesNotRevokeAssignment],
+		["task mutations: planned removal preserves the original project", testPlannedRemovalPreservesOriginalUntilAcceptance],
+		["task mutations: missing part removal is atomic", testMissingPartRemovalIsAtomic]
 	];
 
 	var results = cases.map(function (item) {

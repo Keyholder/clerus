@@ -50,6 +50,10 @@ exports.create = function (access) {
 
 		setPartTask: function (segment, task) {
 			access.setMissionPartTask(segment, task);
+		},
+
+		removePart: function (segment) {
+			access.removeMissionPart(segment);
 		}
 	});
 };

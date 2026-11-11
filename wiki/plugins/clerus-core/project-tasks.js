@@ -57,7 +57,11 @@ function change(tree, role, operation, segment, task) {
 		throw new Error("Invalid child role segment");
 	}
 
-	if (operation !== "create" && operation !== "set-task") {
+	if (
+		operation !== "create" &&
+		operation !== "set-task" &&
+		operation !== "remove"
+	) {
 		throw new Error("Unsupported task mutation");
 	}
 
@@ -84,8 +88,12 @@ function change(tree, role, operation, segment, task) {
 			throw new Error("Task does not exist");
 		}
 
-		var child = nodeAt(result, role.concat([segment]));
-		child.task = schemas.copyJSON(task);
+		if (operation === "remove") {
+			delete parent.parts[segment];
+		} else {
+			var child = nodeAt(result, role.concat([segment]));
+			child.task = schemas.copyJSON(task);
+		}
 	}
 
 	return result;

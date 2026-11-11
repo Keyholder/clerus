@@ -1201,6 +1201,10 @@ function open(options) {
 
 				setMissionPartTask: function (segment, task) {
 					changeMissionPart(node, "set-task", segment, task);
+				},
+
+				removeMissionPart: function (segment) {
+					changeMissionPart(node, "remove", segment);
 				}
 			})
 		);
