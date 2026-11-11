@@ -14,6 +14,7 @@ var perspectives = require(
 var signatures = require(
 	"$:/plugins/clerus/core/observation-signature.js"
 );
+var observedJobs = require("$:/plugins/clerus/core/observed-job.js");
 
 function event(title, platform, document, keys) {
 	return Object.freeze({
@@ -130,7 +131,7 @@ function refresh(value, options) {
 		throw new Error("Observed mission recipient must be materialized");
 	}
 
-	var job = schemas.ephemeralJob(
+	var job = observedJobs.read(
 		stored.fields,
 		options.platform
 	);

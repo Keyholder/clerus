@@ -13,6 +13,7 @@ var missionObservation = require(
 var jobObservation = require(
 	"$:/plugins/clerus/core/job-observation.js"
 );
+var observedJobs = require("$:/plugins/clerus/core/observed-job.js");
 
 function assertTitles(titles) {
 	if (
@@ -67,9 +68,11 @@ function signature(view) {
 
 function Observer() {
 	this.previous = new Map();
+	this.epoch = {};
+	this.prepared = new WeakMap();
 }
 
-Observer.prototype.collect = function (options) {
+Observer.prototype.prepare = function (options) {
 	schemas.assertPlatform(options.platform);
 	assertTitles(options.titles);
 
@@ -79,6 +82,8 @@ Observer.prototype.collect = function (options) {
 		throw new Error("Observation requires a store");
 	}
 
+	var history = this.previous;
+	var epoch = this.epoch;
 	var next = new Map();
 	var events = [];
 	var targetSignatures = new Map();
@@ -130,7 +135,7 @@ Observer.prototype.collect = function (options) {
 			);
 		}
 
-		var job = schemas.ephemeralJob(
+		var job = observedJobs.read(
 			stored.fields,
 			options.platform
 		);
@@ -159,8 +164,8 @@ Observer.prototype.collect = function (options) {
 			next.set(subscription.id, subscription.signature);
 
 			if (
-				this.previous.has(subscription.id) &&
-				this.previous.get(subscription.id) !==
+				history.has(subscription.id) &&
+				history.get(subscription.id) !==
 					subscription.signature
 			) {
 				events.push(subscription.event);
@@ -174,8 +179,8 @@ Observer.prototype.collect = function (options) {
 			next.set(subscription.id, subscription.signature);
 
 			if (
-				this.previous.has(subscription.id) &&
-				this.previous.get(subscription.id) !==
+				history.has(subscription.id) &&
+				history.get(subscription.id) !==
 					subscription.signature
 			) {
 				events.push(subscription.event);
@@ -186,12 +191,12 @@ Observer.prototype.collect = function (options) {
 			function (target) {
 				var id = JSON.stringify([job.title, target]);
 				var current = readSignature(target);
-				var previous = this.previous.get(id);
+				var previous = history.get(id);
 
 				next.set(id, current);
 
 				if (
-					this.previous.has(id) &&
+					history.has(id) &&
 					previous !== current
 				) {
 					events.push(Object.freeze({
@@ -209,17 +214,51 @@ Observer.prototype.collect = function (options) {
 		);
 	}, this);
 
-	/*
-	Publish only after the entire collection succeeds.
-	A rejected pass cannot silently advance some subscriptions.
-	*/
-	this.previous = next;
+	if (this.epoch !== epoch) {
+		throw new Error("Observation history changed during preparation");
+	}
 
-	return Object.freeze(events);
+	var batch = Object.freeze({
+		events: Object.freeze(events)
+	});
+
+	this.prepared.set(batch, {
+		epoch: epoch,
+		next: next
+	});
+
+	return batch;
+};
+
+Observer.prototype.commit = function (batch) {
+	var prepared = batch &&
+		typeof batch === "object"
+			? this.prepared.get(batch)
+			: undefined;
+
+	if (!prepared) {
+		throw new Error("Unknown observation batch");
+	}
+
+	if (prepared.epoch !== this.epoch) {
+		throw new Error("Observation batch is stale");
+	}
+
+	this.previous = prepared.next;
+	this.epoch = {};
+	this.prepared.delete(batch);
+};
+
+Observer.prototype.collect = function (options) {
+	var batch = this.prepare(options);
+
+	this.commit(batch);
+	return batch.events;
 };
 
 Observer.prototype.clear = function () {
-	this.previous.clear();
+	this.previous = new Map();
+	this.epoch = {};
 };
 
 function refresh(event, options) {
@@ -264,7 +303,7 @@ function refresh(event, options) {
 		);
 	}
 
-	var job = schemas.ephemeralJob(
+	var job = observedJobs.read(
 		stored.fields,
 		options.platform
 	);

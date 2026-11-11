@@ -122,7 +122,8 @@ var SUITES = Object.freeze([
 	"task-mutations",
 	"mission-observation",
 	"job-observation",
-	"persistent-notifications"
+	"persistent-notifications",
+	"observation-preparation"
 ]);
 
 function describe(error) {
