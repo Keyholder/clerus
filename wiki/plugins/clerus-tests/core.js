@@ -120,7 +120,8 @@ var SUITES = Object.freeze([
 	"management-work",
 	"management-lifecycle",
 	"task-mutations",
-	"mission-observation"
+	"mission-observation",
+	"job-observation"
 ]);
 
 function describe(error) {

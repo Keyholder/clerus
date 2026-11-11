@@ -11,29 +11,9 @@ var missionSchema = require("$:/plugins/clerus/core/mission-schema.js");
 var perspectives = require(
 	"$:/plugins/clerus/core/project-perspective.js"
 );
-
-function canonical(value) {
-	if (Array.isArray(value)) {
-		return value.map(canonical);
-	}
-
-	if (schemas.isRecord(value)) {
-		var result = Object.create(null);
-
-		Object.keys(value).sort().forEach(function (key) {
-			Object.defineProperty(result, key, {
-				value: canonical(value[key]),
-				enumerable: true,
-				writable: true,
-				configurable: true
-			});
-		});
-
-		return result;
-	}
-
-	return value;
-}
+var signatures = require(
+	"$:/plugins/clerus/core/observation-signature.js"
+);
 
 function event(title, platform, document, keys) {
 	return Object.freeze({
@@ -98,7 +78,7 @@ function collect(job, options) {
 
 		result.push({
 			id: JSON.stringify(["mission", job.title, identity]),
-			signature: JSON.stringify(canonical(view)),
+			signature: signatures.signature(view),
 			event: event(
 				job.title,
 				options.platform,

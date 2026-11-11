@@ -10,6 +10,9 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var missionObservation = require(
 	"$:/plugins/clerus/core/mission-observation.js"
 );
+var jobObservation = require(
+	"$:/plugins/clerus/core/job-observation.js"
+);
 
 function assertTitles(titles) {
 	if (
@@ -164,6 +167,21 @@ Observer.prototype.collect = function (options) {
 			}
 		}, this);
 
+		jobObservation.collect(job, {
+			store: store,
+			platform: options.platform
+		}).forEach(function (subscription) {
+			next.set(subscription.id, subscription.signature);
+
+			if (
+				this.previous.has(subscription.id) &&
+				this.previous.get(subscription.id) !==
+					subscription.signature
+			) {
+				events.push(subscription.event);
+			}
+		}, this);
+
 		Array.from(subscriptions.keys()).sort().forEach(
 			function (target) {
 				var id = JSON.stringify([job.title, target]);
@@ -207,6 +225,10 @@ Observer.prototype.clear = function () {
 function refresh(event, options) {
 	if (event && event.type === "mission-change") {
 		return missionObservation.refresh(event, options);
+	}
+
+	if (event && event.type === "job-status-change") {
+		return jobObservation.refresh(event, options);
 	}
 
 	schemas.assertPlatform(options.platform);
