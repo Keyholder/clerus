@@ -1303,7 +1303,8 @@ function observePass() {
 	var events = this.observer.collect({
 		store: this.store,
 		platform: this.platform,
-		titles: titles
+		titles: titles,
+		readJobs: this.readJobs
 	});
 
 	var passes = [];

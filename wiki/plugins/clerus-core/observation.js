@@ -7,6 +7,9 @@ module-type: library
 "use strict";
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
+var missionObservation = require(
+	"$:/plugins/clerus/core/mission-observation.js"
+);
 
 function assertTitles(titles) {
 	if (
@@ -76,6 +79,19 @@ Observer.prototype.collect = function (options) {
 	var next = new Map();
 	var events = [];
 	var targetSignatures = new Map();
+	var jobs = null;
+
+	function readJobs() {
+		if (typeof options.readJobs !== "function") {
+			throw new Error("Mission observation requires a job reader");
+		}
+
+		if (jobs === null) {
+			jobs = options.readJobs();
+		}
+
+		return jobs;
+	}
 
 	/*
 	Read one target once per collection pass, even if several
@@ -132,6 +148,22 @@ Observer.prototype.collect = function (options) {
 			subscriptions.get(document).push(key);
 		});
 
+		missionObservation.collect(job, {
+			store: store,
+			platform: options.platform,
+			readJobs: readJobs
+		}).forEach(function (subscription) {
+			next.set(subscription.id, subscription.signature);
+
+			if (
+				this.previous.has(subscription.id) &&
+				this.previous.get(subscription.id) !==
+					subscription.signature
+			) {
+				events.push(subscription.event);
+			}
+		}, this);
+
 		Array.from(subscriptions.keys()).sort().forEach(
 			function (target) {
 				var id = JSON.stringify([job.title, target]);
@@ -173,6 +205,10 @@ Observer.prototype.clear = function () {
 };
 
 function refresh(event, options) {
+	if (event && event.type === "mission-change") {
+		return missionObservation.refresh(event, options);
+	}
+
 	schemas.assertPlatform(options.platform);
 
 	var source = schemas.copyJSON(event);
