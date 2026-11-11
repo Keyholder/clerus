@@ -20,6 +20,7 @@ var jobState = require("$:/plugins/clerus/core/job-state.js");
 var localCustody = require(
 	"$:/plugins/clerus/core/local-custody.js"
 );
+var transitions = require("$:/plugins/clerus/core/store.js");
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -278,6 +279,83 @@ function create(options) {
 		return result;
 	}
 
+	function taskProject(value, scope, writing) {
+		var assignment = inspectAssignment(value, scope);
+
+		if (!assignment.active) {
+			throw new Error(assignment.reason);
+		}
+
+		var project = options.store.read(
+			assignment.document.project
+		);
+
+		if (
+			project.kind === "absent" ||
+			!project.fields ||
+			project.fields.type !== "application/json"
+		) {
+			throw new Error("Project must be readable application/json");
+		}
+
+		if (writing) {
+			schemas.assertPlatform(options.platform);
+
+			var custody = localCustody.create({
+				platform: options.platform,
+				store: options.store
+			});
+
+			if (
+				project.kind !== "materialized" ||
+				!custody.owns(project.fields)
+			) {
+				throw new Error("Project is not owned by this platform");
+			}
+		}
+
+		var tree = JSON.parse(project.fields.text);
+
+		// Require the assigned task itself to be readable.
+		tasks.resolve(tree, assignment.document.role);
+
+		return {
+			document: assignment.document,
+			fields: project.fields,
+			tree: tree
+		};
+	}
+
+	function readParts(value, scope) {
+		var project = taskProject(value, scope, false);
+
+		return tasks.parts(
+			project.tree,
+			project.document.role
+		);
+	}
+
+	function preparePart(value, scope, operation, segment, task) {
+		var project = taskProject(value, scope, true);
+
+		var tree = tasks.change(
+			project.tree,
+			project.document.role,
+			operation,
+			segment,
+			task
+		);
+
+		var after = schemas.copyJSON(project.fields);
+		after.text = JSON.stringify(tree);
+
+		return transitions.transition(
+			project.document.project,
+			project.fields,
+			after
+		);
+	}
+
 	function authorizeMutation(value, scope, operation, segment) {
 		if (operation !== "issue" && operation !== "revoke") {
 			throw new Error("Unsupported mission mutation");
@@ -448,6 +526,8 @@ function create(options) {
 
 	return Object.freeze({
 		readMission: readMission,
+		readParts: readParts,
+		preparePart: preparePart,
 		authorizeMutation: authorizeMutation,
 		resolveReport: resolveReport,
 		authorizeMove: authorizeMove,

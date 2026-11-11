@@ -40,21 +40,15 @@ exports.create = function (options) {
 			type: "application/json",
 			"clerus-custody": platform,
 			text: JSON.stringify({
-				task: { purpose: "Compute three squares" },
-				parts: {
-					first: {
-						task: { value: 2 },
-						parts: {}
-					},
-					second: {
-						task: { value: 3 },
-						parts: {}
-					},
-					third: {
-						task: { value: 5 },
-						parts: {}
+				task: {
+					purpose: "Compute three squares",
+					items: {
+						first: 2,
+						second: 3,
+						third: 5
 					}
-				}
+				},
+				parts: {}
 			}, null, 2)
 		};
 

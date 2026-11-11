@@ -38,6 +38,18 @@ exports.create = function (access) {
 
 		report: function (outgoing) {
 			access.sendReport(outgoing);
+		},
+
+		parts: function () {
+			return access.readMissionParts();
+		},
+
+		createPart: function (segment, task) {
+			access.createMissionPart(segment, task);
+		},
+
+		setPartTask: function (segment, task) {
+			access.setMissionPartTask(segment, task);
 		}
 	});
 };

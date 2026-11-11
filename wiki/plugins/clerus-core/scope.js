@@ -21,6 +21,8 @@ var jobTitles = require(
 var establishmentInput = require(
 	"$:/plugins/clerus/core/establishment-input.js"
 );
+var transitions = require("$:/plugins/clerus/core/store.js");
+var roles = require("$:/plugins/clerus/core/roles.js");
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -86,6 +88,9 @@ function open(options) {
 		"readJob",
 		"readTiddler",
 		"readMission",
+		"readMissionParts",
+		"prepareMissionPart",
+		"applyProjectTransition",
 		"canWriteOperational",
 		"commitOperational",
 		"authorizeMission",
@@ -116,7 +121,8 @@ function open(options) {
 		nextOutgoing: 0,
 		updates: new Map(),
 		messages: [],
-		deferred: false
+		deferred: false,
+		projectEffects: []
 	};
 
 	var views = new Map();
@@ -284,7 +290,8 @@ function open(options) {
 			nextOutgoing: state.nextOutgoing,
 			updates: new Map(),
 			messages: state.messages.slice(),
-			deferred: state.deferred
+			deferred: state.deferred,
+			projectEffects: state.projectEffects.slice()
 		};
 
 		state.registries.forEach(function (registry, id) {
@@ -356,6 +363,16 @@ function open(options) {
 						schemas.copyJSON(after)
 					);
 				}
+			}
+
+			for (
+				var projectIndex = state.projectEffects.length;
+				projectIndex < candidate.projectEffects.length;
+				projectIndex++
+			) {
+				options.applyProjectTransition(
+					candidate.projectEffects[projectIndex]
+				);
 			}
 
 			for (
@@ -949,6 +966,80 @@ function open(options) {
 		});
 	}
 
+	function assertMission(node) {
+		assertPresent(node);
+
+		if (node.form !== "mission") {
+			throw new Error("Document is not a mission");
+		}
+	}
+
+	function readMissionParts(node) {
+		assertMission(node);
+
+		if (typeof options.readMissionParts !== "function") {
+			throw new Error("Task inspection is unavailable");
+		}
+
+		var result = schemas.copyJSON(
+			options.readMissionParts(
+				missionSchema.validate(node.value),
+				registrySnapshot()
+			)
+		);
+
+		if (
+			!Array.isArray(result) ||
+			!result.every(roles.isSegment) ||
+			new Set(result).size !== result.length
+		) {
+			throw new Error("Invalid task parts inspection result");
+		}
+
+		return result.slice().sort();
+	}
+
+	function changeMissionPart(node, operation, segment, task) {
+		run(function (candidate) {
+			assertMission(node);
+
+			if (
+				typeof options.prepareMissionPart !== "function" ||
+				typeof options.applyProjectTransition !== "function"
+			) {
+				throw new Error("Task mutation is unavailable");
+			}
+
+			var prepared = options.prepareMissionPart(
+				missionSchema.validate(node.value),
+				registrySnapshot(),
+				operation,
+				segment,
+				task
+			);
+
+			if (!prepared || prepared.version !== 1) {
+				throw new Error("Invalid prepared project transition");
+			}
+
+			var effect = transitions.transition(
+				prepared.title,
+				prepared.before,
+				prepared.after
+			);
+
+			if (
+				effect.title !== node.value.project ||
+				effect.before === null ||
+				effect.after === null
+			) {
+				throw new Error("Invalid prepared project transition");
+			}
+
+			candidate.projectEffects.push(effect);
+		});
+	}
+
 	function instanceFor(node) {
 		assertPresent(node);
 
@@ -1098,6 +1189,18 @@ function open(options) {
 
 				defer: function () {
 					defer(node);
+				},
+
+				readMissionParts: function () {
+					return readMissionParts(node);
+				},
+
+				createMissionPart: function (segment, task) {
+					changeMissionPart(node, "create", segment, task);
+				},
+
+				setMissionPartTask: function (segment, task) {
+					changeMissionPart(node, "set-task", segment, task);
 				}
 			})
 		);

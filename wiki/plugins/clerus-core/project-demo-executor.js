@@ -55,6 +55,26 @@ function organize(operational, incoming) {
 	}
 
 	var mission = operational.get("mission");
+	var existingParts = mission.parts();
+	var configuration = mission.task();
+
+	SEGMENTS.forEach(function (segment) {
+		if (existingParts.indexOf(segment) !== -1) {
+			return;
+		}
+
+		if (
+			!configuration ||
+			!configuration.items ||
+			typeof configuration.items[segment] !== "number"
+		) {
+			throw new Error("Project requires numeric input for " + segment);
+		}
+
+		mission.createPart(segment, {
+			value: configuration.items[segment]
+		});
+	});
 
 	SEGMENTS.forEach(function (segment) {
 		var child = charter.createTitle(

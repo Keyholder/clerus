@@ -118,7 +118,8 @@ var SUITES = Object.freeze([
 	"management-retention",
 	"presentation-tree",
 	"management-work",
-	"management-lifecycle"
+	"management-lifecycle",
+	"task-mutations"
 ]);
 
 function describe(error) {

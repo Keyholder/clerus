@@ -91,6 +91,19 @@ function create(options) {
 			? project.readMission
 			: undefined,
 
+		readMissionParts: project
+			? project.readParts
+			: undefined,
+
+		prepareMissionPart: project
+			? project.preparePart
+			: undefined,
+
+		applyProjectTransition: project &&
+			typeof options.store.apply === "function"
+			? options.store.apply.bind(options.store)
+			: undefined,
+
 		authorizeMission: project
 			? project.authorizeMutation
 			: undefined,

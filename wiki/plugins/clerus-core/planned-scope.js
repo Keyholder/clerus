@@ -88,6 +88,10 @@ function open(options) {
 	var view = {
 		read: function (title) {
 			return activePlan.read(title);
+		},
+
+		apply: function (effect) {
+			return activePlan.apply(effect);
 		}
 	};
 
