@@ -22,6 +22,8 @@ function fixture(tw) {
 	var sequence = 0;
 	var timers = new Map();
 	var timerSequence = 0;
+	var observationTimers = new Map();
+	var observationTimerSequence = 0;
 
 	/*
 	Intercept only this isolated wiki's change subscription.
@@ -73,7 +75,22 @@ function fixture(tw) {
 			timers.delete(handle);
 		},
 
-		prototypeWalReceipts: false
+		prototypeWalReceipts: false,
+
+		setObservationTimer: function (callback, milliseconds) {
+			observationTimerSequence++;
+
+			observationTimers.set(observationTimerSequence, {
+				callback: callback,
+				milliseconds: milliseconds
+			});
+
+			return observationTimerSequence;
+		},
+
+		clearObservationTimer: function (handle) {
+			observationTimers.delete(handle);
+		}
 	});
 
 	function notify(titles) {
@@ -133,6 +150,23 @@ function fixture(tw) {
 
 			var entry = timers.entries().next().value;
 			timers.delete(entry[0]);
+
+			assert(entry[1].milliseconds === 1000);
+			entry[1].callback();
+		},
+
+		observationTimerCount: function () {
+			return observationTimers.size;
+		},
+
+		runObservationTimer: function () {
+			assert(
+				observationTimers.size === 1,
+				"Expected one observation timer"
+			);
+
+			var entry = observationTimers.entries().next().value;
+			observationTimers.delete(entry[0]);
 
 			assert(entry[1].milliseconds === 1000);
 			entry[1].callback();
@@ -2060,6 +2094,117 @@ function testContinuationViewTracksControlDependency(tw) {
 	}
 }
 
+function testObservationDriverIsIndependent(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		assert(f.timerCount() === 0);
+		assert(f.observationTimerCount() === 0);
+
+		f.adapter.command("automatic-start");
+		f.adapter.command("observation-start");
+		f.adapter.command("observation-start");
+
+		assert(f.timerCount() === 1);
+		assert(f.observationTimerCount() === 1);
+
+		f.adapter.command("automatic-stop");
+
+		assert(f.timerCount() === 0);
+		assert(f.observationTimerCount() === 1);
+
+		f.adapter.command("observation-stop");
+
+		assert(f.timerCount() === 0);
+		assert(f.observationTimerCount() === 0);
+
+		var state = f.record(f.adapter.automaticStateTitle);
+
+		assert(!state.enabled);
+		assert(!state.observationEnabled);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testObservationDriverDeliversChanges(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var target = "Automatic Observation Target";
+		var watcher = "$:/temp/clerus/jobs/" + f.platform +
+			"/automatic-observation-watcher";
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: target,
+			text: "initial"
+		}));
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: watcher,
+			type: "application/json",
+			"clerus-custody": f.platform,
+			"clerus-executor":
+				"$:/plugins/clerus/tests/observation-executor.js",
+			text: JSON.stringify({
+				charter: {
+					form: "charter",
+					status: { count: 0 }
+				},
+				document: target
+			})
+		}));
+
+		f.adapter.command("observation-start");
+
+		// Establish baseline on the first timer pass.
+		f.runObservationTimer();
+
+		assert(f.record(watcher).charter.status.count === 0);
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: target,
+			text: "changed"
+		}));
+
+		assert(f.record(watcher).charter.status.count === 0);
+
+		f.runObservationTimer();
+
+		assert(f.record(watcher).charter.status.count === 1);
+		assert(f.record(watcher).charter.status.text === "changed");
+		assert(f.timerCount() === 0);
+		assert(f.observationTimerCount() === 1);
+
+		var report = f.record(
+			f.adapter.reportTitle + "/commands/observe"
+		);
+
+		assert(report.origin === "automatic-observation");
+
+		f.adapter.command("observation-stop");
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: target,
+			text: "not automatically delivered"
+		}));
+
+		assert(f.observationTimerCount() === 0);
+		assert(f.record(watcher).charter.status.count === 1);
+
+		// Stopping the driver does not clear observation history.
+		f.adapter.command("observe");
+
+		assert(f.record(watcher).charter.status.count === 2);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2097,7 +2242,9 @@ exports.run = function (tw) {
 		["management: work preview recognizes an already applied transition", testWorkPreviewRecognizesAppliedTransition],
 		["management: work preview exposes conflict without changing data", testWorkPreviewReportsChangedTarget],
 		["management: continuation widget refreshes on work dependencies", testContinuationWidgetTracksWorkDependencies],
-		["management: continuation view tracks control dependencies", testContinuationViewTracksControlDependency]
+		["management: continuation view tracks control dependencies", testContinuationViewTracksControlDependency],
+		["management: observation driver is independent of deferred passes", testObservationDriverIsIndependent],
+		["management: observation driver delivers changes only on its passes", testObservationDriverDeliversChanges]
 	];
 
 	var results = cases.map(function (item) {

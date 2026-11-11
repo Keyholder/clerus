@@ -277,3 +277,40 @@ type: text/vnd.tiddlywiki
 <$clerus-retention/>
 
 </details>
+
+!! Автоматическое наблюдение
+
+Наблюдение доставляет уведомления локальным эфемерным должностям.
+Оно не запускает отложенные активации.
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="observation-start"
+/>
+Включить наблюдение
+</$button>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="observation-stop"
+/>
+Остановить наблюдение
+</$button>
+
+Состояние:
+<$text text={{{ [[$:/temp/clerus/management/browser/automatic]get[text]jsonget[observationEnabled]] }}}/>
+
+Первый проход устанавливает исходное состояние новых подписок.
+Промежуточные изменения между проходами могут схлопываться.
+
+<details>
+<summary>Последний проход наблюдения</summary>
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/observe}}
+  language="json"
+/>
+
+</details>

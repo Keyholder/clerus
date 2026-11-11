@@ -85,6 +85,42 @@ function create(options) {
 		throw new Error("Cleanup requires timer functions");
 	}
 
+	var setObservationTimer = options.setObservationTimer || function (
+		callback,
+		milliseconds
+	) {
+		return setTimeout(callback, milliseconds);
+	};
+
+	var clearObservationTimer =
+		options.clearObservationTimer || function (handle) {
+			clearTimeout(handle);
+		};
+
+	var observationDelay = options.observationDelay === undefined
+		? 1000
+		: options.observationDelay;
+
+	if (
+		!Number.isInteger(observationDelay) ||
+		observationDelay < 100 ||
+		observationDelay > 60000
+	) {
+		throw new Error(
+			"Observation delay must be between 100 and 60000 milliseconds"
+		);
+	}
+
+	if (
+		typeof setObservationTimer !== "function" ||
+		typeof clearObservationTimer !== "function"
+	) {
+		throw new Error("Observation requires timer functions");
+	}
+
+	var observationEnabled = false;
+	var observationTimer = null;
+
 	var automaticDelay = options.automaticDelay === undefined
 		? 1000
 		: options.automaticDelay;
@@ -464,11 +500,13 @@ function create(options) {
 	function automaticState() {
 		return {
 			enabled: automaticEnabled,
-			delay: automaticDelay
+			delay: automaticDelay,
+			observationEnabled: observationEnabled,
+			observationDelay: observationDelay
 		};
 	}
 
-	function stopAutomatic() {
+	function stopAutomatic(publishState) {
 		automaticEnabled = false;
 
 		if (automaticTimer !== null) {
@@ -476,7 +514,10 @@ function create(options) {
 			automaticTimer = null;
 		}
 
-		publishAutomaticState();
+		if (publishState !== false) {
+			publishAutomaticState();
+		}
+
 		return automaticState();
 	}
 
@@ -650,6 +691,74 @@ function create(options) {
 		};
 	}
 
+	function stopObservation(publishState) {
+		observationEnabled = false;
+
+		if (observationTimer !== null) {
+			clearObservationTimer(observationTimer);
+			observationTimer = null;
+		}
+
+		if (publishState !== false) {
+			publishAutomaticState();
+		}
+
+		return automaticState();
+	}
+
+	function scheduleObservation() {
+		if (
+			disposed ||
+			!observationEnabled ||
+			observationTimer !== null
+		) {
+			return;
+		}
+
+		observationTimer = setObservationTimer(function () {
+			observationTimer = null;
+
+			if (disposed || !observationEnabled) {
+				return;
+			}
+
+			if (busy) {
+				scheduleObservation();
+				return;
+			}
+
+			try {
+				command(
+					"observe",
+					undefined,
+					undefined,
+					"automatic-observation"
+				);
+			} catch (error) {
+				stopObservation();
+
+				publish(
+					"observation-stopped",
+					null,
+					error,
+					"automatic-observation"
+				);
+
+				return;
+			}
+
+			scheduleObservation();
+		}, observationDelay);
+	}
+
+	function startObservation() {
+		observationEnabled = true;
+		scheduleObservation();
+		publishAutomaticState();
+
+		return automaticState();
+	}
+
 	function command(name, title, eventId, origin) {
 		if (disposed) {
 			throw new Error("Clerus management adapter is disposed");
@@ -728,6 +837,14 @@ function create(options) {
 
 				case "collect":
 					result = runtime.collect();
+					break;
+
+				case "observation-start":
+					result = startObservation();
+					break;
+
+				case "observation-stop":
+					result = stopObservation();
 					break;
 
 				default:
@@ -933,11 +1050,9 @@ function create(options) {
 			wiki.removeEventListener("change", onChange);
 		}
 
-		/*
-		Cancels the activation timer before publishing the
-		disabled state. Reporting may fail independently.
-		*/
-		stopAutomatic();
+		stopAutomatic(false);
+		stopObservation(false);
+		publishAutomaticState();
 	}
 
 	return Object.freeze({
