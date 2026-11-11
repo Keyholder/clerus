@@ -1768,6 +1768,102 @@ function testProjectBranchFailureAndRepair(tw) {
 	}
 }
 
+function testContinuationCardsFollowRepairState(tw) {
+	var f = fixture(tw);
+	var continuationView = require(
+		"$:/plugins/clerus/core/continuation-view.js"
+	);
+
+	function card(title) {
+		var result = continuationView.read({
+			wiki: f.wiki,
+			platform: f.platform
+		}).find(function (entry) {
+			return entry.title === title;
+		});
+
+		assert(result, "Missing continuation card");
+		return result;
+	}
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+		var prepared = card(demo.journal);
+
+		assert(prepared.state === "work");
+		assert(prepared.actions.release);
+		assert(!prepared.actions.hold);
+		assert(prepared.events.length === 0);
+
+		var paused = pausedActivation(f, tw);
+		var before = f.wiki.getTiddlerText(paused.journal);
+		var item = card(paused.journal);
+
+		assert(item.state === "paused");
+		assert(item.events.length === 1);
+		assert(item.events[0].id === paused.id);
+		assert(item.events[0].retry);
+		assert(item.actions.release);
+
+		// Reading the view has no authoritative effects.
+		assert(f.wiki.getTiddlerText(paused.journal) === before);
+
+		f.adapter.command("retry", paused.journal, paused.id);
+
+		item = card(paused.journal);
+
+		assert(item.state === "ready");
+		assert(item.events[0].mode === "ready");
+		assert(!item.events[0].retry);
+		assert(item.actions.release);
+
+		f.adapter.command("release", paused.journal);
+
+		item = card(paused.journal);
+
+		assert(item.state === "ready");
+		assert(item.actions.hold);
+		assert(!item.actions.release);
+		assert(!item.events[0].retry);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testInvalidContinuationCardCannotRelease(tw) {
+	var f = fixture(tw);
+	var continuationView = require(
+		"$:/plugins/clerus/core/continuation-view.js"
+	);
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(demo.journal),
+			{ text: "{broken" }
+		));
+
+		var item = continuationView.read({
+			wiki: f.wiki,
+			platform: f.platform
+		}).find(function (entry) {
+			return entry.title === demo.journal;
+		});
+
+		assert(item.state === "invalid");
+		assert(item.error);
+		assert(!item.actions.release);
+		assert(item.record === null);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1799,7 +1895,9 @@ exports.run = function (tw) {
 		["management: collection removes released workers and preserves project results", testClosedProjectWorkersCanBeCollected],
 		["management: automatic pass preserves manual inspection", testAutomaticPassPreservesManualInspection],
 		["management: background service preserves manual report", testBackgroundServicePreservesManualReport],
-		["management: failed project branch is repaired without replaying successful branches", testProjectBranchFailureAndRepair]
+		["management: failed project branch is repaired without replaying successful branches", testProjectBranchFailureAndRepair],
+		["management: continuation cards follow event repair state", testContinuationCardsFollowRepairState],
+		["management: invalid continuation card does not offer release", testInvalidContinuationCardCannotRelease]
 	];
 
 	var results = cases.map(function (item) {

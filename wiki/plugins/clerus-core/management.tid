@@ -62,73 +62,16 @@ type: text/vnd.tiddlywiki
 
 После передачи журнала браузеру должность учреждается, но первая активация ждёт отдельного отложенного прохода. Для завершения примера нужны три прохода.
 
-!! Продолжения браузера
+!! Продолжения текущей платформы
 
-<$list filter="[all[tiddlers]prefix[$:/clerus/wal/browser/]field:clerus-wal-kind[continuation]sort[title]]">
+<$clerus-continuations/>
 
-<div class="tc-message-box">
+Подготовка повтора меняет только режим события с paused на ready.
+Журнал остаётся под опекой пользователя: передача рантайму выполняется отдельно.
 
-<$link><$view field="title"/></$link>
+Повтор эфемерной реакции может повторить уже состоявшиеся эффекты.
 
-Распорядитель: <$view field="clerus-custody"/>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="release"
-  title=<<currentTiddler>>
-/>
-Передать браузеру
-</$button>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="hold"
-  title=<<currentTiddler>>
-/>
-Взять под опеку
-</$button>
-
-<$let journalTitle=<<currentTiddler>>>
-
-Ожидающие события:
-
-<$list filter="[<journalTitle>get[text]jsonindexes[events]]">
-
-<div>
-
-Идентичность: <$text text=<<currentTiddler>>/>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="retry"
-  title=<<journalTitle>>
-  eventId=<<currentTiddler>>
-/>
-Подготовить повтор приостановленного события
-</$button>
-
-</div>
-
-</$list>
-
-</$let>
-
-</div>
-
-</$list>
-
-Передача журнала пользователю не отменяет обязательств и удержаний. Передача браузеру не переводит приостановленные события в готовые.
-
-Подготовка повтора меняет только режим выбранного события с paused на ready.
-Его идентичность, документы и диагностика сохраняются.
-После подготовки журнал остаётся под опекой пользователя.
-Для исполнения отдельно передайте его браузеру.
-
-Повтор эфемерной реакции может повторить уже состоявшиеся эффекты:
-останов до квитирования не доказывает, что реакция ничего не сделала.
+Передача журнала пользователю не отменяет обязательств и удержаний.
 
 !! Последняя ручная команда
 
