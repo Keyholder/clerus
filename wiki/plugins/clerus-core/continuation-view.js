@@ -95,7 +95,8 @@ exports.read = function (options) {
 				release: false,
 				hold: custody === options.platform
 			},
-			workPreview: null
+			workPreview: null,
+			dependencies: []
 		};
 
 		try {
@@ -116,7 +117,21 @@ exports.read = function (options) {
 		}
 
 		var record = item.record;
+
+		if (record.work !== null) {
+			item.dependencies = Array.from(new Set(
+				record.work.checks.map(function (condition) {
+					return condition.title;
+				}).concat(
+					record.work.transitions.map(function (effect) {
+						return effect.title;
+					})
+				)
+			)).sort();
+		}
+
 		item.workPreview = previewWork(record.work);
+
 		var ids = Object.keys(record.events).sort();
 
 		item.actions.release = custody === "user";

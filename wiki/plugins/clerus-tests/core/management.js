@@ -1968,6 +1968,98 @@ function testWorkPreviewReportsChangedTarget(tw) {
 	}
 }
 
+function testContinuationWidgetTracksWorkDependencies(tw) {
+	var f = fixture(tw);
+	var views = require(
+		"$:/plugins/clerus/core/continuation-view.js"
+	);
+	var Widget = require(
+		"$:/plugins/clerus/core/widgets/continuations.js"
+	)["clerus-continuations"];
+
+	try {
+		f.adapter.start();
+
+		var project = f.adapter.command("project-demo");
+
+		var card = views.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		}).find(function (entry) {
+			return entry.title === project.journal;
+		});
+
+		// This target is an ordinary project tiddler, not a WAL.
+		assert(card.dependencies.indexOf(project.project) !== -1);
+
+		var refreshed = 0;
+		var childrenRefreshed = 0;
+
+		var receiver = {
+			prefix: "$:/clerus/wal/" + f.platform + "/",
+			dependencies: new Set(card.dependencies),
+
+			refreshSelf: function () {
+				refreshed++;
+			},
+
+			refreshChildren: function () {
+				childrenRefreshed++;
+				return false;
+			}
+		};
+
+		var changes = Object.create(null);
+		changes[project.project] = { modified: true };
+
+		assert(Widget.prototype.refresh.call(receiver, changes));
+		assert(refreshed === 1);
+		assert(childrenRefreshed === 0);
+
+		changes = {
+			"Unrelated ordinary tiddler": { modified: true }
+		};
+
+		assert(!Widget.prototype.refresh.call(receiver, changes));
+		assert(refreshed === 1);
+		assert(childrenRefreshed === 1);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testContinuationViewTracksControlDependency(tw) {
+	var f = fixture(tw);
+	var views = require(
+		"$:/plugins/clerus/core/continuation-view.js"
+	);
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var resources = f.adapter.command(
+			"project-resources",
+			project.root
+		);
+
+		var card = views.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		}).find(function (entry) {
+			return entry.title === resources.journal;
+		});
+
+		assert(card.record.work.transitions.length === 0);
+		assert(card.record.work.checks.length === 1);
+		assert(card.dependencies.indexOf(project.root) !== -1);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2003,7 +2095,9 @@ exports.run = function (tw) {
 		["management: continuation cards follow event repair state", testContinuationCardsFollowRepairState],
 		["management: invalid continuation card does not offer release", testInvalidContinuationCardCannotRelease],
 		["management: work preview recognizes an already applied transition", testWorkPreviewRecognizesAppliedTransition],
-		["management: work preview exposes conflict without changing data", testWorkPreviewReportsChangedTarget]
+		["management: work preview exposes conflict without changing data", testWorkPreviewReportsChangedTarget],
+		["management: continuation widget refreshes on work dependencies", testContinuationWidgetTracksWorkDependencies],
+		["management: continuation view tracks control dependencies", testContinuationViewTracksControlDependency]
 	];
 
 	var results = cases.map(function (item) {

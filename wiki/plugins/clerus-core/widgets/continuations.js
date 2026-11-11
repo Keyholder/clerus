@@ -272,6 +272,7 @@ ContinuationsWidget.prototype = new Widget();
 ContinuationsWidget.prototype.execute = function () {
 	this.platform = $tw.browser ? "browser" : "node";
 	this.prefix = "$:/clerus/wal/" + this.platform + "/";
+	this.dependencies = new Set();
 
 	var content;
 
@@ -281,6 +282,12 @@ ContinuationsWidget.prototype.execute = function () {
 			platform: this.platform,
 			Tiddler: $tw.Tiddler
 		});
+
+		items.forEach(function (item) {
+			item.dependencies.forEach(function (title) {
+				this.dependencies.add(title);
+			}, this);
+		}, this);
 
 		content = items.length === 0
 			? [text("Нет локальных продолжений.")]
@@ -305,7 +312,8 @@ ContinuationsWidget.prototype.render = function (parent, nextSibling) {
 
 ContinuationsWidget.prototype.refresh = function (changedTiddlers) {
 	var relevant = Object.keys(changedTiddlers).some(function (title) {
-		return title.indexOf(this.prefix) === 0;
+		return title.indexOf(this.prefix) === 0 ||
+			this.dependencies.has(title);
 	}, this);
 
 	if (relevant) {
