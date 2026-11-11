@@ -91,9 +91,19 @@ function create(options) {
 	var automaticEnabled = false;
 	var automaticTimer = null;
 	var prefix = "$:/clerus/wal/" + platform + "/";
-	var reportTitle = "$:/temp/clerus/management/" + platform;
-	var manualReportTitle = reportTitle + "/manual";
-	var automaticStateTitle = reportTitle + "/automatic";
+
+	var reports = require(
+		"$:/plugins/clerus/core/management-reports.js"
+	).create({
+		wiki: wiki,
+		Tiddler: tw.Tiddler,
+		platform: platform,
+		now: clock,
+		automaticState: automaticState
+	});
+
+	var publish = reports.publish;
+	var publishAutomaticState = reports.publishAutomaticState;
 	var busy = false;
 	var scheduled = false;
 	var started = false;
@@ -144,6 +154,26 @@ function create(options) {
 		})
 		: null;
 
+	var workPublisher = require(
+		"$:/plugins/clerus/core/management-work.js"
+	).create({
+		wiki: wiki,
+		Tiddler: tw.Tiddler,
+		platform: platform,
+		now: clock,
+		prototypeWalReceipts: prototypeWalReceipts
+	});
+
+	var projectDemo = require(
+		"$:/plugins/clerus/core/project-demo-management.js"
+	).create({
+		wiki: wiki,
+		Tiddler: tw.Tiddler,
+		platform: platform,
+		newId: newId,
+		publisher: workPublisher
+	});
+
 	function walSignature() {
 		var values = [];
 
@@ -166,65 +196,6 @@ function create(options) {
 		});
 
 		return JSON.stringify(values);
-	}
-
-	function publish(command, result, error, origin) {
-		var source = origin || "manual";
-
-		var report = {
-			platform: platform,
-			command: command,
-			origin: source,
-			time: clock(),
-			automatic: automaticState(),
-			result: result === undefined ? null : result,
-			error: error ? String(error.stack || error) : null
-		};
-
-		var serialized = JSON.stringify(report, null, 2);
-
-		function write(title) {
-			wiki.addTiddler(new tw.Tiddler({
-				title: title,
-				type: "application/json",
-				text: serialized
-			}));
-		}
-
-		// Compatibility: latest result from any source.
-		write(reportTitle);
-
-		// A background tick cannot overwrite an inspection report.
-		write(
-			reportTitle + "/commands/" +
-			encodeURIComponent(String(command))
-		);
-
-		if (source === "manual") {
-			write(manualReportTitle);
-		}
-
-		publishAutomaticState();
-	}
-
-	function publishAutomaticState() {
-		var serialized = JSON.stringify(automaticState());
-		var current = wiki.getTiddler(automaticStateTitle);
-
-		// Avoid a change notification on every unchanged timer pass.
-		if (
-			current &&
-			current.fields.type === "application/json" &&
-			current.fields.text === serialized
-		) {
-			return;
-		}
-
-		wiki.addTiddler(new tw.Tiddler({
-			title: automaticStateTitle,
-			type: "application/json",
-			text: serialized
-		}));
 	}
 
 	function service() {
@@ -648,39 +619,7 @@ function create(options) {
 			emits: []
 		};
 
-		record = continuations.validate(
-			record,
-			platform,
-			journal
-		);
-
-		/*
-		Preparation is not acceptance by the runtime, but reject
-		currently visible conflicts before publishing the draft.
-		Execution will check applicability again.
-		*/
-		require(
-			"$:/plugins/clerus/core/work-compatibility.js"
-		).check({
-			store: store,
-			work: record.work
-		});
-
-		require(
-			"$:/plugins/clerus/core/work-materializer.js"
-		).check({
-			store: store,
-			platform: platform,
-			work: record.work
-		});
-
-		store.apply(stores.transition(journal, null, {
-			title: journal,
-			type: "application/json",
-			"clerus-custody": "user",
-			"clerus-wal-kind": "continuation",
-			text: JSON.stringify(record, null, 2)
-		}));
+		workPublisher.publishRecord(record, journal);
 
 		return {
 			journal: journal,
@@ -690,301 +629,6 @@ function create(options) {
 			retainUntil: record.retainUntil === undefined
 				? null
 				: record.retainUntil
-		};
-	}
-
-	function publishProjectDemoWork(work, journal) {
-		var record = {
-			version: 2,
-			kind: "continuation",
-			platform: platform,
-			work: work,
-			events: {},
-			evidence: {
-				identities: {},
-				receipts: {}
-			},
-			diagnostics: []
-		};
-
-		if (prototypeWalReceipts) {
-			record.retainUntil = clock() + 150000;
-		}
-
-		record = continuations.validate(
-			record,
-			platform,
-			journal
-		);
-
-		var store = new stores.Store({
-			wiki: wiki,
-			Tiddler: tw.Tiddler
-		});
-
-		require(
-			"$:/plugins/clerus/core/work-compatibility.js"
-		).check({
-			store: store,
-			work: record.work
-		});
-
-		require(
-			"$:/plugins/clerus/core/work-materializer.js"
-		).check({
-			store: store,
-			platform: platform,
-			work: record.work
-		});
-
-		store.apply(stores.transition(journal, null, {
-			title: journal,
-			type: "application/json",
-			"clerus-custody": "user",
-			"clerus-wal-kind": "continuation",
-			text: JSON.stringify(record, null, 2)
-		}));
-	}
-
-	function prepareProjectDemo() {
-		var executor = "$:/plugins/clerus/core/project-demo-executor.js";
-		var project = "Clerus Demo Project " + newId();
-		var root = "$:/clerus/jobs/project-demo-root-" + newId();
-		var journal = prefix + "project-demo-" + newId();
-
-		var projectFields = {
-			title: project,
-			type: "application/json",
-			"clerus-custody": platform,
-			text: JSON.stringify({
-				task: { purpose: "Compute three squares" },
-				parts: {
-					first: {
-						task: { value: 2 },
-						parts: {}
-					},
-					second: {
-						task: { value: 3 },
-						parts: {}
-					},
-					third: {
-						task: { value: 5 },
-						parts: {}
-					}
-				}
-			}, null, 2)
-		};
-
-		if (
-			wiki.tiddlerExists(root) ||
-			wiki.isShadowTiddler(root)
-		) {
-			throw new Error("Generated root title is occupied");
-		}
-
-		publishProjectDemoWork({
-			version: 2,
-			id: newId(),
-			checks: [],
-			transitions: [
-				stores.transition(project, null, projectFields)
-			],
-			blocks: [],
-			emits: [{
-				id: newId(),
-				event: {
-					kind: "delivery",
-					type: "order",
-					establishing: true,
-					recipient: {
-						title: root,
-						executor: executor
-					},
-					registry: {
-						contract: {
-							form: "contract",
-							executor: executor,
-							temp: false,
-							book: {
-								kind: "project-demo-root",
-								project: project
-							}
-						},
-						assignment: {
-							form: "mission",
-							project: project,
-							role: [],
-							link: "1",
-							issued: "0",
-							children: {}
-						}
-					}
-				}
-			}]
-		}, journal);
-
-		return {
-			project: project,
-			root: root,
-			journal: journal
-		};
-	}
-
-	function prepareProjectResources(title) {
-		var executor = "$:/plugins/clerus/core/project-demo-executor.js";
-		var store = new stores.Store({
-			wiki: wiki,
-			Tiddler: tw.Tiddler
-		});
-
-		var current = store.read(title);
-
-		if (
-			current.kind !== "materialized" ||
-			title.indexOf("$:/clerus/jobs/project-demo-root-") !== 0 ||
-			current.fields["clerus-executor"] !== executor
-		) {
-			throw new Error("Select a project demo root");
-		}
-
-		var registry = JSON.parse(current.fields.text);
-
-		if (
-			!registry.charter ||
-			!registry.charter.book ||
-			registry.charter.book.kind !== "project-demo-root" ||
-			!registry.charter.status ||
-			registry.charter.status.phase !== "awaiting-resources"
-		) {
-			throw new Error("Project is not awaiting resources");
-		}
-
-		var custody = require(
-			"$:/plugins/clerus/core/local-custody.js"
-		).create({
-			store: store,
-			platform: platform
-		});
-
-		if (!custody.owns(current.fields)) {
-			throw new Error("Project root is not locally owned");
-		}
-
-		var contracts = {};
-
-		["first", "second", "third"].forEach(function (segment) {
-			contracts["contract-" + segment] = {
-				form: "contract",
-				executor: executor,
-				temp: false,
-				book: { kind: "project-demo-worker" }
-			};
-		});
-
-		var journal = prefix + "project-resources-" + newId();
-
-		publishProjectDemoWork({
-			version: 2,
-			id: newId(),
-			checks: [{
-				title: title,
-				state: current.fields
-			}],
-			transitions: [],
-			blocks: [],
-			emits: [{
-				id: newId(),
-				event: {
-					kind: "delivery",
-					type: "order",
-					recipient: {
-						title: title,
-						executor: executor
-					},
-					registry: contracts
-				}
-			}]
-		}, journal);
-
-		return {
-			root: title,
-			journal: journal
-		};
-	}
-
-	function prepareProjectClose(title) {
-		var executor = "$:/plugins/clerus/core/project-demo-executor.js";
-		var store = new stores.Store({
-			wiki: wiki,
-			Tiddler: tw.Tiddler
-		});
-
-		var current = store.read(title);
-
-		if (
-			current.kind !== "materialized" ||
-			title.indexOf("$:/clerus/jobs/project-demo-root-") !== 0 ||
-			current.fields["clerus-executor"] !== executor
-		) {
-			throw new Error("Select a project demo root");
-		}
-
-		var registry = JSON.parse(current.fields.text);
-
-		if (
-			!registry.charter ||
-			!registry.charter.book ||
-			registry.charter.book.kind !== "project-demo-root" ||
-			!registry.charter.status ||
-			registry.charter.status.phase !== "completed"
-		) {
-			throw new Error("Only a completed project can be closed");
-		}
-
-		var custody = require(
-			"$:/plugins/clerus/core/local-custody.js"
-		).create({
-			store: store,
-			platform: platform
-		});
-
-		if (!custody.owns(current.fields)) {
-			throw new Error("Project root is not locally owned");
-		}
-
-		var journal = prefix + "project-close-" + newId();
-
-		publishProjectDemoWork({
-			version: 2,
-			id: newId(),
-			checks: [{
-				title: title,
-				state: current.fields
-			}],
-			transitions: [],
-			blocks: [],
-			emits: [{
-				id: newId(),
-				event: {
-					kind: "delivery",
-					type: "order",
-					recipient: {
-						title: title,
-						executor: executor
-					},
-					registry: {
-						control: {
-							form: "memo",
-							data: { command: "close" }
-						}
-					}
-				}
-			}]
-		}, journal);
-
-		return {
-			root: title,
-			journal: journal
 		};
 	}
 
@@ -1053,15 +697,15 @@ function create(options) {
 					break;
 
 				case "project-demo":
-					result = prepareProjectDemo();
+					result = projectDemo.prepare();
 					break;
 
 				case "project-resources":
-					result = prepareProjectResources(title);
+					result = projectDemo.resources(title);
 					break;
 
 				case "project-close":
-					result = prepareProjectClose(title);
+					result = projectDemo.close(title);
 					break;
 
 				case "collect":
@@ -1266,9 +910,9 @@ function create(options) {
 
 	return Object.freeze({
 		platform: platform,
-		reportTitle: reportTitle,
-		manualReportTitle: manualReportTitle,
-		automaticStateTitle: automaticStateTitle,
+		reportTitle: reports.reportTitle,
+		manualReportTitle: reports.manualReportTitle,
+		automaticStateTitle: reports.automaticStateTitle,
 		command: command,
 		start: start,
 		dispose: dispose
