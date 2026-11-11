@@ -10,9 +10,66 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var continuations = require(
 	"$:/plugins/clerus/core/continuation-schema.js"
 );
+var Store = require("$:/plugins/clerus/core/store.js").Store;
+var materializer = require(
+	"$:/plugins/clerus/core/work-materializer.js"
+);
 
 exports.read = function (options) {
 	schemas.assertPlatform(options.platform);
+
+	var store = new Store({
+		wiki: options.wiki,
+		Tiddler: options.Tiddler
+	});
+
+	function previewWork(work) {
+		if (work === null) {
+			return null;
+		}
+
+		var preview = {
+			applicable: false,
+			error: null,
+			checks: work.checks.length,
+			transitions: []
+		};
+
+		try {
+			materializer.check({
+				store: store,
+				platform: options.platform,
+				work: work
+			});
+
+			preview.applicable = true;
+		} catch (error) {
+			preview.error = String(error.message);
+		}
+
+		/*
+		Check individual transitions even if the package failed.
+		This helps distinguish a failed control dependency from
+		a conflicting material target.
+		*/
+		preview.transitions = work.transitions.map(function (effect) {
+			try {
+				return {
+					title: effect.title,
+					status: store.check(effect),
+					error: null
+				};
+			} catch (error) {
+				return {
+					title: effect.title,
+					status: "check-failed",
+					error: String(error.message)
+				};
+			}
+		});
+
+		return preview;
+	}
 
 	var prefix = "$:/clerus/wal/" + options.platform + "/";
 	var result = [];
@@ -37,7 +94,8 @@ exports.read = function (options) {
 			actions: {
 				release: false,
 				hold: custody === options.platform
-			}
+			},
+			workPreview: null
 		};
 
 		try {
@@ -58,6 +116,7 @@ exports.read = function (options) {
 		}
 
 		var record = item.record;
+		item.workPreview = previewWork(record.work);
 		var ids = Object.keys(record.events).sort();
 
 		item.actions.release = custody === "user";

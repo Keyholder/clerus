@@ -136,6 +136,55 @@ function eventCard(journal, entry) {
 	return element("li", content);
 }
 
+function workPreview(preview) {
+	var labels = {
+		ready: "Ожидает применения",
+		"already-applied": "Уже применён",
+		"check-failed": "Проверка не прошла"
+	};
+
+	var content = [
+		element("div", [
+			text(preview.applicable
+				? "Материальные проверки пакета сейчас проходят."
+				: "Материальные проверки пакета сейчас не проходят.")
+		]),
+		element("div", [
+			text("Контрольных снимков: " + preview.checks)
+		])
+	];
+
+	if (preview.error) {
+		content.push(element("div", [
+			text(preview.error)
+		]));
+	}
+
+	content.push(element("ul", preview.transitions.map(function (entry) {
+		var row = [
+			link(entry.title),
+			text(" — " + labels[entry.status])
+		];
+
+		if (entry.error) {
+			row.push(element("div", [
+				text(entry.error)
+			]));
+		}
+
+		return element("li", row);
+	})));
+
+	content.push(element("div", [
+		text(
+			"Предварительная проверка не блокирует изменения данных " +
+			"и не заменяет проверки рантайма при исполнении."
+		)
+	]));
+
+	return details("Проверка материализации", content);
+}
+
 function journalCard(item, platform) {
 	var content = [
 		element("div", [link(item.title)]),
@@ -191,6 +240,8 @@ function journalCard(item, platform) {
 			)
 		]));
 
+		content.push(workPreview(item.workPreview));
+
 		content.push(details("Принятая работа", [
 			json(record.work)
 		]));
@@ -227,7 +278,8 @@ ContinuationsWidget.prototype.execute = function () {
 	try {
 		var items = view.read({
 			wiki: this.wiki,
-			platform: this.platform
+			platform: this.platform,
+			Tiddler: $tw.Tiddler
 		});
 
 		content = items.length === 0

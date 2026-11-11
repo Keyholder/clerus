@@ -1864,6 +1864,110 @@ function testInvalidContinuationCardCannotRelease(tw) {
 	}
 }
 
+function testWorkPreviewRecognizesAppliedTransition(tw) {
+	var f = fixture(tw);
+	var views = require(
+		"$:/plugins/clerus/core/continuation-view.js"
+	);
+
+	function card(title) {
+		return views.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		}).find(function (entry) {
+			return entry.title === title;
+		});
+	}
+
+	try {
+		f.adapter.start();
+
+		var project = f.adapter.command("project-demo");
+		var before = card(project.journal);
+
+		assert(before.workPreview.applicable);
+		assert(before.workPreview.transitions.length === 1);
+		assert(
+			before.workPreview.transitions[0].status === "ready"
+		);
+
+		var journalText = f.wiki.getTiddlerText(project.journal);
+		var effect = before.record.work.transitions[0];
+
+		/*
+		Model an interruption after the material target was written,
+		but before the accepted work was removed from WAL.
+		*/
+		f.wiki.addTiddler(new tw.Tiddler(effect.after));
+
+		var after = card(project.journal);
+
+		assert(after.workPreview.applicable);
+		assert(
+			after.workPreview.transitions[0].status ===
+				"already-applied"
+		);
+
+		// Preview itself must not advance the continuation.
+		assert(
+			f.wiki.getTiddlerText(project.journal) === journalText
+		);
+		assert(!f.wiki.tiddlerExists(project.root));
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testWorkPreviewReportsChangedTarget(tw) {
+	var f = fixture(tw);
+	var views = require(
+		"$:/plugins/clerus/core/continuation-view.js"
+	);
+
+	try {
+		f.adapter.start();
+
+		var demo = completedDemo(f);
+		var move = f.adapter.command("prepare-move", demo.job);
+		var journalBefore = f.wiki.getTiddlerText(move.journal);
+
+		var registry = f.record(demo.job);
+		registry.charter.status.note = "Changed after preparation";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(demo.job),
+			{ text: JSON.stringify(registry) }
+		));
+
+		var jobBefore = f.wiki.getTiddlerText(demo.job);
+
+		var card = views.read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		}).find(function (entry) {
+			return entry.title === move.journal;
+		});
+
+		assert(card.state === "work");
+		assert(card.error === null);
+		assert(!card.workPreview.applicable);
+		assert(card.workPreview.error);
+		assert(
+			card.workPreview.transitions[0].status === "check-failed"
+		);
+
+		// A valid continuation with an inapplicable work is not malformed.
+		assert(card.record !== null);
+
+		assert(f.wiki.getTiddlerText(move.journal) === journalBefore);
+		assert(f.wiki.getTiddlerText(demo.job) === jobBefore);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1897,7 +2001,9 @@ exports.run = function (tw) {
 		["management: background service preserves manual report", testBackgroundServicePreservesManualReport],
 		["management: failed project branch is repaired without replaying successful branches", testProjectBranchFailureAndRepair],
 		["management: continuation cards follow event repair state", testContinuationCardsFollowRepairState],
-		["management: invalid continuation card does not offer release", testInvalidContinuationCardCannotRelease]
+		["management: invalid continuation card does not offer release", testInvalidContinuationCardCannotRelease],
+		["management: work preview recognizes an already applied transition", testWorkPreviewRecognizesAppliedTransition],
+		["management: work preview exposes conflict without changing data", testWorkPreviewReportsChangedTarget]
 	];
 
 	var results = cases.map(function (item) {
