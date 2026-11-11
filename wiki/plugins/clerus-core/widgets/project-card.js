@@ -8,88 +8,16 @@ module-type: widget
 
 var Widget = require("$:/core/modules/widgets/widget.js").widget;
 var cards = require("$:/plugins/clerus/core/project-card.js");
+var tree = require("$:/plugins/clerus/core/presentation-tree.js");
 
-function text(value) {
-	return {
-		type: "text",
-		text: String(value)
-	};
-}
-
-function element(tag, children, className) {
-	var result = {
-		type: "element",
-		tag: tag,
-		children: children || [],
-		attributes: {}
-	};
-
-	if (className) {
-		result.attributes["class"] = {
-			type: "string",
-			value: className
-		};
-	}
-
-	return result;
-}
-
-function link(title) {
-	return {
-		type: "link",
-		attributes: {
-			to: { type: "string", value: title }
-		},
-		children: [text(title)]
-	};
-}
+var text = tree.text;
+var element = tree.element;
+var link = tree.link;
+var details = tree.details;
+var commandButton = tree.commandButton;
 
 function json(value) {
-	var serialized = JSON.stringify(value, null, 2);
-
-	if (serialized === undefined) {
-		serialized = "undefined";
-	}
-
-	if (serialized.length > 4000) {
-		serialized = serialized.slice(0, 4000) + "\n…";
-	}
-
-	return element("pre", [text(serialized)]);
-}
-
-function details(caption, content) {
-	return element("details", [
-		element("summary", [text(caption)])
-	].concat(content));
-}
-
-function commandButton(caption, command, title) {
-	return {
-		type: "button",
-		attributes: {},
-		children: [
-			{
-				type: "action-sendmessage",
-				attributes: {
-					"$message": {
-						type: "string",
-						value: "tm-clerus"
-					},
-					command: {
-						type: "string",
-						value: command
-					},
-					title: {
-						type: "string",
-						value: title
-					}
-				},
-				children: []
-			},
-			text(caption)
-		]
-	};
+	return tree.json(value, 4000);
 }
 
 function holder(view) {

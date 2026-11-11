@@ -8,35 +8,12 @@ module-type: widget
 
 var Widget = require("$:/core/modules/widgets/widget.js").widget;
 var view = require("$:/plugins/clerus/core/retention-view.js");
+var tree = require("$:/plugins/clerus/core/presentation-tree.js");
 
-function text(value) {
-	return { type: "text", text: String(value) };
-}
-
-function element(tag, children) {
-	return {
-		type: "element",
-		tag: tag,
-		attributes: {},
-		children: children || []
-	};
-}
-
-function link(title) {
-	return {
-		type: "link",
-		attributes: {
-			to: { type: "string", value: title }
-		},
-		children: [text(title)]
-	};
-}
-
-function details(caption, content) {
-	return element("details", [
-		element("summary", [text(caption)])
-	].concat(content));
-}
+var text = tree.text;
+var element = tree.element;
+var link = tree.link;
+var details = tree.details;
 
 var LABELS = {
 	"active-mission": "Актуальное назначение",

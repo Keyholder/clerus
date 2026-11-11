@@ -115,7 +115,8 @@ var SUITES = Object.freeze([
 	"management",
 	"management-integration",
 	"prototype-wal-receipts",
-	"management-retention"
+	"management-retention",
+	"presentation-tree"
 ]);
 
 function describe(error) {
