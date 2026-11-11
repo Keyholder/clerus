@@ -52,6 +52,14 @@ type: text/vnd.tiddlywiki
 Прототипные свидетельства переезда
 </$button>
 
+<$button>
+<$action-sendmessage
+  $message="tm-clerus-tests"
+  suite="management-retention"
+/>
+Управление с задержанными WAL
+</$button>
+
 <$codeblock
   code={{$:/temp/clerus/tests/report}}
   language="json"

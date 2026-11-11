@@ -46,6 +46,15 @@ function create(options) {
 	var wiki = options.wiki;
 	var platform = options.platform;
 	var newId = options.newId || identitySource(tw);
+
+	var clock = options.now === undefined
+		? Date.now
+		: options.now;
+
+	if (typeof clock !== "function") {
+		throw new Error("Management clock must be a function");
+	}
+
 	var schedule = options.schedule || function (callback) {
 		return setTimeout(callback, 0);
 	};
@@ -117,7 +126,7 @@ function create(options) {
 		continuationRetention: prototypeWalReceipts
 			? {
 				delay: 150000,
-				now: Date.now
+				now: clock
 			}
 			: undefined
 	});
@@ -128,7 +137,8 @@ function create(options) {
 		).create({
 			wiki: wiki,
 			platform: platform,
-			recordWalDeletion: runtime.recordWalDeletion
+			recordWalDeletion: runtime.recordWalDeletion,
+			now: clock
 		})
 		: null;
 
@@ -235,7 +245,7 @@ function create(options) {
 		};
 
 		if (prototypeWalReceipts) {
-			initial.retainUntil = Date.now() + 150000;
+			initial.retainUntil = clock() + 150000;
 		}
 
 		var record = continuations.validate(
@@ -559,7 +569,7 @@ function create(options) {
 		};
 
 		if (prototypeWalReceipts) {
-			record.retainUntil = Date.now() + 150000;
+			record.retainUntil = clock() + 150000;
 			marker.retainUntil = record.retainUntil;
 		}
 
@@ -639,7 +649,7 @@ function create(options) {
 		};
 
 		if (prototypeWalReceipts) {
-			record.retainUntil = Date.now() + 150000;
+			record.retainUntil = clock() + 150000;
 		}
 
 		record = continuations.validate(
@@ -1067,7 +1077,7 @@ function create(options) {
 
 	function hasExpiredWal() {
 		var expired = false;
-		var now = Date.now();
+		var timestamp = clock();
 
 		wiki.each(function (tiddler, title) {
 			if (
@@ -1089,7 +1099,7 @@ function create(options) {
 					record.work === null &&
 					Object.keys(record.events).length === 0 &&
 					record.retainUntil !== undefined &&
-					record.retainUntil <= now
+					record.retainUntil <= timestamp
 				) {
 					expired = true;
 				}
