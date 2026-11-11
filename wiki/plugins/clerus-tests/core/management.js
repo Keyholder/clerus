@@ -1591,6 +1591,184 @@ function testBackgroundServicePreservesManualReport(tw) {
 	}
 }
 
+function testProjectBranchFailureAndRepair(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var project = establishProjectDemo(f);
+		var organization = organizeProjectDemo(f, project);
+		var root = f.record(project.root);
+		var failedWorker = root["worker-first"];
+
+		/*
+		The project remains valid JSON, but the first worker
+		cannot interpret its task configuration.
+		*/
+		var tree = f.record(project.project);
+		tree.parts.first.task.value = "broken";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(project.project),
+			{ text: JSON.stringify(tree) }
+		));
+
+		f.adapter.command("deferred");
+
+		/*
+		Independent branches must complete even though one worker
+		failed and its event remains an obligation.
+		*/
+		root = f.record(project.root);
+
+		assert(root.charter.status.phase === "running");
+		assert(
+			Object.keys(root.charter.status.results)
+				.sort().join(",") === "second,third"
+		);
+		assert(root.charter.status.results.second.output === 9);
+		assert(root.charter.status.results.third.output === 25);
+
+		var failed = f.wiki.getTiddler(failedWorker);
+
+		assert(failed.fields["clerus-custody"] === "user");
+		assert(failed.fields["clerus-suspended"] === "yes");
+		assert(
+			f.record(failedWorker).charter.status.phase === "waiting"
+		);
+
+		["second", "third"].forEach(function (segment) {
+			assert(
+				f.record(root["worker-" + segment])
+					.charter.status.phase === "completed"
+			);
+		});
+
+		var journal = f.record(organization.journal);
+		var ids = Object.keys(journal.events);
+
+		assert(journal.work === null);
+		assert(ids.length === 1);
+
+		var eventId = ids[0];
+		var waiting = journal.events[eventId];
+
+		assert(waiting.mode === "paused");
+		assert(waiting.event.kind === "activation");
+		assert(waiting.event.recipient.title === failedWorker);
+
+		var eventBefore = JSON.stringify(waiting.event);
+		var identityBefore = journal.evidence.identities[eventId];
+
+		assert(journal.diagnostics.some(function (entry) {
+			return entry.event === eventId;
+		}));
+
+		// Neither project closure nor collection may discard the branch.
+		throws(function () {
+			f.adapter.command("project-close", project.root);
+		}, "Only a completed project");
+
+		var collected = f.adapter.command("collect");
+
+		assert(collected.blocked.length === 0);
+		assert(collected.removed.length === 0);
+
+		/*
+		Explicitly take the remaining obligation under user custody.
+		Repair does not depend on which ready branch ran last.
+		*/
+		f.adapter.command("hold", organization.journal);
+
+		// Repair the task, not the accepted event or its identity.
+		tree = f.record(project.project);
+		tree.parts.first.task.value = 2;
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(project.project),
+			{ text: JSON.stringify(tree) }
+		));
+
+		f.adapter.command("resume", failedWorker);
+
+		assert(
+			f.wiki.getTiddler(failedWorker)
+				.fields["clerus-suspended"] !== "yes"
+		);
+
+		// Resumption alone must not repeat the failed activation.
+		root = f.record(project.root);
+
+		assert(
+			Object.keys(root.charter.status.results)
+				.sort().join(",") === "second,third"
+		);
+		assert(
+			f.record(organization.journal)
+				.events[eventId].mode === "paused"
+		);
+
+		f.adapter.command(
+			"retry",
+			organization.journal,
+			eventId
+		);
+
+		journal = f.record(organization.journal);
+
+		assert(journal.events[eventId].mode === "ready");
+		assert(
+			JSON.stringify(journal.events[eventId].event) ===
+				eventBefore
+		);
+		assert(
+			journal.evidence.identities[eventId] === identityBefore
+		);
+
+		f.adapter.command("release", organization.journal);
+
+		// Release still does not run deferred activations.
+		assert(
+			Object.keys(
+				f.record(project.root).charter.status.results
+			).length === 2
+		);
+
+		f.adapter.command("deferred");
+
+		assertProjectCompleted(f, project, organization);
+
+		/*
+		A later empty pass must not repeat successful reports.
+		The root executor would reject duplicate branch results.
+		*/
+		var completed = f.wiki.getTiddlerText(project.root);
+
+		f.adapter.command("service");
+		f.adapter.command("deferred");
+
+		assert(f.wiki.getTiddlerText(project.root) === completed);
+
+		var inspection = f.adapter.command("inspect");
+
+		assert(inspection.hierarchy.complete);
+		assert(inspection.hierarchy.valid);
+		assert(inspection.missions.complete);
+		assert(inspection.missions.valid);
+
+		var assignments = inspection.missions.active.filter(
+			function (entry) {
+				return entry.project === project.project;
+			}
+		);
+
+		assert(assignments.length === 4);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -1621,7 +1799,8 @@ exports.run = function (tw) {
 		["management: running project cannot be closed", testProjectDemoCannotCloseWhileRunning],
 		["management: collection removes released workers and preserves project results", testClosedProjectWorkersCanBeCollected],
 		["management: automatic pass preserves manual inspection", testAutomaticPassPreservesManualInspection],
-		["management: background service preserves manual report", testBackgroundServicePreservesManualReport]
+		["management: background service preserves manual report", testBackgroundServicePreservesManualReport],
+		["management: failed project branch is repaired without replaying successful branches", testProjectBranchFailureAndRepair]
 	];
 
 	var results = cases.map(function (item) {
