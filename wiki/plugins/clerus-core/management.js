@@ -786,6 +786,10 @@ function create(options) {
 					result = runtime.observe();
 					break;
 
+				case "observation-status":
+					result = runtime.observationStatus();
+					break;
+
 				case "inspect":
 					result = runtime.inspect();
 					break;

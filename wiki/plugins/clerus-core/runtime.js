@@ -1394,19 +1394,30 @@ function prepareObservationStage(runtime) {
 	};
 }
 
-function observationRegistrationRecorded(runtime, stage) {
+function observationRegistrationEvidence(runtime, stage) {
+	function result(confirmed, source, reason) {
+		return {
+			confirmed: confirmed,
+			source: source,
+			reason: reason
+		};
+	}
+
 	if (!stage.journal) {
-		return false;
+		return result(false, null, "journal-not-assigned");
 	}
 
 	var stored = runtime.store.read(stage.journal);
 
+	if (stored.kind !== "materialized") {
+		return result(false, null, "journal-not-materialized");
+	}
+
 	if (
-		stored.kind !== "materialized" ||
 		stored.fields.type !== "application/json" ||
 		stored.fields["clerus-wal-kind"] !== "continuation"
 	) {
-		return false;
+		return result(false, null, "journal-header-mismatch");
 	}
 
 	var record;
@@ -1418,28 +1429,22 @@ function observationRegistrationRecorded(runtime, stage) {
 			stage.journal
 		);
 	} catch (error) {
-		return false;
+		return result(false, null, "journal-invalid");
 	}
 
 	/*
-	The original accepted work is still present.
-	No custody inference is needed: this checks registration,
-	not permission to execute the journal.
+	Registration evidence is not execution authority.
+	User custody does not invalidate an existing registration.
 	*/
 	if (
 		record.work !== null &&
 		observationSignatures.signature(record.work) ===
 			observationSignatures.signature(stage.work)
 	) {
-		return true;
+		return result(true, "accepted-work", null);
 	}
 
-	/*
-	Work may already have published its events, or their reactions
-	may have progressed. Registered fingerprints remain evidence
-	while this continuation exists.
-	*/
-	return stage.work.emits.every(function (effect) {
+	var recorded = stage.work.emits.every(function (effect) {
 		return Object.prototype.hasOwnProperty.call(
 			record.evidence.identities,
 			effect.id
@@ -1447,6 +1452,14 @@ function observationRegistrationRecorded(runtime, stage) {
 			record.evidence.identities[effect.id] ===
 				eventSchema.fingerprint(effect.event);
 	});
+
+	return recorded
+		? result(true, "event-fingerprints", null)
+		: result(false, null, "registration-not-confirmed");
+}
+
+function observationRegistrationRecorded(runtime, stage) {
+	return observationRegistrationEvidence(runtime, stage).confirmed;
 }
 
 function unresolvedObservationRegistration(stage) {
@@ -1581,6 +1594,60 @@ Runtime.prototype.resetObservation = function () {
 	this.observer.clear();
 };
 
+Runtime.prototype.observationStatus = function () {
+	var stage = this.pendingObservation;
+
+	if (stage === null) {
+		return {
+			pendingRegistration: null
+		};
+	}
+
+	var evidence = null;
+
+	if (stage.work !== null) {
+		try {
+			evidence = observationRegistrationEvidence(this, stage);
+		} catch (error) {
+			/*
+			A diagnostic read failure is not negative evidence
+			and must not resolve the pending registration.
+			*/
+			evidence = {
+				confirmed: false,
+				source: null,
+				reason: "evidence-read-failed",
+				error: lifecycle.describeError(error)
+			};
+		}
+	}
+
+	return {
+		pendingRegistration: {
+			journal: stage.journal,
+			work: stage.work === null ? null : stage.work.id,
+			uncertain: stage.uncertain,
+			registered: stage.registered,
+
+			notifications: stage.work === null
+				? []
+				: stage.work.emits.map(function (effect) {
+					return {
+						id: effect.id,
+						recipient: schemas.copyJSON(
+							effect.event.recipient
+						),
+						notification: schemas.copyJSON(
+							effect.event.notification
+						)
+					};
+				}),
+
+			evidence: evidence
+		}
+	};
+};
+
 Runtime.prototype.inspect = function () {
 	var jobs = this.readJobs();
 
@@ -1597,17 +1664,7 @@ Runtime.prototype.inspect = function () {
 			? null
 			: schemas.copyJSON(this.lastCollection),
 		obligations: this.summarizeObligations(),
-		observation: {
-			pendingRegistration: this.pendingObservation === null
-				? null
-				: {
-					journal: this.pendingObservation.journal,
-					work: this.pendingObservation.work
-						? this.pendingObservation.work.id
-						: null,
-					uncertain: this.pendingObservation.uncertain
-				}
-		}
+		observation: this.observationStatus()
 	};
 };
 

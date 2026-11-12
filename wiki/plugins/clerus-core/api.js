@@ -21,6 +21,7 @@ function create(options) {
 	[
 		"dispatch",
 		"observe",
+		"observationStatus",
 		"resetObservation",
 		"runDeferred",
 		"drainFlows",

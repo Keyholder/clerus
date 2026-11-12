@@ -2205,6 +2205,36 @@ function testObservationDriverDeliversChanges(tw) {
 	}
 }
 
+function testObservationStatusIsReadOnly(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var demo = f.adapter.command("demo");
+		var before = f.wiki.getTiddlerText(demo.journal);
+
+		var result = f.adapter.command("observation-status");
+
+		assert(result.pendingRegistration === null);
+		assert(!f.wiki.tiddlerExists(demo.job));
+		assert(f.wiki.getTiddlerText(demo.journal) === before);
+		assert(f.timerCount() === 0);
+		assert(f.observationTimerCount() === 0);
+
+		var report = f.record(
+			f.adapter.reportTitle + "/commands/observation-status"
+		);
+
+		assert(report.command === "observation-status");
+		assert(report.origin === "manual");
+		assert(report.result.pendingRegistration === null);
+		assert(report.error === null);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2244,7 +2274,8 @@ exports.run = function (tw) {
 		["management: continuation widget refreshes on work dependencies", testContinuationWidgetTracksWorkDependencies],
 		["management: continuation view tracks control dependencies", testContinuationViewTracksControlDependency],
 		["management: observation driver is independent of deferred passes", testObservationDriverIsIndependent],
-		["management: observation driver delivers changes only on its passes", testObservationDriverDeliversChanges]
+		["management: observation driver delivers changes only on its passes", testObservationDriverDeliversChanges],
+		["management: observation status is read-only", testObservationStatusIsReadOnly]
 	];
 
 	var results = cases.map(function (item) {

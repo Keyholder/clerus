@@ -5,19 +5,24 @@ type: text/vnd.tiddlywiki
 
 ! Clerus
 
+Управление рантаймом этой браузерной вкладки.
+Команды ниже не управляют рантаймом Node.js напрямую.
+
+!! Рабочие проходы
+
 <$button>
 <$action-sendmessage $message="tm-clerus" command="service"/>
-Восстановить работу и доставить сообщения
+Обслужить обязательства
 </$button>
 
 <$button>
 <$action-sendmessage $message="tm-clerus" command="deferred"/>
-Один отложенный проход
+Отложенный проход
 </$button>
 
 <$button>
 <$action-sendmessage $message="tm-clerus" command="observe"/>
-Наблюдение
+Проход наблюдения
 </$button>
 
 <$button>
@@ -25,53 +30,8 @@ type: text/vnd.tiddlywiki
 Инспекция
 </$button>
 
-!! Автоматические отложенные проходы
-
-Автоматика локальна для этой браузерной вкладки и выключена после перезагрузки.
-Между завершением прохода и запуском следующего выдерживается интервал около секунды.
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="automatic-start"
-/>
-Включить автоматические проходы
-</$button>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="automatic-stop"
-/>
-Остановить автоматические проходы
-</$button>
-
-Состояние:
-<$text text={{{ [[$:/temp/clerus/management/browser/automatic]get[text]jsonget[enabled]] }}}/>
-
-Остановка не отменяет сохранённых активаций и не прерывает уже выполняющийся синхронный проход.
-
-!! Демонстрация
-
-<$button>
-<$action-sendmessage $message="tm-clerus" command="demo"/>
-Подготовить новый пример
-</$button>
-
-Новый журнал создаётся под опекой пользователя. Перед исполнением можно открыть его и осмотреть принятую работу.
-
-После передачи журнала браузеру должность учреждается, но первая активация ждёт отдельного отложенного прохода. Для завершения примера нужны три прохода.
-
-!! Продолжения текущей платформы
-
-<$clerus-continuations/>
-
-Подготовка повтора меняет только режим события с paused на ready.
-Журнал остаётся под опекой пользователя: передача рантайму выполняется отдельно.
-
-Повтор эфемерной реакции может повторить уже состоявшиеся эффекты.
-
-Передача журнала пользователю не отменяет обязательств и удержаний.
+Обслуживание восстанавливает принятую работу и доставляет готовые сообщения.
+Отложенные активации и наблюдение запускаются отдельно.
 
 !! Последняя ручная команда
 
@@ -80,63 +40,94 @@ type: text/vnd.tiddlywiki
   language="json"
 />
 
+!! Автоматика
+
+Оба драйвера локальны для вкладки и выключены после перезагрузки.
+Следующий проход запускается примерно через секунду после завершения предыдущего.
+
+!!! Отложенные активации
+
+Состояние:
+<$text text={{{ [[$:/temp/clerus/management/browser/automatic]get[text]jsonget[enabled]] }}}/>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="automatic-start"/>
+Включить активации
+</$button>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="automatic-stop"/>
+Остановить активации
+</$button>
+
+!!! Наблюдение
+
+Состояние:
+<$text text={{{ [[$:/temp/clerus/management/browser/automatic]get[text]jsonget[observationEnabled]] }}}/>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="observation-start"/>
+Включить наблюдение
+</$button>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="observation-stop"/>
+Остановить наблюдение
+</$button>
+
+Наблюдаются локальные эфемерные и фактически принадлежащие браузеру персистентные должности.
+Персистентные уведомления регистрируются в WAL перед фиксацией истории наблюдения.
+
+Первый проход устанавливает исходное состояние новых подписок.
+Промежуточные изменения могут схлопываться.
+Наблюдение не запускает отложенные активации.
+
+Остановка драйверов не отменяет обязательств и не сбрасывает историю наблюдения.
+
 <details>
-<summary>Последняя инспекция</summary>
+<summary>Диагностика регистрации наблюдения</summary>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="observation-status"
+/>
+Проверить свидетельства регистрации
+</$button>
+
+Эта команда только читает состояние.
+Она не фиксирует историю, не доставляет уведомления и не создаёт новые идентичности.
+
+Если свидетельство найдено, запустите проход наблюдения для продолжения.
+Отсутствие журнала не доказывает, что регистрация не состоялась.
+Неподтверждённая регистрация блокирует новые пакеты наблюдения и сборку.
 
 <$codeblock
-  code={{$:/temp/clerus/management/browser/commands/inspect}}
+  code={{$:/temp/clerus/management/browser/commands/observation-status}}
   language="json"
 />
 
 </details>
 
-<details>
-<summary>Последняя сборка</summary>
+!! Продолжения и ремонт
 
-<$codeblock
-  code={{$:/temp/clerus/management/browser/commands/collect}}
-  language="json"
-/>
+<$clerus-continuations/>
 
-</details>
+Подготовка повтора меняет только режим события с paused на ready.
+Журнал остаётся под опекой пользователя; передача рантайму выполняется отдельно.
 
-<details>
-<summary>Последнее обслуживание обязательств</summary>
+Повтор события не восстанавливает полномочия отстранённой должности.
+Возобновление должности не повторяет приостановленное событие.
 
-<$codeblock
-  code={{$:/temp/clerus/management/browser/commands/service}}
-  language="json"
-/>
-
-</details>
+Передача журнала пользователю не отменяет обязательств и удержаний.
+Повтор эфемерной реакции может повторить уже состоявшиеся эффекты.
 
 <details>
-<summary>Последний отложенный проход</summary>
+<summary>Возобновление отстранённых персистентных должностей</summary>
 
-<$codeblock
-  code={{$:/temp/clerus/management/browser/commands/deferred}}
-  language="json"
-/>
-
-</details>
-
-!! Демонстрационные должности
-
-<$list filter="[all[tiddlers]prefix[$:/clerus/jobs/demo-]sort[title]]">
-
-<$link><$view field="title"/></$link>
-
-<$codeblock code={{!!text}} language="json"/>
-
-</$list>
-
-!! Отстранённые персистентные должности
-
-Перед возобновлением исправьте причину ошибки в состоянии должности.
-Эта кнопка передаёт должность браузеру и запрашивает её возобновление.
+Сначала исправьте причину ошибки.
+Кнопка передаёт должность браузеру и запрашивает возобновление.
 Используйте её только для должностей, которые должны работать в браузере.
-
-Она не подготавливает повтор приостановленных событий.
 
 <$list
   filter="[all[tiddlers]prefix[$:/clerus/jobs/]field:clerus-suspended[yes]sort[title]]"
@@ -162,14 +153,79 @@ type: text/vnd.tiddlywiki
 
 </$list>
 
-!! Подготовка переезда в Node.js
+Команда повторно проверяет допустимость возобновления.
+Должности с маркерами переезда этим действием не обслуживаются.
+
+</details>
+
+!! Проекты
+
+<$list
+  filter="[all[tiddlers]prefix[Clerus Demo Project ]sort[title]]"
+  emptyMessage="Нет демонстрационных проектов."
+>
+
+<$clerus-project-card project=<<currentTiddler>>/>
+
+</$list>
+
+<details>
+<summary>Подготовка демонстрационного проекта и служебных приказов</summary>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="project-demo"/>
+Подготовить проект
+</$button>
+
+Созданный WAL находится под опекой пользователя.
+После осмотра передайте его браузеру.
+После учреждения корня подготовьте отдельный приказ снабжения.
+
+<$list filter="[all[tiddlers]prefix[$:/clerus/jobs/project-demo-root-]sort[title]]">
+
+<div class="tc-message-box">
+
+<$link><$view field="title"/></$link>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="project-resources"
+  title=<<currentTiddler>>
+/>
+Подготовить снабжение
+</$button>
+
+<$button>
+<$action-sendmessage
+  $message="tm-clerus"
+  command="project-close"
+  title=<<currentTiddler>>
+/>
+Подготовить закрытие
+</$button>
+
+</div>
+
+</$list>
+
+Работники выполняют вычисления на отложенных активациях.
+Закрыть можно только завершённый проект.
+
+Закрытие отзывает назначения работников и уничтожает их тайтлы в реестре корня.
+Результаты и корневое назначение сохраняются.
+Сами работники удаляются отдельной сборкой.
+
+</details>
+
+<details>
+<summary>Подготовка переезда должности в Node.js</summary>
 
 Кнопка создаёт пользовательский WAL с точным снимком должности.
 Сама должность пока не меняется.
 
-После осмотра передайте созданный WAL браузеру для исполнения.
-Если должность успела измениться, работа может оказаться неприменимой:
-старый снимок не будет принудительно записан поверх нового состояния.
+После осмотра передайте WAL браузеру.
+Изменившееся состояние не будет принудительно перезаписано старым снимком.
 
 <$list
   filter="[all[tiddlers]prefix[$:/clerus/jobs/]field:clerus-custody[browser]!field:clerus-suspended[yes]sort[title]]"
@@ -193,83 +249,23 @@ type: text/vnd.tiddlywiki
 
 </$list>
 
-Список показывает кандидатов по полям тиддлеров.
-Фактическое локальное распорядительство и совместимость проверяются командой.
+Список отбирает кандидатов по полям.
+Фактическое распорядительство проверяет команда.
+Совместимость принятия и исполнения проверяет ядро.
 
-!! Демонстрационный проект
+</details>
 
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="project-demo"
-/>
-Подготовить проект
-</$button>
-
-Передайте созданный WAL браузеру.
-После учреждения корня подготовьте приказ снабжения и тоже передайте его браузеру.
-
-<$list filter="[all[tiddlers]prefix[$:/clerus/jobs/project-demo-root-]sort[title]]">
-
-<div class="tc-message-box">
-
-<$link><$view field="title"/></$link>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="project-resources"
-  title=<<currentTiddler>>
-/>
-Подготовить снабжение мандатами
-</$button>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="project-close"
-  title=<<currentTiddler>>
-/>
-Подготовить закрытие завершённого проекта
-</$button>
-
-<$codeblock code={{!!text}} language="json"/>
-
-</div>
-
-</$list>
-
-Закрытие отзывает назначения подзадач и освобождает тайтлы работников.
-Результаты и корневое назначение сохраняются.
-Удаление самих работников этим приказом не выполняется.
-
-!! Деревья демонстрационных проектов
-
-<$list filter="[all[tiddlers]prefix[Clerus Demo Project ]sort[title]]">
-
-<$clerus-project-card project=<<currentTiddler>>/>
-
-</$list>
-
-!! Живость и сборка должностей
+!! Живость и сборка
 
 Автоматическая сборка выключена.
 
-Следующая команда обрабатывает все доступные сборщику локальные должности,
-а не только работников демонстрационного проекта.
-
-Перед каждым удалением рантайм повторно проверяет удержания,
-распорядительство, состояние должности и барьеры исполнения.
-
 <$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="collect"
-/>
+<$action-sendmessage $message="tm-clerus" command="collect"/>
 Собрать неиспользуемые локальные должности
 </$button>
 
-Последний результат команды показывается в общем отчёте управления.
+Команда рассматривает все доступные локальные должности, а не только демонстрационных работников.
+Перед каждым удалением повторно проверяются удержания, распорядительство и барьеры исполнения.
 
 <details>
 <summary>Перспектива удержаний</summary>
@@ -278,39 +274,64 @@ type: text/vnd.tiddlywiki
 
 </details>
 
-!! Автоматическое наблюдение
-
-Наблюдение доставляет уведомления локальным эфемерным должностям.
-Оно не запускает отложенные активации.
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="observation-start"
-/>
-Включить наблюдение
-</$button>
-
-<$button>
-<$action-sendmessage
-  $message="tm-clerus"
-  command="observation-stop"
-/>
-Остановить наблюдение
-</$button>
-
-Состояние:
-<$text text={{{ [[$:/temp/clerus/management/browser/automatic]get[text]jsonget[observationEnabled]] }}}/>
-
-Первый проход устанавливает исходное состояние новых подписок.
-Промежуточные изменения между проходами могут схлопываться.
-
 <details>
-<summary>Последний проход наблюдения</summary>
+<summary>Подробные отчёты</summary>
+
+!!! Инспекция
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/inspect}}
+  language="json"
+/>
+
+!!! Обслуживание обязательств
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/service}}
+  language="json"
+/>
+
+!!! Отложенный проход
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/deferred}}
+  language="json"
+/>
+
+!!! Наблюдение
 
 <$codeblock
   code={{$:/temp/clerus/management/browser/commands/observe}}
   language="json"
 />
+
+!!! Сборка
+
+<$codeblock
+  code={{$:/temp/clerus/management/browser/commands/collect}}
+  language="json"
+/>
+
+</details>
+
+<details>
+<summary>Простой счётчиковый пример</summary>
+
+<$button>
+<$action-sendmessage $message="tm-clerus" command="demo"/>
+Подготовить пример
+</$button>
+
+Осмотрите созданный пользовательский WAL и передайте его браузеру.
+Учреждение не запускает первую активацию.
+Для завершения нужны три отложенных прохода.
+
+<$list filter="[all[tiddlers]prefix[$:/clerus/jobs/demo-]sort[title]]">
+
+<$link><$view field="title"/></$link>
+
+<$codeblock code={{!!text}} language="json"/>
+
+</$list>
 
 </details>

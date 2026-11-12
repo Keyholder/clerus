@@ -183,6 +183,42 @@ function testUncertainRecordedRegistrationIsConfirmed(tw) {
 	assert(pending.uncertain);
 	assert(pending.journal);
 
+	var allocated = f.identitiesAllocated();
+	var journalBefore = f.wiki.getTiddlerText(pending.journal);
+
+	var diagnostic = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(diagnostic.uncertain);
+	assert(!diagnostic.registered);
+	assert(diagnostic.evidence.confirmed);
+	assert(diagnostic.evidence.source === "accepted-work");
+	assert(diagnostic.notifications.length === 1);
+	assert(diagnostic.notifications[0].id === eventId);
+	assert(
+		diagnostic.notifications[0].recipient.title === f.title
+	);
+
+	/*
+	Diagnostic values are detached, not references into the stage.
+	*/
+	diagnostic.notifications[0].notification.keys[0] = "tampered";
+
+	var repeated = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(
+		repeated.notifications[0].notification.keys[0] ===
+			"document"
+	);
+	assert(repeated.uncertain);
+	assert(!repeated.registered);
+	assert(f.identitiesAllocated() === allocated);
+	assert(f.calls.length === 0);
+	assert(
+		f.wiki.getTiddlerText(pending.journal) === journalBefore
+	);
+
 	// The next pass confirms the old registration, not a new batch.
 	f.runtime.observe();
 
@@ -220,6 +256,16 @@ function testUncertainAbsenceDoesNotCreateAnotherBatch(tw) {
 	}
 
 	var allocated = f.identitiesAllocated();
+	var diagnostic = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(diagnostic.uncertain);
+	assert(!diagnostic.evidence.confirmed);
+	assert(
+		diagnostic.evidence.reason === "journal-not-materialized"
+	);
+	assert(diagnostic.notifications.length === 1);
+	assert(f.identitiesAllocated() === allocated);
 
 	var error = throws(function () {
 		f.runtime.observe();

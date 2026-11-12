@@ -217,6 +217,7 @@ function testPublicManagementSurface(tw) {
 	var expected = [
 		"dispatch",
 		"observe",
+		"observationStatus",
 		"resetObservation",
 		"runDeferred",
 		"drainFlows",
