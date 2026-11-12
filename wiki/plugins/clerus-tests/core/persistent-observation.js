@@ -1058,6 +1058,221 @@ function testOldNotificationCannotWriteMovedRegistry(tw) {
 	assert(f.calls.length === 1);
 }
 
+function interruptRecordedObservation(f) {
+	f.runtime.observe();
+	f.write("changed");
+
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+	var eventId = null;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (!injected && f.isRegistration(effect)) {
+			injected = true;
+			eventId = JSON.parse(effect.after.text)
+				.work.emits[0].id;
+
+			throw new Error("Interrupted after observation registration");
+		}
+
+		return result;
+	};
+
+	try {
+		var error = throws(function () {
+			f.runtime.observe();
+		});
+
+		assert(error.acceptanceUncertain);
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(f.calls.length === 0);
+
+	var pending = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(pending);
+	assert(pending.uncertain);
+	assert(pending.journal);
+
+	return {
+		journal: pending.journal,
+		eventId: eventId
+	};
+}
+
+function testRegistrationConfirmedByPublishedFingerprints(tw) {
+	var f = fixture(tw);
+	var interrupted = interruptRecordedObservation(f);
+
+	f.runtime.recover();
+
+	assert(f.calls.length === 0);
+
+	var record = JSON.parse(
+		f.wiki.getTiddlerText(interrupted.journal)
+	);
+
+	assert(record.work === null);
+	assert(
+		record.events[interrupted.eventId].mode === "ready"
+	);
+
+	var allocated = f.identitiesAllocated();
+	var before = f.wiki.getTiddlerText(interrupted.journal);
+
+	var diagnostic = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(diagnostic.uncertain);
+	assert(!diagnostic.registered);
+	assert(diagnostic.evidence.confirmed);
+	assert(
+		diagnostic.evidence.source === "event-fingerprints"
+	);
+	assert(f.identitiesAllocated() === allocated);
+	assert(f.calls.length === 0);
+	assert(
+		f.wiki.getTiddlerText(interrupted.journal) === before
+	);
+
+	f.runtime.observe();
+
+	assert(f.calls.length === 1);
+	assert(f.calls[0] === interrupted.eventId);
+	assert(
+		f.runtime.observationStatus().pendingRegistration === null
+	);
+
+	f.runtime.observe();
+
+	assert(f.calls.length === 1);
+}
+
+function testInvalidRegistrationEvidencePreservesPendingStage(tw) {
+	var f = fixture(tw);
+	var interrupted = interruptRecordedObservation(f);
+
+	var original = f.wiki.getTiddler(interrupted.journal);
+	var allocated = f.identitiesAllocated();
+
+	f.wiki.addTiddler(new tw.Tiddler(original, {
+		text: "{broken"
+	}));
+
+	var diagnostic = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(diagnostic.uncertain);
+	assert(!diagnostic.evidence.confirmed);
+	assert(diagnostic.evidence.reason === "journal-invalid");
+
+	var error = throws(function () {
+		f.runtime.observe();
+	});
+
+	assert(error.acceptanceUncertain);
+	assert(error.obligationTitle === interrupted.journal);
+	assert(f.identitiesAllocated() === allocated);
+	assert(f.calls.length === 0);
+	assert(
+		f.wiki.getTiddlerText(interrupted.journal) === "{broken"
+	);
+
+	throws(function () {
+		f.runtime.resetObservation();
+	});
+
+	/*
+	Restore the exact original registration, not a new execution.
+	*/
+	f.wiki.addTiddler(new tw.Tiddler(original));
+
+	f.runtime.observe();
+
+	assert(f.calls.length === 1);
+	assert(f.calls[0] === interrupted.eventId);
+	assert(
+		f.runtime.observationStatus().pendingRegistration === null
+	);
+}
+
+function testEvidenceReadFailureDoesNotResolveRegistration(tw) {
+	var f = fixture(tw);
+	var interrupted = interruptRecordedObservation(f);
+
+	var originalRead = f.runtime.store.read;
+	var allocated = f.identitiesAllocated();
+	var before = f.wiki.getTiddlerText(interrupted.journal);
+
+	f.runtime.store.read = function (title) {
+		if (title === interrupted.journal) {
+			throw new Error("Observation evidence storage unavailable");
+		}
+
+		return originalRead.call(this, title);
+	};
+
+	try {
+		var diagnostic = f.runtime.observationStatus()
+			.pendingRegistration;
+
+		assert(diagnostic.uncertain);
+		assert(!diagnostic.registered);
+		assert(!diagnostic.evidence.confirmed);
+		assert(
+			diagnostic.evidence.reason === "evidence-read-failed"
+		);
+		assert(diagnostic.evidence.error);
+		assert(
+			diagnostic.evidence.error.message.indexOf(
+				"Observation evidence storage unavailable"
+			) !== -1
+		);
+
+		var error = throws(function () {
+			f.runtime.observe();
+		});
+
+		assert(
+			String(error.message).indexOf(
+				"Observation evidence storage unavailable"
+			) !== -1
+		);
+
+		assert(f.identitiesAllocated() === allocated);
+		assert(f.calls.length === 0);
+		assert(
+			f.wiki.getTiddlerText(interrupted.journal) === before
+		);
+		assert(!f.runtime.executing);
+		assert(!f.runtime.observing);
+	} finally {
+		f.runtime.store.read = originalRead;
+	}
+
+	var pending = f.runtime.observationStatus()
+		.pendingRegistration;
+
+	assert(pending.uncertain);
+	assert(!pending.registered);
+	assert(pending.evidence.confirmed);
+	assert(pending.evidence.source === "accepted-work");
+
+	f.runtime.observe();
+
+	assert(f.calls.length === 1);
+	assert(f.calls[0] === interrupted.eventId);
+	assert(
+		f.runtime.observationStatus().pendingRegistration === null
+	);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["persistent observation: changes become durable notifications", testPersistentObservation],
@@ -1068,7 +1283,10 @@ exports.run = function (tw) {
 		["persistent observation: interrupted mixed batch preserves registered notification", testInterruptedMixedBatchRecoversRegisteredNotification],
 		["persistent observation: destination waits for effective custody", testObservationWaitsForDestinationCustody],
 		["persistent observation: old notification stays at source after relocation", testOldNotificationRemainsAtSourceAfterMove],
-		["persistent observation: old notification cannot write moved registry", testOldNotificationCannotWriteMovedRegistry]
+		["persistent observation: old notification cannot write moved registry", testOldNotificationCannotWriteMovedRegistry],
+		["persistent observation: published fingerprints confirm registration", testRegistrationConfirmedByPublishedFingerprints],
+		["persistent observation: invalid evidence preserves pending registration", testInvalidRegistrationEvidencePreservesPendingStage],
+		["persistent observation: evidence read failure does not resolve registration", testEvidenceReadFailureDoesNotResolveRegistration]
 	];
 
 	var results = cases.map(function (item) {
