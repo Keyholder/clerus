@@ -27,6 +27,12 @@ var plannedReactions = require(
 var deferredObligations = require(
 	"$:/plugins/clerus/core/deferred-obligations.js"
 );
+var observation = require(
+	"$:/plugins/clerus/core/observation.js"
+);
+var reactionEvents = require(
+	"$:/plugins/clerus/core/reaction-event.js"
+);
 
 function describe(error) {
 	return {
@@ -330,6 +336,35 @@ function execute(options) {
 		};
 
 		var wrappedHandler = function (event, operational, incoming) {
+			/*
+			The stored notification and its fingerprint stay unchanged.
+			Only the delivery view follows current subscriptions.
+
+			A vanished subscription is consumed by a successful empty
+			reaction, through the normal proposal acceptance protocol.
+			*/
+			if (
+				continuationDelivery &&
+				delivery.kind === "notification"
+			) {
+				var current = observation.refresh(event, {
+					store: options.store,
+					platform: options.platform
+				});
+
+				if (current === null) {
+					return;
+				}
+
+				event = reactionEvents.prepare({
+					event: Object.assign({}, current, {
+						id: delivery.id
+					}),
+					title: options.title,
+					platform: options.platform
+				});
+			}
+
 			invoked = true;
 
 			return options.handler(

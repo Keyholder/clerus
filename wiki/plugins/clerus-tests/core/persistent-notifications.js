@@ -337,12 +337,122 @@ function testMaterializationDoesNotReplayHandler(tw) {
 	assert(!f.wiki.tiddlerExists(f.journal));
 }
 
+function testDeliveryRefreshesKeys(tw) {
+	var calls = 0;
+	var f;
+
+	f = fixture(tw, function (event, operational) {
+		calls++;
+
+		assert(event.id === f.eventId);
+		assert(event.title === f.title);
+		assert(event.platform === f.platform);
+		assert(Object.isFrozen(event));
+		assert(Object.isFrozen(event.keys));
+		assert(event.keys.length === 1);
+		assert(event.keys[0] === "renamed");
+
+		operational.get("charter").setStatus({
+			count: calls,
+			text: operational.get(event.keys[0]).text()
+		});
+	});
+
+	f.runtime.recover();
+
+	var before = f.record();
+	var fingerprint = before.evidence.identities[f.eventId];
+
+	/*
+	The notification retains its original normative content.
+	Only the current operational key changes.
+	*/
+	var registry = JSON.parse(f.wiki.getTiddlerText(f.title));
+
+	registry.renamed = registry.document;
+	delete registry.document;
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(f.title),
+		{ text: JSON.stringify(registry) }
+	));
+
+	var waiting = f.record();
+
+	assert(
+		waiting.events[f.eventId].event.notification.keys[0] ===
+			"document"
+	);
+	assert(
+		waiting.evidence.identities[f.eventId] === fingerprint
+	);
+
+	f.runtime.drainFlows();
+
+	assert(calls === 1);
+	assert(!f.wiki.tiddlerExists(f.journal));
+
+	registry = JSON.parse(f.wiki.getTiddlerText(f.title));
+
+	assert(registry.charter.status.text === "current");
+	assert(
+		f.wiki.getTiddler(f.title)
+			.fields["clerus-suspended"] !== "yes"
+	);
+}
+
+function testRemovedSubscriptionConsumesNotification(tw) {
+	var calls = 0;
+
+	var f = fixture(tw, function () {
+		calls++;
+		throw new Error("Removed subscription must not invoke handler");
+	});
+
+	f.runtime.recover();
+
+	var registry = JSON.parse(f.wiki.getTiddlerText(f.title));
+
+	/*
+	Reuse the old key for an unrelated document. A stale event
+	must not direct the handler to that document.
+	*/
+	registry.document = "Unrelated Notification Document";
+
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(f.title),
+		{ text: JSON.stringify(registry) }
+	));
+
+	var result = f.runtime.drainFlows();
+
+	assert(calls === 0);
+	assert(!f.wiki.tiddlerExists(f.journal));
+	assert(result.summary.waiting.notifications.ready === 0);
+	assert(result.summary.waiting.notifications.paused === 0);
+
+	registry = JSON.parse(f.wiki.getTiddlerText(f.title));
+
+	assert(registry.charter.status.count === 0);
+	assert(registry.document === "Unrelated Notification Document");
+	assert(
+		f.wiki.getTiddler(f.title)
+			.fields["clerus-custody"] === f.platform
+	);
+	assert(
+		f.wiki.getTiddler(f.title)
+			.fields["clerus-suspended"] !== "yes"
+	);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["persistent notifications: strict event schema", testSchema],
 		["persistent notifications: delivery and recipient retention", testDeliveryAndRetention],
 		["persistent notifications: failure preserves an event for retry", testFailureAndRetry],
-		["persistent notifications: materialization recovery does not replay handler", testMaterializationDoesNotReplayHandler]
+		["persistent notifications: materialization recovery does not replay handler", testMaterializationDoesNotReplayHandler],
+		["persistent notifications: delivery refreshes document keys", testDeliveryRefreshesKeys],
+		["persistent notifications: removed subscription consumes notification without invocation", testRemovedSubscriptionConsumesNotification]
 	];
 
 	var results = cases.map(function (item) {
