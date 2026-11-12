@@ -236,6 +236,17 @@ function react(event, operational, incoming) {
 	}
 
 	if (
+		event.type === "mission-change" ||
+		event.type === "job-status-change"
+	) {
+		/*
+		This finite demo is driven by orders, ticks and reports.
+		Notifications do not request automatic recomputation.
+		*/
+		return;
+	}
+
+	if (
 		event.type === "order" &&
 		incoming.keys().indexOf("contract") !== -1
 	) {

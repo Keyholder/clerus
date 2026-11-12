@@ -57,6 +57,15 @@ var localCustody = require(
 var custodyEvidence = require(
 	"$:/plugins/clerus/core/custody-evidence.js"
 );
+var continuationSchema = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
+var eventSchema = require(
+	"$:/plugins/clerus/core/event-schema.js"
+);
+var observationSignatures = require(
+	"$:/plugins/clerus/core/observation-signature.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -200,6 +209,8 @@ function Runtime(options) {
 	});
 
 	this.observer = new observation.Observer();
+	this.observing = false;
+	this.pendingObservation = null;
 
 	this.scheduler = new Scheduler({
 		store: this.store,
@@ -1291,46 +1302,282 @@ function dispatchPass(title, event, incoming) {
 	}
 }
 
-function observePass() {
-	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
-		throw new Error("Cannot collect observations during a reaction");
-	}
-
-	var titles = this.readJobs().filter(function (job) {
+function prepareObservationStage(runtime) {
+	var titles = runtime.readJobs().filter(function (job) {
 		var space = jobTitles.classify(job.title);
 
-		return !space.persistent &&
-			space.platform === this.platform;
-	}, this).map(function (job) {
+		if (!space.persistent) {
+			return space.platform === runtime.platform;
+		}
+
+		var stored = runtime.store.read(job.title);
+
+		return stored.kind === "materialized" &&
+			stored.fields["clerus-suspended"] !== "yes" &&
+			runtime.custody.owns(stored.fields);
+	}).map(function (job) {
 		return job.title;
 	});
 
-	var events = this.observer.collect({
-		store: this.store,
-		platform: this.platform,
+	var batch = runtime.observer.prepare({
+		store: runtime.store,
+		platform: runtime.platform,
 		titles: titles,
-		readJobs: this.readJobs
+		readJobs: runtime.readJobs
 	});
 
-	var passes = [];
+	var ephemeral = [];
+	var emits = [];
 
-	events.forEach(function (event) {
+	batch.events.forEach(function (event) {
 		var current = observation.refresh(event, {
-			store: this.store,
-			platform: this.platform
+			store: runtime.store,
+			platform: runtime.platform
 		});
 
 		if (!current) {
 			return;
 		}
 
-		passes.push(this.dispatch(current.title, current));
-	}, this);
+		var space = jobTitles.classify(current.title);
 
-	return passes;
+		if (!space.persistent) {
+			ephemeral.push(current);
+			return;
+		}
+
+		var recipient = runtime.store.read(current.title);
+
+		if (
+			recipient.kind !== "materialized" ||
+			!jobState.hasExecutionHeader(recipient.fields) ||
+			!runtime.custody.owns(recipient.fields) ||
+			recipient.fields["clerus-suspended"] === "yes"
+		) {
+			return;
+		}
+
+		var notification = schemas.copyJSON(current);
+
+		delete notification.title;
+		delete notification.platform;
+
+		emits.push(eventSchema.emission({
+			id: runtime.newId(),
+			event: {
+				kind: "notification",
+				recipient: {
+					title: current.title,
+					executor: recipient.fields["clerus-executor"]
+				},
+				notification: notification
+			}
+		}));
+	});
+
+	return {
+		batch: batch,
+		ephemeral: ephemeral,
+		work: emits.length === 0
+			? null
+			: {
+				version: 2,
+				id: runtime.newId(),
+				checks: [],
+				transitions: [],
+				blocks: [],
+				emits: emits
+			},
+		journal: null,
+		registered: false,
+		uncertain: false
+	};
+}
+
+function observationRegistrationRecorded(runtime, stage) {
+	if (!stage.journal) {
+		return false;
+	}
+
+	var stored = runtime.store.read(stage.journal);
+
+	if (
+		stored.kind !== "materialized" ||
+		stored.fields.type !== "application/json" ||
+		stored.fields["clerus-wal-kind"] !== "continuation"
+	) {
+		return false;
+	}
+
+	var record;
+
+	try {
+		record = continuationSchema.validate(
+			JSON.parse(stored.fields.text),
+			runtime.platform,
+			stage.journal
+		);
+	} catch (error) {
+		return false;
+	}
+
+	/*
+	The original accepted work is still present.
+	No custody inference is needed: this checks registration,
+	not permission to execute the journal.
+	*/
+	if (
+		record.work !== null &&
+		observationSignatures.signature(record.work) ===
+			observationSignatures.signature(stage.work)
+	) {
+		return true;
+	}
+
+	/*
+	Work may already have published its events, or their reactions
+	may have progressed. Registered fingerprints remain evidence
+	while this continuation exists.
+	*/
+	return stage.work.emits.every(function (effect) {
+		return Object.prototype.hasOwnProperty.call(
+			record.evidence.identities,
+			effect.id
+		) &&
+			record.evidence.identities[effect.id] ===
+				eventSchema.fingerprint(effect.event);
+	});
+}
+
+function unresolvedObservationRegistration(stage) {
+	var error = new Error(
+		"Observation registration is unresolved; " +
+		"cannot create another batch without confirmation"
+	);
+
+	error.acceptanceUncertain = true;
+	error.obligationTitle = stage.journal;
+
+	return error;
+}
+
+function observePass() {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running ||
+		this.observing
+	) {
+		throw new Error("Cannot collect observations during execution");
+	}
+
+	this.observing = true;
+
+	try {
+		var stage = this.pendingObservation;
+
+		if (!stage) {
+			this.executing = true;
+
+			try {
+				stage = prepareObservationStage(this);
+				this.pendingObservation = stage;
+			} finally {
+				this.executing = false;
+			}
+		}
+
+		if (stage.work !== null && !stage.registered) {
+			this.executing = true;
+
+			try {
+				if (stage.uncertain) {
+					if (!observationRegistrationRecorded(this, stage)) {
+						throw unresolvedObservationRegistration(stage);
+					}
+
+					stage.registered = true;
+					stage.uncertain = false;
+				} else {
+					try {
+						stage.journal = this.continuations.accept(
+							stage.work
+						);
+
+						stage.registered = true;
+					} catch (error) {
+						if (error && error.acceptanceUncertain) {
+							stage.uncertain = true;
+							stage.journal = error.obligationTitle;
+						} else {
+							/*
+							Definite rejection: no baseline was
+							committed and no accepted registration
+							is being claimed.
+							*/
+							this.pendingObservation = null;
+						}
+
+						throw error;
+					}
+				}
+			} finally {
+				this.executing = false;
+			}
+		}
+
+		this.observer.commit(stage.batch);
+		this.pendingObservation = null;
+
+		var passes = [];
+
+		/*
+		Ephemeral delivery remains best-effort. Refresh keys again
+		because earlier reactions may change later recipients.
+		*/
+		stage.ephemeral.forEach(function (event) {
+			var current = observation.refresh(event, {
+				store: this.store,
+				platform: this.platform
+			});
+
+			if (current) {
+				passes.push(this.dispatch(current.title, current));
+			}
+		}, this);
+
+		if (stage.work !== null) {
+			var journal = this.store.read(stage.journal);
+
+			if (
+				journal.kind === "materialized" &&
+				journal.fields["clerus-custody"] === this.platform
+			) {
+				this.executing = true;
+
+				try {
+					this.continuations.resume(stage.journal);
+				} finally {
+					this.executing = false;
+				}
+			}
+
+			passes.push(this.drainFlows());
+		}
+
+		return passes;
+	} finally {
+		this.observing = false;
+	}
 }
 
 Runtime.prototype.resetObservation = function () {
+	if (this.observing || this.pendingObservation !== null) {
+		throw new Error(
+			"Cannot reset observation during an unresolved observation pass"
+		);
+	}
+
 	this.observer.clear();
 };
 
@@ -1349,7 +1596,18 @@ Runtime.prototype.inspect = function () {
 		collection: this.lastCollection === null
 			? null
 			: schemas.copyJSON(this.lastCollection),
-		obligations: this.summarizeObligations()
+		obligations: this.summarizeObligations(),
+		observation: {
+			pendingRegistration: this.pendingObservation === null
+				? null
+				: {
+					journal: this.pendingObservation.journal,
+					work: this.pendingObservation.work
+						? this.pendingObservation.work.id
+						: null,
+					uncertain: this.pendingObservation.uncertain
+				}
+		}
 	};
 };
 
@@ -1472,6 +1730,14 @@ Runtime.prototype.collectionBarriers = function () {
 
 	if (this.deferred.inspect().length > 0) {
 		reasons.push("ephemeral-ticks-pending");
+	}
+
+	if (this.observing) {
+		reasons.push("observation-in-progress");
+	}
+
+	if (this.pendingObservation !== null) {
+		reasons.push("observation-registration-unresolved");
 	}
 
 	return reasons;

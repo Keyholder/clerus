@@ -191,7 +191,7 @@ function testNestedEntryIsRejected(tw) {
 
 		throws(function () {
 			f.runtime.observe();
-		}, "during a reaction");
+		}, "Cannot collect observations during execution");
 	});
 
 	var result = f.runtime.dispatch(
