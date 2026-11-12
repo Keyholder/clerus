@@ -7,6 +7,7 @@ module-type: library
 "use strict";
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var stores = require("$:/plugins/clerus/core/store.js");
 
 function assert(condition, message) {
 	if (!condition) {
@@ -604,6 +605,413 @@ function testInterruptedMixedBatchRecoversRegisteredNotification(tw) {
 	assert(f.count("c-persistent") === 1);
 }
 
+function movingObserverFixture(tw) {
+	var sourcePlatform = tw.browser ? "browser" : "node";
+	var destinationPlatform =
+		sourcePlatform === "browser" ? "node" : "browser";
+	var title = "$:/clerus/jobs/moving-observer";
+	var target = "Moving Observer Document";
+	var sequence = 0;
+	var calls = [];
+	var modes = {};
+
+	function nextId() {
+		sequence++;
+
+		return "moving-observer-" +
+			String(sequence).padStart(12, "0");
+	}
+
+	function side(platform) {
+		var wiki = new tw.Wiki();
+
+		modes[platform] = "read";
+
+		var runtime = new Runtime({
+			wiki: wiki,
+			Tiddler: tw.Tiddler,
+			platform: platform,
+			newId: nextId,
+
+			resolveExecutor: function (executor) {
+				if (executor !== "moving-observer-test") {
+					return undefined;
+				}
+
+				return function (event, operational) {
+					if (
+						event.type === "suspended" ||
+						event.type === "resumed"
+					) {
+						return;
+					}
+
+					assert(event.type === "document-change");
+
+					calls.push({
+						platform: platform,
+						id: event.id,
+						keys: event.keys.slice(),
+						text: operational.get(event.keys[0]).text()
+					});
+
+					if (modes[platform] === "write") {
+						operational.get("charter").setStatus({
+							writtenBy: platform
+						});
+					}
+				};
+			}
+		});
+
+		function write(text) {
+			wiki.addTiddler(new tw.Tiddler({
+				title: target,
+				text: text
+			}));
+		}
+
+		write("initial");
+
+		return {
+			wiki: wiki,
+			runtime: runtime,
+			platform: platform,
+			write: write
+		};
+	}
+
+	var source = side(sourcePlatform);
+	var destination = side(destinationPlatform);
+
+	source.wiki.addTiddler(new tw.Tiddler({
+		title: title,
+		type: "application/json",
+		"clerus-custody": sourcePlatform,
+		"clerus-executor": "moving-observer-test",
+		text: JSON.stringify({
+			charter: {
+				form: "charter",
+				status: { phase: "initial" }
+			},
+			document: target
+		})
+	}));
+
+	function move() {
+		var journal = "$:/clerus/wal/" + sourcePlatform +
+			"/moving-observer-transfer";
+		var workId = "moving-observer-transfer-work-0001";
+		var before = source.runtime.store.read(title).fields;
+
+		assert(source.runtime.custody.owns(before));
+
+		var after = Object.assign({}, before, {
+			"clerus-custody": destinationPlatform,
+			"clerus-custody-transfer": JSON.stringify({
+				version: 1,
+				journal: journal,
+				work: workId,
+				from: sourcePlatform,
+				to: destinationPlatform
+			})
+		});
+
+		source.wiki.addTiddler(new tw.Tiddler({
+			title: journal,
+			type: "application/json",
+			"clerus-custody": sourcePlatform,
+			"clerus-wal-kind": "continuation",
+			text: JSON.stringify({
+				version: 2,
+				kind: "continuation",
+				platform: sourcePlatform,
+				work: {
+					version: 2,
+					id: workId,
+					checks: [],
+					transitions: [
+						stores.transition(title, before, after)
+					],
+					blocks: [],
+					emits: []
+				},
+				events: {},
+				evidence: {
+					identities: {},
+					receipts: {}
+				},
+				diagnostics: []
+			})
+		}));
+
+		var report = source.runtime.recover();
+
+		assert(report.entries.some(function (entry) {
+			return entry.title === journal &&
+				entry.status === "completed";
+		}));
+
+		assert(!source.wiki.tiddlerExists(journal));
+		assert(!source.runtime.custody.owns(
+			source.runtime.store.read(title).fields
+		));
+
+		destination.wiki.addTiddler(new tw.Tiddler(
+			source.wiki.getTiddler(title)
+		));
+
+		assert(!destination.runtime.custody.owns(
+			destination.runtime.store.read(title).fields
+		));
+
+		return journal;
+	}
+
+	/*
+	A user-authored continuation is a legitimate source of work.
+	Keep it under user custody until the relocation completes.
+	*/
+	function heldNotification() {
+		var eventId = nextId();
+		var journal = "$:/clerus/wal/" + sourcePlatform +
+			"/moving-observer-notification";
+
+		source.wiki.addTiddler(new tw.Tiddler({
+			title: journal,
+			type: "application/json",
+			"clerus-custody": "user",
+			"clerus-wal-kind": "continuation",
+			text: JSON.stringify({
+				version: 2,
+				kind: "continuation",
+				platform: sourcePlatform,
+				work: {
+					version: 2,
+					id: nextId(),
+					checks: [],
+					transitions: [],
+					blocks: [],
+					emits: [{
+						id: eventId,
+						event: {
+							kind: "notification",
+							recipient: {
+								title: title,
+								executor: "moving-observer-test"
+							},
+							notification: {
+								type: "document-change",
+								target: target,
+								keys: ["document"]
+							}
+						}
+					}]
+				},
+				events: {},
+				evidence: {
+					identities: {},
+					receipts: {}
+				},
+				diagnostics: []
+			})
+		}));
+
+		return {
+			title: journal,
+			id: eventId,
+
+			release: function () {
+				source.wiki.addTiddler(new tw.Tiddler(
+					source.wiki.getTiddler(journal),
+					{ "clerus-custody": sourcePlatform }
+				));
+
+				source.runtime.recover();
+				return source.runtime.drainFlows();
+			}
+		};
+	}
+
+	return {
+		source: source,
+		destination: destination,
+		title: title,
+		target: target,
+		calls: calls,
+		modes: modes,
+		move: move,
+		heldNotification: heldNotification
+	};
+}
+
+function testObservationWaitsForDestinationCustody(tw) {
+	var f = movingObserverFixture(tw);
+
+	f.source.runtime.observe();
+
+	var transferJournal = f.move();
+
+	/*
+	The destination sees the job, but has no deletion evidence.
+	Neither side may register a new notification now.
+	*/
+	f.source.write("during transfer");
+	f.destination.write("during transfer");
+
+	assert(f.source.runtime.observe().length === 0);
+	assert(f.destination.runtime.observe().length === 0);
+	assert(f.calls.length === 0);
+
+	f.destination.runtime.recordWalDeletion(transferJournal);
+
+	assert(f.destination.runtime.custody.owns(
+		f.destination.runtime.store.read(f.title).fields
+	));
+
+	/*
+	Entry establishes a local baseline, not a notification about
+	changes that happened before this runtime acquired custody.
+	*/
+	assert(f.destination.runtime.observe().length === 0);
+	assert(f.calls.length === 0);
+
+	f.source.write("after transfer");
+	f.destination.write("after transfer");
+
+	assert(f.source.runtime.observe().length === 0);
+	f.destination.runtime.observe();
+
+	assert(f.calls.length === 1);
+	assert(
+		f.calls[0].platform === f.destination.platform
+	);
+	assert(f.calls[0].text === "after transfer");
+
+	f.source.runtime.observe();
+	f.destination.runtime.observe();
+
+	assert(f.calls.length === 1);
+}
+
+function testOldNotificationRemainsAtSourceAfterMove(tw) {
+	var f = movingObserverFixture(tw);
+	var notification = f.heldNotification();
+	var transferJournal = f.move();
+
+	f.destination.runtime.recordWalDeletion(transferJournal);
+
+	/*
+	Model a newer synchronized operational snapshot.
+	Do not modify the registered notification.
+	*/
+	var registry = JSON.parse(
+		f.destination.wiki.getTiddlerText(f.title)
+	);
+
+	registry.renamed = registry.document;
+	delete registry.document;
+
+	f.destination.wiki.addTiddler(new tw.Tiddler(
+		f.destination.wiki.getTiddler(f.title),
+		{ text: JSON.stringify(registry) }
+	));
+
+	f.source.wiki.addTiddler(new tw.Tiddler(
+		f.destination.wiki.getTiddler(f.title)
+	));
+
+	f.source.write("source-local current view");
+
+	assert(!f.source.runtime.custody.owns(
+		f.source.runtime.store.read(f.title).fields
+	));
+
+	notification.release();
+
+	assert(f.calls.length === 1);
+	assert(f.calls[0].platform === f.source.platform);
+	assert(f.calls[0].id === notification.id);
+	assert(f.calls[0].keys.join(",") === "renamed");
+	assert(f.calls[0].text === "source-local current view");
+
+	assert(!f.source.wiki.tiddlerExists(notification.title));
+
+	var current = f.source.wiki.getTiddler(f.title);
+
+	assert(
+		current.fields["clerus-custody"] ===
+			f.destination.platform
+	);
+	assert(current.fields["clerus-suspended"] !== "yes");
+	assert(
+		JSON.parse(current.fields.text)
+			.charter.status.phase === "initial"
+	);
+
+	f.source.runtime.recover();
+	f.source.runtime.drainFlows();
+
+	assert(f.calls.length === 1);
+}
+
+function testOldNotificationCannotWriteMovedRegistry(tw) {
+	var f = movingObserverFixture(tw);
+	var notification = f.heldNotification();
+	var transferJournal = f.move();
+
+	f.destination.runtime.recordWalDeletion(transferJournal);
+
+	f.modes[f.source.platform] = "write";
+
+	var originalText = f.source.wiki.getTiddlerText(f.title);
+
+	notification.release();
+
+	assert(f.calls.length === 1);
+	assert(f.calls[0].id === notification.id);
+
+	var current = f.source.wiki.getTiddler(f.title);
+
+	assert(current.fields.text === originalText);
+	assert(
+		current.fields["clerus-custody"] ===
+			f.destination.platform
+	);
+	assert(current.fields["clerus-suspended"] !== "yes");
+
+	var journal = f.source.wiki.getTiddler(notification.title);
+
+	assert(journal);
+	assert(journal.fields["clerus-custody"] === "user");
+
+	var record = JSON.parse(journal.fields.text);
+
+	assert(record.work === null);
+	assert(record.events[notification.id].mode === "paused");
+	assert(record.diagnostics.some(function (diagnostic) {
+		return diagnostic.event === notification.id &&
+			diagnostic.phase === "reaction";
+	}));
+
+	/*
+	Failure on the non-owning platform does not affect the
+	destination's authority.
+	*/
+	assert(f.destination.runtime.custody.owns(
+		f.destination.runtime.store.read(f.title).fields
+	));
+	assert(
+		f.destination.wiki.getTiddler(f.title)
+			.fields["clerus-suspended"] !== "yes"
+	);
+
+	f.source.runtime.recover();
+	f.source.runtime.drainFlows();
+
+	assert(f.calls.length === 1);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["persistent observation: changes become durable notifications", testPersistentObservation],
@@ -611,7 +1019,10 @@ exports.run = function (tw) {
 		["persistent observation: uncertainty does not create another batch", testUncertainAbsenceDoesNotCreateAnotherBatch],
 		["persistent observation: another recipient progresses after reaction failure", testPersistentBatchContinuesAfterReactionFailure],
 		["persistent observation: mixed batch survives ephemeral reaction failure", testMixedBatchSurvivesEphemeralReactionFailure],
-		["persistent observation: interrupted mixed batch preserves registered notification", testInterruptedMixedBatchRecoversRegisteredNotification]
+		["persistent observation: interrupted mixed batch preserves registered notification", testInterruptedMixedBatchRecoversRegisteredNotification],
+		["persistent observation: destination waits for effective custody", testObservationWaitsForDestinationCustody],
+		["persistent observation: old notification stays at source after relocation", testOldNotificationRemainsAtSourceAfterMove],
+		["persistent observation: old notification cannot write moved registry", testOldNotificationCannotWriteMovedRegistry]
 	];
 
 	var results = cases.map(function (item) {
