@@ -564,6 +564,267 @@ function testTerminationConfirmsInterruptedWrite(tw) {
 	}).length === 1);
 }
 
+function terminationFixture(tw) {
+	var f = fixture(tw);
+	var firstId = "termination-first-event-0001";
+	var secondId = "termination-second-event-0001";
+	var readyId = "termination-ready-event-0001";
+
+	function activation(title) {
+		return {
+			kind: "activation",
+			recipient: {
+				title: title,
+				executor: "continuation-test"
+			}
+		};
+	}
+
+	var title = f.runtime.continuations.accept({
+		version: 2,
+		id: "termination-boundaries-work-0001",
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: [
+			{ id: firstId, event: activation(f.first) },
+			{ id: secondId, event: activation(f.second) },
+			{ id: readyId, event: activation(f.referenced) }
+		]
+	});
+
+	f.runtime.recover();
+
+	f.runtime.continuations.failEvent(
+		title,
+		firstId,
+		{
+			title: f.first,
+			executor: "continuation-test"
+		},
+		new Error("First synthetic failure")
+	);
+
+	f.runtime.continuations.failEvent(
+		title,
+		secondId,
+		{
+			title: f.second,
+			executor: "continuation-test"
+		},
+		new Error("Second synthetic failure")
+	);
+
+	/*
+	The third event remains ready, so failEvent() has not
+	automatically handed the journal to the user.
+	*/
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(title),
+		{ "clerus-custody": "user" }
+	));
+
+	f.journal = title;
+	f.firstId = firstId;
+	f.secondId = secondId;
+	f.readyId = readyId;
+
+	f.record = function () {
+		return JSON.parse(f.wiki.getTiddlerText(title));
+	};
+
+	return f;
+}
+
+function testTerminationPreservesSiblingEvents(tw) {
+	var f = terminationFixture(tw);
+	var before = f.record();
+
+	var firstJobBefore = f.wiki.getTiddlerText(f.first);
+	var secondJobBefore = f.wiki.getTiddlerText(f.second);
+
+	var result = f.runtime.terminateEvent(
+		f.journal,
+		f.firstId
+	);
+
+	assert(result.status === "terminated");
+
+	var after = f.record();
+
+	assert(!Object.prototype.hasOwnProperty.call(
+		after.events,
+		f.firstId
+	));
+
+	assert(
+		JSON.stringify(after.events[f.secondId]) ===
+			JSON.stringify(before.events[f.secondId])
+	);
+	assert(
+		JSON.stringify(after.events[f.readyId]) ===
+			JSON.stringify(before.events[f.readyId])
+	);
+	assert(
+		JSON.stringify(after.evidence) ===
+			JSON.stringify(before.evidence)
+	);
+	assert(
+		JSON.stringify(after.diagnostics.slice(0, -1)) ===
+			JSON.stringify(before.diagnostics)
+	);
+	assert(after.diagnostics.length === before.diagnostics.length + 1);
+
+	assert(
+		f.wiki.getTiddler(f.journal)
+			.fields["clerus-custody"] === "user"
+	);
+	assert(f.wiki.getTiddlerText(f.first) === firstJobBefore);
+	assert(f.wiki.getTiddlerText(f.second) === secondJobBefore);
+
+	var view = f.runtime.inspect().retention;
+
+	assert(view.complete);
+	assert(view.valid);
+
+	function heldByThisJournal(title) {
+		return view.retained.some(function (entry) {
+			return entry.title === title &&
+				entry.reasons.some(function (reason) {
+					return reason.kind === "waiting-event" &&
+						reason.wal === f.journal;
+				});
+		});
+	}
+
+	assert(!heldByThisJournal(f.first));
+	assert(heldByThisJournal(f.second));
+	assert(heldByThisJournal(f.referenced));
+
+	/*
+	Publishing the journal for further work must preserve both
+	the paused sibling and the ready sibling.
+	Recovery does not execute activations.
+	*/
+	f.wiki.addTiddler(new tw.Tiddler(
+		f.wiki.getTiddler(f.journal),
+		{ "clerus-custody": f.platform }
+	));
+
+	f.runtime.recover();
+
+	var recovered = f.record();
+
+	assert(!Object.prototype.hasOwnProperty.call(
+		recovered.events,
+		f.firstId
+	));
+	assert(recovered.events[f.secondId].mode === "paused");
+	assert(recovered.events[f.readyId].mode === "ready");
+	assert(
+		f.wiki.getTiddler(f.journal)
+			.fields["clerus-custody"] === f.platform
+	);
+}
+
+function testTerminationRejectsActiveMaterialization(tw) {
+	var f = terminationFixture(tw);
+	var current = f.wiki.getTiddler(f.journal);
+	var record = f.record();
+
+	record.work = f.work("termination-active-material-work-0001");
+
+	f.wiki.addTiddler(new tw.Tiddler(current, {
+		text: JSON.stringify(record)
+	}));
+
+	var before = f.wiki.getTiddlerText(f.journal);
+	var firstBefore = f.wiki.getTiddlerText(f.first);
+	var secondBefore = f.wiki.getTiddlerText(f.second);
+	var caught = null;
+
+	try {
+		f.runtime.terminateEvent(f.journal, f.firstId);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(
+		String(caught.message).indexOf(
+			"during active materialization"
+		) !== -1
+	);
+	assert(!caught.acceptanceUncertain);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(f.wiki.getTiddlerText(f.first) === firstBefore);
+	assert(f.wiki.getTiddlerText(f.second) === secondBefore);
+	assert(!f.runtime.executing);
+}
+
+function testTerminationRetriesAfterPreWriteFailure(tw) {
+	var f = terminationFixture(tw);
+	var before = f.wiki.getTiddlerText(f.journal);
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+	var caught = null;
+
+	f.runtime.store.apply = function (effect) {
+		if (effect.title === f.journal) {
+			injected = true;
+			throw new Error("Termination write unavailable");
+		}
+
+		return originalApply.call(this, effect);
+	};
+
+	try {
+		f.runtime.terminateEvent(f.journal, f.firstId);
+	} catch (error) {
+		caught = error;
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(caught);
+	assert(caught.acceptanceUncertain);
+	assert(caught.obligationTitle === f.journal);
+	assert(caught.eventId === f.firstId);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(f.record().events[f.firstId].mode === "paused");
+	assert(!f.runtime.executing);
+
+	var restarted = f.restart();
+
+	var result = restarted.terminateEvent(
+		f.journal,
+		f.firstId
+	);
+
+	assert(result.status === "terminated");
+
+	var after = f.record();
+
+	assert(!Object.prototype.hasOwnProperty.call(
+		after.events,
+		f.firstId
+	));
+	assert(after.diagnostics.filter(function (entry) {
+		return entry.action === "user-terminated" &&
+			entry.event === f.firstId;
+	}).length === 1);
+
+	var terminatedText = f.wiki.getTiddlerText(f.journal);
+
+	result = restarted.terminateEvent(f.journal, f.firstId);
+
+	assert(result.status === "already-terminated");
+	assert(
+		f.wiki.getTiddlerText(f.journal) === terminatedText
+	);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime recovers a material continuation", testRuntimeRecovery],
@@ -574,7 +835,10 @@ exports.run = function (tw) {
 		["unknown WAL prevents writes", testUnknownWalPreventsWrites],
 		["exhausted journal retention survives repeated servicing", testRetainedEmptyJournal],
 		["paused remainder returns to user after another branch completes", testPausedRemainderReturnsToUser],
-		["termination confirms an interrupted write after restart", testTerminationConfirmsInterruptedWrite]
+		["termination confirms an interrupted write after restart", testTerminationConfirmsInterruptedWrite],
+		["termination preserves sibling events and their retention", testTerminationPreservesSiblingEvents],
+		["termination rejects active materialization", testTerminationRejectsActiveMaterialization],
+		["termination retries safely after a pre-write failure", testTerminationRetriesAfterPreWriteFailure]
 	];
 
 	var results = cases.map(function (item) {
