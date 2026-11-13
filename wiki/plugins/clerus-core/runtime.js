@@ -66,6 +66,9 @@ var eventSchema = require(
 var observationSignatures = require(
 	"$:/plugins/clerus/core/observation-signature.js"
 );
+var continuationTermination = require(
+	"$:/plugins/clerus/core/continuation-termination.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -1583,6 +1586,40 @@ function observePass() {
 		this.observing = false;
 	}
 }
+
+function terminateEventPass(title, eventId) {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running ||
+		this.runningDeferred ||
+		this.observing
+	) {
+		throw new Error("Cannot terminate an event during execution");
+	}
+
+	this.executing = true;
+
+	try {
+		return continuationTermination.terminate({
+			store: this.store,
+			platform: this.platform,
+			title: title,
+			eventId: eventId
+		});
+	} finally {
+		this.executing = false;
+	}
+}
+
+Runtime.prototype.terminateEvent = function () {
+	return this.passes.run(
+		this,
+		terminateEventPass,
+		arguments,
+		false
+	);
+};
 
 Runtime.prototype.resetObservation = function () {
 	if (this.observing || this.pendingObservation !== null) {

@@ -33,6 +33,9 @@ var jobTitles = require(
 var custodySchema = require(
 	"$:/plugins/clerus/core/custody-schema.js"
 );
+var termination = require(
+	"$:/plugins/clerus/core/continuation-termination.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -340,10 +343,14 @@ function create(options) {
 
 			var empty = Object.keys(record.events).length === 0;
 
-			var canDelete = empty && (
-				record.retainUntil === undefined ||
-				currentTime() >= record.retainUntil
-			);
+			var terminatedHistory = termination.hasHistory(record);
+
+			var canDelete = empty &&
+				!terminatedHistory &&
+				(
+					record.retainUntil === undefined ||
+					currentTime() >= record.retainUntil
+				);
 
 			if (canDelete) {
 				options.store.apply(stores.transition(
@@ -359,10 +366,16 @@ function create(options) {
 				var waitingIds = Object.keys(record.events);
 
 				if (
-					waitingIds.length > 0 &&
-					waitingIds.every(function (id) {
-						return record.events[id].mode === "paused";
-					})
+					(
+						waitingIds.length === 0 &&
+						terminatedHistory
+					) ||
+					(
+						waitingIds.length > 0 &&
+						waitingIds.every(function (id) {
+							return record.events[id].mode === "paused";
+						})
+					)
 				) {
 					after["clerus-custody"] = "user";
 				}

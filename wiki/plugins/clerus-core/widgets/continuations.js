@@ -86,7 +86,8 @@ var STATES = {
 	work: "Есть принятая работа",
 	exhausted: "Нет активной работы и ожидающих событий",
 	paused: "Все оставшиеся события приостановлены",
-	ready: "Есть готовые события"
+	ready: "Есть готовые события",
+	history: "Обязательства завершены; сохранена история прекращения"
 };
 
 function eventCard(journal, entry) {
@@ -134,6 +135,24 @@ function eventCard(journal, entry) {
 			journal.title,
 			entry.id
 		));
+	}
+
+	if (entry.terminate) {
+		content.push(details("Прекращение обязательства", [
+			element("div", [
+				text(
+					"Событие будет прекращено без вызова исполнителя. " +
+					"Это не откат состоявшихся эффектов. " +
+					"Идентичность и диагностическая история сохранятся."
+				)
+			]),
+			button(
+				"Прекратить это событие",
+				"terminate",
+				journal.title,
+				entry.id
+			)
+		]));
 	}
 
 	content.push(details("Нормативное содержание события", [

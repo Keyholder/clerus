@@ -2235,6 +2235,206 @@ function testObservationStatusIsReadOnly(tw) {
 	}
 }
 
+function testTerminationPreservesHistoryWithoutExecuting(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var paused = pausedActivation(f, tw);
+		var before = f.record(paused.journal);
+		var jobBefore = f.wiki.getTiddlerText(paused.job);
+		var fingerprint =
+			before.evidence.identities[paused.id];
+
+		var result = f.adapter.command(
+			"terminate",
+			paused.journal,
+			paused.id
+		);
+
+		assert(result.status === "terminated");
+
+		var after = f.record(paused.journal);
+
+		assert(after.work === null);
+		assert(Object.keys(after.events).length === 0);
+		assert(
+			after.evidence.identities[paused.id] === fingerprint
+		);
+		assert(
+			f.wiki.getTiddlerText(paused.job) === jobBefore
+		);
+		assert(
+			f.wiki.getTiddler(paused.journal)
+				.fields["clerus-custody"] === "user"
+		);
+		assert(after.diagnostics.length === before.diagnostics.length + 1);
+
+		var terminal = after.diagnostics[
+			after.diagnostics.length - 1
+		];
+
+		assert(terminal.action === "user-terminated");
+		assert(terminal.phase === "administrative");
+		assert(terminal.event === paused.id);
+		assert(terminal.fingerprint === fingerprint);
+		assert(
+			JSON.stringify(terminal.snapshot) ===
+				JSON.stringify(before.events[paused.id].event)
+		);
+
+		var view = f.adapter.command("inspect");
+
+		assert(!view.retention.retained.some(function (entry) {
+			return entry.title === paused.job &&
+				entry.reasons.some(function (reason) {
+					return reason.kind === "waiting-event";
+				});
+		}));
+
+		var textBefore = f.wiki.getTiddlerText(paused.journal);
+
+		var repeated = f.adapter.command(
+			"terminate",
+			paused.journal,
+			paused.id
+		);
+
+		assert(repeated.status === "already-terminated");
+		assert(
+			f.wiki.getTiddlerText(paused.journal) === textBefore
+		);
+
+		/*
+		Even an explicit release must not delete terminal history.
+		Servicing returns the exhausted journal to the user.
+		*/
+		f.adapter.command("release", paused.journal);
+
+		assert(f.wiki.tiddlerExists(paused.journal));
+		assert(
+			f.wiki.getTiddler(paused.journal)
+				.fields["clerus-custody"] === "user"
+		);
+		assert(
+			f.wiki.getTiddlerText(paused.job) === jobBefore
+		);
+
+		var cards = require(
+			"$:/plugins/clerus/core/continuation-view.js"
+		).read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		});
+
+		var card = cards.find(function (item) {
+			return item.title === paused.journal;
+		});
+
+		assert(card.state === "history");
+		assert(!card.actions.release);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testTerminationRejectsIncomingDocuments(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var paused = pausedActivation(f, tw);
+		var record = f.record(paused.journal);
+		var event = {
+			kind: "delivery",
+			type: "order",
+			recipient: {
+				title: paused.job,
+				executor: f.wiki.getTiddler(paused.job)
+					.fields["clerus-executor"]
+			},
+			registry: {
+				input: {
+					form: "memo",
+					data: "must not disappear"
+				}
+			}
+		};
+
+		record.events[paused.id].event = event;
+		record.evidence.identities[paused.id] = require(
+			"$:/plugins/clerus/core/event-schema.js"
+		).fingerprint(event);
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(paused.journal),
+			{ text: JSON.stringify(record) }
+		));
+
+		var before = f.wiki.getTiddlerText(paused.journal);
+
+		throws(function () {
+			f.adapter.command(
+				"terminate",
+				paused.journal,
+				paused.id
+			);
+		}, "explicit disposition");
+
+		assert(
+			f.wiki.getTiddlerText(paused.journal) === before
+		);
+
+		var cards = require(
+			"$:/plugins/clerus/core/continuation-view.js"
+		).read({
+			wiki: f.wiki,
+			Tiddler: tw.Tiddler,
+			platform: f.platform
+		});
+
+		var card = cards.find(function (item) {
+			return item.title === paused.journal;
+		});
+
+		assert(card.events[0].retry);
+		assert(!card.events[0].terminate);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testTerminationRejectsReadyEvent(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var paused = pausedActivation(f, tw);
+
+		f.adapter.command("retry", paused.journal, paused.id);
+
+		var before = f.wiki.getTiddlerText(paused.journal);
+
+		throws(function () {
+			f.adapter.command(
+				"terminate",
+				paused.journal,
+				paused.id
+			);
+		}, "Select a paused event");
+
+		assert(
+			f.wiki.getTiddlerText(paused.journal) === before
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2275,7 +2475,10 @@ exports.run = function (tw) {
 		["management: continuation view tracks control dependencies", testContinuationViewTracksControlDependency],
 		["management: observation driver is independent of deferred passes", testObservationDriverIsIndependent],
 		["management: observation driver delivers changes only on its passes", testObservationDriverDeliversChanges],
-		["management: observation status is read-only", testObservationStatusIsReadOnly]
+		["management: observation status is read-only", testObservationStatusIsReadOnly],
+		["management: event termination preserves non-executable history", testTerminationPreservesHistoryWithoutExecuting],
+		["management: termination rejects undisposed incoming documents", testTerminationRejectsIncomingDocuments],
+		["management: termination rejects ready events", testTerminationRejectsReadyEvent]
 	];
 
 	var results = cases.map(function (item) {

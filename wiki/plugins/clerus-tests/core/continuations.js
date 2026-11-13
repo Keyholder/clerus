@@ -481,6 +481,89 @@ function testPausedRemainderReturnsToUser(tw) {
 	assert(f.wiki.getTiddlerText(title) === before);
 }
 
+function testTerminationConfirmsInterruptedWrite(tw) {
+	var f = fixture(tw);
+	var eventId = "termination-interrupted-event-0001";
+	var recipient = {
+		title: f.first,
+		executor: "continuation-test"
+	};
+
+	var title = f.runtime.continuations.accept({
+		version: 2,
+		id: "termination-interrupted-work-0001",
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: [{
+			id: eventId,
+			event: {
+				kind: "activation",
+				recipient: recipient
+			}
+		}]
+	});
+
+	f.runtime.recover();
+
+	f.runtime.continuations.failEvent(
+		title,
+		eventId,
+		recipient,
+		new Error("Synthetic paused activation")
+	);
+
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+	var caught = null;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (!injected && effect.title === title) {
+			injected = true;
+			throw new Error("Interrupted after termination write");
+		}
+
+		return result;
+	};
+
+	try {
+		f.runtime.terminateEvent(title, eventId);
+	} catch (error) {
+		caught = error;
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(caught);
+	assert(caught.acceptanceUncertain);
+	assert(caught.obligationTitle === title);
+	assert(caught.eventId === eventId);
+	assert(!f.runtime.executing);
+
+	var before = f.wiki.getTiddlerText(title);
+
+	/*
+	The receipt survives runtime replacement. Repeating the
+	request confirms it without another write or diagnostic.
+	*/
+	var restarted = f.restart();
+	var result = restarted.terminateEvent(title, eventId);
+
+	assert(result.status === "already-terminated");
+	assert(f.wiki.getTiddlerText(title) === before);
+
+	var record = JSON.parse(before);
+
+	assert(Object.keys(record.events).length === 0);
+	assert(record.diagnostics.filter(function (entry) {
+		return entry.action === "user-terminated" &&
+			entry.event === eventId;
+	}).length === 1);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime recovers a material continuation", testRuntimeRecovery],
@@ -490,7 +573,8 @@ exports.run = function (tw) {
 		["unrelated works can complete", testUnrelatedWorksCanComplete],
 		["unknown WAL prevents writes", testUnknownWalPreventsWrites],
 		["exhausted journal retention survives repeated servicing", testRetainedEmptyJournal],
-		["paused remainder returns to user after another branch completes", testPausedRemainderReturnsToUser]
+		["paused remainder returns to user after another branch completes", testPausedRemainderReturnsToUser],
+		["termination confirms an interrupted write after restart", testTerminationConfirmsInterruptedWrite]
 	];
 
 	var results = cases.map(function (item) {

@@ -811,6 +811,10 @@ function create(options) {
 					result = retryEvent(title, eventId);
 					break;
 
+				case "terminate":
+					result = runtime.terminateEvent(title, eventId);
+					break;
+
 				case "resume":
 					result = resumeJob(title);
 					break;

@@ -14,6 +14,9 @@ var Store = require("$:/plugins/clerus/core/store.js").Store;
 var materializer = require(
 	"$:/plugins/clerus/core/work-materializer.js"
 );
+var termination = require(
+	"$:/plugins/clerus/core/continuation-termination.js"
+);
 
 exports.read = function (options) {
 	schemas.assertPlatform(options.platform);
@@ -136,6 +139,14 @@ exports.read = function (options) {
 
 		item.actions.release = custody === "user";
 
+		if (
+			record.work === null &&
+			ids.length === 0 &&
+			termination.hasHistory(record)
+		) {
+			item.actions.release = false;
+		}
+
 		item.events = ids.map(function (id) {
 			var waiting = record.events[id];
 
@@ -145,14 +156,20 @@ exports.read = function (options) {
 				event: waiting.event,
 				retry: custody === "user" &&
 					record.work === null &&
-					waiting.mode === "paused"
+					waiting.mode === "paused",
+				terminate: custody === "user" &&
+					record.work === null &&
+					waiting.mode === "paused" &&
+					termination.eligible(waiting.event)
 			};
 		});
 
 		if (record.work !== null) {
 			item.state = "work";
 		} else if (ids.length === 0) {
-			item.state = "exhausted";
+			item.state = termination.hasHistory(record)
+				? "history"
+				: "exhausted";
 		} else if (item.events.every(function (entry) {
 			return entry.mode === "paused";
 		})) {
