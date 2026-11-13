@@ -226,7 +226,8 @@ function testPublicManagementSurface(tw) {
 		"collect",
 		"inspect",
 		"recordWalDeletion",
-		"terminateEvent"
+		"terminateEvent",
+		"resolveEvent"
 	].sort();
 
 	assert(Object.isFrozen(api));

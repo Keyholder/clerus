@@ -30,7 +30,8 @@ function create(options) {
 		"collect",
 		"inspect",
 		"recordWalDeletion",
-		"terminateEvent"
+		"terminateEvent",
+		"resolveEvent"
 	].forEach(function (name) {
 		Object.defineProperty(api, name, {
 			value: runtime[name].bind(runtime),

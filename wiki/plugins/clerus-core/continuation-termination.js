@@ -26,7 +26,8 @@ function eligible(event) {
 
 function hasHistory(record) {
 	return record.diagnostics.some(function (entry) {
-		return entry.action === "user-terminated";
+		return entry.action === "user-terminated" ||
+			entry.action === "user-resolved";
 	});
 }
 

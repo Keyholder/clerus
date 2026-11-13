@@ -69,6 +69,9 @@ var observationSignatures = require(
 var continuationTermination = require(
 	"$:/plugins/clerus/core/continuation-termination.js"
 );
+var continuationResolution = require(
+	"$:/plugins/clerus/core/continuation-resolution.js"
+);
 
 function Runtime(options) {
 	schemas.assertPlatform(options.platform);
@@ -1616,6 +1619,42 @@ Runtime.prototype.terminateEvent = function () {
 	return this.passes.run(
 		this,
 		terminateEventPass,
+		arguments,
+		false
+	);
+};
+
+function resolveEventPass(title, eventId, decision) {
+	if (
+		this.executing ||
+		this.scheduler.running ||
+		this.flowScheduler.running ||
+		this.runningDeferred ||
+		this.observing
+	) {
+		throw new Error("Cannot resolve an event during execution");
+	}
+
+	this.executing = true;
+
+	try {
+		return continuationResolution.resolve({
+			store: this.store,
+			platform: this.platform,
+			title: title,
+			eventId: eventId,
+			decision: decision,
+			newId: this.newId
+		});
+	} finally {
+		this.executing = false;
+	}
+}
+
+Runtime.prototype.resolveEvent = function () {
+	return this.passes.run(
+		this,
+		resolveEventPass,
 		arguments,
 		false
 	);

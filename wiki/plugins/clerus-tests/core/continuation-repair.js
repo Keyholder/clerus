@@ -433,6 +433,220 @@ function testTerminationLeavesOnlyNonRetainingHistory(tw) {
 	assert(f.attempts.length === 1);
 }
 
+function testAdministrativeResolutionAcceptsRetainedDocuments(tw) {
+	var f = fixture(tw);
+
+	/*
+	Retaining a document requires real operational custody.
+	Resumption does not retry the user-owned paused event.
+	*/
+	restoreRecipient(f, f.runtime);
+
+	var decision = {
+		id: "repair-resolution-retain-0001",
+		operations: [
+			{ operation: "destroy", key: "reference" },
+			{
+				operation: "retain",
+				key: "input",
+				destinationKey: "recovered"
+			}
+		]
+	};
+
+	var fingerprint = f.record().evidence.identities[f.originalId];
+	var registryBefore = f.wiki.getTiddlerText(f.target);
+
+	var result = f.runtime.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	assert(result.status === "accepted");
+	assert(f.attempts.length === 1);
+
+	var accepted = f.record();
+
+	assert(!Object.prototype.hasOwnProperty.call(
+		accepted.events,
+		f.originalId
+	));
+	assert(accepted.work !== null);
+	assert(accepted.work.id === decision.id);
+	assert(
+		accepted.evidence.identities[f.originalId] === fingerprint
+	);
+	assert(
+		f.wiki.getTiddlerText(f.target) === registryBefore
+	);
+	assert(
+		f.wiki.getTiddler(f.journal)
+			.fields["clerus-custody"] === "user"
+	);
+
+	var body = f.wiki.getTiddlerText(f.journal);
+
+	result = f.runtime.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	assert(result.status === "already-accepted");
+	assert(f.wiki.getTiddlerText(f.journal) === body);
+
+	/*
+	The accepted plan is authoritative but remains held.
+	*/
+	f.runtime.recover();
+
+	assert(f.wiki.getTiddlerText(f.target) === registryBefore);
+
+	f.editJournal(function () {}, f.platform);
+
+	var restarted = f.restart();
+	restarted.recover();
+
+	assert(f.attempts.length === 1);
+	assert(f.registry().recovered.data === 42);
+
+	var history = f.record();
+
+	assert(history.work === null);
+	assert(Object.keys(history.events).length === 0);
+	assert(history.diagnostics.some(function (entry) {
+		return entry.action === "user-resolved" &&
+			entry.decision.id === decision.id;
+	}));
+	assert(
+		f.wiki.getTiddler(f.journal)
+			.fields["clerus-custody"] === "user"
+	);
+}
+
+function testAdministrativeResolutionCanDestroyWithoutOwnerWrite(tw) {
+	var f = fixture(tw);
+	var ownerBefore = JSON.stringify(
+		f.wiki.getTiddler(f.target).fields
+	);
+
+	var result = f.runtime.resolveEvent(
+		f.journal,
+		f.originalId,
+		{
+			id: "repair-resolution-destroy-0001",
+			operations: [
+				{ operation: "destroy", key: "reference" },
+				{ operation: "destroy", key: "input" }
+			]
+		}
+	);
+
+	assert(result.status === "accepted");
+	assert(f.attempts.length === 1);
+
+	var record = f.record();
+
+	/*
+	Consumption is recorded even without material transitions.
+	The failed recipient is neither modified nor resumed.
+	*/
+	assert(record.work === null);
+	assert(Object.keys(record.events).length === 0);
+	assert(
+		JSON.stringify(f.wiki.getTiddler(f.target).fields) ===
+			ownerBefore
+	);
+	assert(
+		f.wiki.getTiddler(f.target)
+			.fields["clerus-suspended"] === "yes"
+	);
+
+	var view = f.runtime.inspect().retention;
+
+	assert(view.complete);
+	assert(view.valid);
+	assert(!view.retained.some(function (entry) {
+		return entry.title === f.target ||
+			entry.title === f.reference;
+	}));
+}
+
+function testAdministrativeResolutionRejectsPartialDisposition(tw) {
+	var f = fixture(tw);
+	var before = f.wiki.getTiddlerText(f.journal);
+	var ownerBefore = f.wiki.getTiddlerText(f.target);
+	var caught = null;
+
+	try {
+		f.runtime.resolveEvent(
+			f.journal,
+			f.originalId,
+			{
+				id: "repair-resolution-partial-0001",
+				operations: [
+					{ operation: "destroy", key: "reference" }
+				]
+			}
+		);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(
+		String(caught.message).indexOf(
+			"explicitly cover every incoming document"
+		) !== -1
+	);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.attempts.length === 1);
+	assert(!f.runtime.executing);
+}
+
+function testAdministrativeResolutionDoesNotGrantCustody(tw) {
+	var f = fixture(tw);
+	var before = f.wiki.getTiddlerText(f.journal);
+	var ownerBefore = JSON.stringify(
+		f.wiki.getTiddler(f.target).fields
+	);
+	var caught = null;
+
+	try {
+		f.runtime.resolveEvent(
+			f.journal,
+			f.originalId,
+			{
+				id: "repair-resolution-no-custody-0001",
+				operations: [
+					{ operation: "destroy", key: "reference" },
+					{
+						operation: "retain",
+						key: "input",
+						destinationKey: "recovered"
+					}
+				]
+			}
+		);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(
+		String(caught.message).indexOf("not writable") !== -1
+	);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(
+		JSON.stringify(f.wiki.getTiddler(f.target).fields) ===
+			ownerBefore
+	);
+	assert(f.attempts.length === 1);
+	assert(!f.runtime.executing);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["failure preserves the authoritative event", testInitialFailurePreservesObligation],
@@ -440,7 +654,11 @@ exports.run = function (tw) {
 		["ready event waits for recipient resumption", testReadyEventWaitsForRecipientResumption],
 		["changed content cannot keep event identity", testChangedContentCannotKeepIdentity],
 		["replacement uses a new event identity", testReplacementUsesNewIdentity],
-		["terminated event leaves non-retaining history", testTerminationLeavesOnlyNonRetainingHistory]
+		["terminated event leaves non-retaining history", testTerminationLeavesOnlyNonRetainingHistory],
+		["administrative resolution accepts retained documents without invoking executor", testAdministrativeResolutionAcceptsRetainedDocuments],
+		["administrative resolution records destruction without owner write", testAdministrativeResolutionCanDestroyWithoutOwnerWrite],
+		["administrative resolution rejects incomplete disposition", testAdministrativeResolutionRejectsPartialDisposition],
+		["administrative resolution does not grant operational custody", testAdministrativeResolutionDoesNotGrantCustody]
 	];
 
 	var results = cases.map(function (item) {
