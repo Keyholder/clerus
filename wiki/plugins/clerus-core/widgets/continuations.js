@@ -155,6 +155,15 @@ function eventCard(journal, entry) {
 		]));
 	}
 
+	if (entry.resolve) {
+		content.push(button(
+			"Подготовить распоряжение документами",
+			"prepare-resolution",
+			journal.title,
+			entry.id
+		));
+	}
+
 	content.push(details("Нормативное содержание события", [
 		json(event)
 	]));

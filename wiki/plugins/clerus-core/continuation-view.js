@@ -17,6 +17,7 @@ var materializer = require(
 var termination = require(
 	"$:/plugins/clerus/core/continuation-termination.js"
 );
+var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 
 exports.read = function (options) {
 	schemas.assertPlatform(options.platform);
@@ -149,6 +150,9 @@ exports.read = function (options) {
 
 		item.events = ids.map(function (id) {
 			var waiting = record.events[id];
+			var recipientSpace = jobTitles.classify(
+				waiting.event.recipient.title
+			);
 
 			return {
 				id: id,
@@ -160,7 +164,15 @@ exports.read = function (options) {
 				terminate: custody === "user" &&
 					record.work === null &&
 					waiting.mode === "paused" &&
-					termination.eligible(waiting.event)
+					termination.eligible(waiting.event),
+				resolve: custody === "user" &&
+					record.work === null &&
+					waiting.mode === "paused" &&
+					waiting.event.kind === "delivery" &&
+					waiting.event.establishing !== true &&
+					recipientSpace &&
+					recipientSpace.persistent &&
+					Object.keys(waiting.event.registry).length > 0
 			};
 		});
 

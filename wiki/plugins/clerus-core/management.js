@@ -197,6 +197,16 @@ function create(options) {
 			: undefined
 	});
 
+	var resolutionManagement = require(
+		"$:/plugins/clerus/core/management-resolution.js"
+	).create({
+		wiki: wiki,
+		Tiddler: tw.Tiddler,
+		platform: platform,
+		newId: newId,
+		resolveEvent: runtime.resolveEvent
+	});
+
 	var receiptHeuristic = prototypeWalReceipts
 		? require(
 			"$:/plugins/clerus/core/prototype-wal-receipts.js"
@@ -853,6 +863,14 @@ function create(options) {
 
 				case "observation-stop":
 					result = stopObservation();
+					break;
+
+				case "prepare-resolution":
+					result = resolutionManagement.prepare(title, eventId);
+					break;
+
+				case "accept-resolution":
+					result = resolutionManagement.accept(title);
 					break;
 
 				default:

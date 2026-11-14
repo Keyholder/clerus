@@ -2435,6 +2435,235 @@ function testTerminationRejectsReadyEvent(tw) {
 	}
 }
 
+function pausedDocumentDelivery(f, tw) {
+	var demo = f.adapter.command("demo");
+
+	f.adapter.command("release", demo.journal);
+
+	var journal = "$:/clerus/wal/" + f.platform +
+		"/management-resolution-input";
+	var eventId = "management-resolution-input-event-0001";
+	var event = {
+		kind: "delivery",
+		type: "order",
+		recipient: {
+			title: demo.job,
+			executor: f.wiki.getTiddler(demo.job)
+				.fields["clerus-executor"]
+		},
+		registry: {
+			input: {
+				form: "memo",
+				data: 42
+			}
+		}
+	};
+
+	var identities = {};
+	identities[eventId] = require(
+		"$:/plugins/clerus/core/event-schema.js"
+	).fingerprint(event);
+
+	var waiting = {};
+	waiting[eventId] = {
+		mode: "paused",
+		event: event
+	};
+
+	f.wiki.addTiddler(new tw.Tiddler({
+		title: journal,
+		type: "application/json",
+		"clerus-custody": "user",
+		"clerus-wal-kind": "continuation",
+		text: JSON.stringify({
+			version: 2,
+			kind: "continuation",
+			platform: f.platform,
+			work: null,
+			events: waiting,
+			evidence: {
+				identities: identities,
+				receipts: {}
+			},
+			diagnostics: []
+		})
+	}));
+
+	return {
+		journal: journal,
+		eventId: eventId,
+		job: demo.job
+	};
+}
+
+function testResolutionDraftRequiresExplicitChoices(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var before = f.wiki.getTiddlerText(delivery.journal);
+		var ownerBefore = f.wiki.getTiddlerText(delivery.job);
+
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+
+		var request = f.record(prepared.resolution);
+
+		assert(request.journal === delivery.journal);
+		assert(request.eventId === delivery.eventId);
+		assert(request.decision.id === prepared.decisionId);
+		assert(request.decision.operations.length === 1);
+		assert(request.decision.operations[0].operation === "choose");
+		assert(request.decision.operations[0].key === "input");
+		assert(
+			f.wiki.getTiddler(prepared.resolution)
+				.fields["clerus-custody"] === "user"
+		);
+
+		throws(function () {
+			f.adapter.command(
+				"accept-resolution",
+				prepared.resolution
+			);
+		}, "Unsupported resolution operation");
+
+		assert(f.wiki.getTiddlerText(delivery.journal) === before);
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testResolutionAcceptanceWaitsForWalRelease(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0] = {
+			operation: "retain",
+			key: "input",
+			destinationKey: "recovered"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		var requestBefore = f.wiki.getTiddlerText(
+			prepared.resolution
+		);
+		var ownerBefore = f.wiki.getTiddlerText(delivery.job);
+
+		var accepted = f.adapter.command(
+			"accept-resolution",
+			prepared.resolution
+		);
+
+		assert(accepted.status === "accepted");
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+		assert(
+			f.wiki.getTiddlerText(prepared.resolution) ===
+				requestBefore
+		);
+		assert(f.record(delivery.journal).work !== null);
+		assert(
+			f.wiki.getTiddler(delivery.journal)
+				.fields["clerus-custody"] === "user"
+		);
+
+		var walBefore = f.wiki.getTiddlerText(delivery.journal);
+
+		var repeated = f.adapter.command(
+			"accept-resolution",
+			prepared.resolution
+		);
+
+		assert(repeated.status === "already-accepted");
+		assert(
+			f.wiki.getTiddlerText(delivery.journal) === walBefore
+		);
+
+		f.adapter.command("service");
+
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+
+		f.adapter.command("release", delivery.journal);
+
+		assert(f.record(delivery.job).recovered.data === 42);
+		assert(f.record(delivery.job).charter.status.completed === 0);
+		assert(f.record(delivery.journal).work === null);
+		assert(
+			f.wiki.getTiddler(delivery.journal)
+				.fields["clerus-custody"] === "user"
+		);
+
+		repeated = f.adapter.command(
+			"accept-resolution",
+			prepared.resolution
+		);
+
+		assert(repeated.status === "already-accepted");
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testResolutionRequestChecksEventFingerprint(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0].operation = "destroy";
+		request.fingerprint = "not-the-original-event";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		var before = f.wiki.getTiddlerText(delivery.journal);
+
+		throws(function () {
+			f.adapter.command(
+				"accept-resolution",
+				prepared.resolution
+			);
+		}, "no longer matches its event");
+
+		assert(f.wiki.getTiddlerText(delivery.journal) === before);
+		assert(
+			f.record(delivery.journal)
+				.events[delivery.eventId].mode === "paused"
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2478,7 +2707,10 @@ exports.run = function (tw) {
 		["management: observation status is read-only", testObservationStatusIsReadOnly],
 		["management: event termination preserves non-executable history", testTerminationPreservesHistoryWithoutExecuting],
 		["management: termination rejects undisposed incoming documents", testTerminationRejectsIncomingDocuments],
-		["management: termination rejects ready events", testTerminationRejectsReadyEvent]
+		["management: termination rejects ready events", testTerminationRejectsReadyEvent],
+		["management: resolution drafts require explicit choices", testResolutionDraftRequiresExplicitChoices],
+		["management: accepted resolution waits for WAL release", testResolutionAcceptanceWaitsForWalRelease],
+		["management: resolution request checks the original event fingerprint", testResolutionRequestChecksEventFingerprint]
 	];
 
 	var results = cases.map(function (item) {
