@@ -2664,6 +2664,241 @@ function testResolutionRequestChecksEventFingerprint(tw) {
 	}
 }
 
+function testResolutionAcceptanceWriteFailure(tw, afterWrite) {
+	var f = fixture(tw);
+	var originalAdd = null;
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0] = {
+			operation: "retain",
+			key: "input",
+			destinationKey: "recovered"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		var requestBefore = f.wiki.getTiddlerText(
+			prepared.resolution
+		);
+		var journalBefore = f.wiki.getTiddlerText(delivery.journal);
+		var ownerBefore = f.wiki.getTiddlerText(delivery.job);
+		var injected = false;
+		var caught = null;
+
+		originalAdd = f.wiki.addTiddler;
+
+		f.wiki.addTiddler = function (tiddler) {
+			if (
+				!injected &&
+				tiddler.fields.title === delivery.journal
+			) {
+				injected = true;
+
+				if (afterWrite) {
+					originalAdd.call(this, tiddler);
+				}
+
+				throw new Error(
+					afterWrite
+						? "Interrupted after management resolution write"
+						: "Management resolution write unavailable"
+				);
+			}
+
+			return originalAdd.call(this, tiddler);
+		};
+
+		try {
+			f.adapter.command(
+				"accept-resolution",
+				prepared.resolution
+			);
+		} catch (error) {
+			caught = error;
+		} finally {
+			f.wiki.addTiddler = originalAdd;
+			originalAdd = null;
+		}
+
+		assert(injected);
+		assert(caught);
+		assert(caught.acceptanceUncertain);
+		assert(caught.obligationTitle === delivery.journal);
+		assert(caught.eventId === delivery.eventId);
+		assert(caught.decisionId === prepared.decisionId);
+
+		assert(
+			f.wiki.getTiddlerText(prepared.resolution) ===
+				requestBefore
+		);
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+
+		var report = f.record(
+			f.adapter.reportTitle + "/commands/accept-resolution"
+		);
+
+		assert(report.error);
+		assert(report.failure.acceptanceUncertain);
+		assert(
+			report.failure.obligationTitle === delivery.journal
+		);
+		assert(report.failure.eventId === delivery.eventId);
+		assert(report.failure.decisionId === prepared.decisionId);
+
+		if (afterWrite) {
+			assert(f.record(delivery.journal).work !== null);
+			assert(!Object.prototype.hasOwnProperty.call(
+				f.record(delivery.journal).events,
+				delivery.eventId
+			));
+		} else {
+			assert(
+				f.wiki.getTiddlerText(delivery.journal) ===
+					journalBefore
+			);
+			assert(
+				f.record(delivery.journal)
+					.events[delivery.eventId].mode === "paused"
+			);
+		}
+
+		/*
+		The same command reads the same persisted decision.
+		It must not allocate a replacement request or identity.
+		*/
+		var repeated = f.adapter.command(
+			"accept-resolution",
+			prepared.resolution
+		);
+
+		assert(
+			repeated.status === (
+				afterWrite ? "already-accepted" : "accepted"
+			)
+		);
+		assert(repeated.decisionId === prepared.decisionId);
+		assert(
+			f.wiki.getTiddlerText(prepared.resolution) ===
+				requestBefore
+		);
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+
+		var record = f.record(delivery.journal);
+
+		assert(record.work.id === prepared.decisionId);
+		assert(record.diagnostics.filter(function (entry) {
+			return entry.action === "user-resolved" &&
+				entry.decision.id === prepared.decisionId;
+		}).length === 1);
+
+		var success = f.record(
+			f.adapter.reportTitle + "/commands/accept-resolution"
+		);
+
+		assert(success.error === null);
+		assert(success.failure === null);
+
+		f.adapter.command("release", delivery.journal);
+
+		assert(f.record(delivery.job).recovered.data === 42);
+		assert(f.record(delivery.job).charter.status.completed === 0);
+		assert(
+			f.wiki.getTiddler(delivery.journal)
+				.fields["clerus-custody"] === "user"
+		);
+	} finally {
+		if (originalAdd !== null) {
+			f.wiki.addTiddler = originalAdd;
+		}
+
+		f.adapter.dispose();
+	}
+}
+
+function testAcceptedResolutionCannotBeEditedIntoAnotherDecision(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0] = {
+			operation: "retain",
+			key: "input",
+			destinationKey: "recovered"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		f.adapter.command("accept-resolution", prepared.resolution);
+
+		var journalBefore = f.wiki.getTiddlerText(delivery.journal);
+		var ownerBefore = f.wiki.getTiddlerText(delivery.job);
+
+		request.decision.operations[0] = {
+			operation: "destroy",
+			key: "input"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		throws(function () {
+			f.adapter.command(
+				"accept-resolution",
+				prepared.resolution
+			);
+		}, "Resolution identity has different content");
+
+		assert(
+			f.wiki.getTiddlerText(delivery.journal) === journalBefore
+		);
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+
+		var report = f.record(
+			f.adapter.reportTitle + "/commands/accept-resolution"
+		);
+
+		assert(report.failure);
+		assert(!report.failure.acceptanceUncertain);
+
+		/*
+		Rejecting the edited request does not invalidate the
+		previously accepted plan.
+		*/
+		f.adapter.command("release", delivery.journal);
+
+		assert(f.record(delivery.job).recovered.data === 42);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2710,7 +2945,14 @@ exports.run = function (tw) {
 		["management: termination rejects ready events", testTerminationRejectsReadyEvent],
 		["management: resolution drafts require explicit choices", testResolutionDraftRequiresExplicitChoices],
 		["management: accepted resolution waits for WAL release", testResolutionAcceptanceWaitsForWalRelease],
-		["management: resolution request checks the original event fingerprint", testResolutionRequestChecksEventFingerprint]
+		["management: resolution request checks the original event fingerprint", testResolutionRequestChecksEventFingerprint],
+		["management: resolution retries the same request after a pre-write failure", function (tw) {
+			testResolutionAcceptanceWriteFailure(tw, false);
+		}],
+		["management: resolution confirms the same request after a post-write failure", function (tw) {
+			testResolutionAcceptanceWriteFailure(tw, true);
+		}],
+		["management: editing an accepted request cannot replace its decision", testAcceptedResolutionCannotBeEditedIntoAnotherDecision]
 	];
 
 	var results = cases.map(function (item) {

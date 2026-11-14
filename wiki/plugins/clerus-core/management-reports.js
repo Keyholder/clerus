@@ -35,6 +35,21 @@ exports.create = function (options) {
 	function publish(command, result, error, origin) {
 		var source = origin || "manual";
 
+		var failure = error ? {
+			name: String(error.name || "Error"),
+			message: String(error.message || error),
+			acceptanceUncertain: error.acceptanceUncertain === true,
+			obligationTitle: typeof error.obligationTitle === "string"
+				? error.obligationTitle
+				: null,
+			eventId: typeof error.eventId === "string"
+				? error.eventId
+				: null,
+			decisionId: typeof error.decisionId === "string"
+				? error.decisionId
+				: null
+		} : null;
+
 		var serialized = JSON.stringify({
 			platform: options.platform,
 			command: command,
@@ -42,7 +57,8 @@ exports.create = function (options) {
 			time: options.now(),
 			automatic: options.automaticState(),
 			result: result === undefined ? null : result,
-			error: error ? String(error.stack || error) : null
+			error: error ? String(error.stack || error) : null,
+			failure: failure
 		}, null, 2);
 
 		function write(title) {
