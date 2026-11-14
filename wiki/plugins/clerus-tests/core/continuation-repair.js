@@ -647,6 +647,335 @@ function testAdministrativeResolutionDoesNotGrantCustody(tw) {
 	assert(!f.runtime.executing);
 }
 
+function retainingResolution(id) {
+	return {
+		id: id,
+		operations: [
+			{ operation: "destroy", key: "reference" },
+			{
+				operation: "retain",
+				key: "input",
+				destinationKey: "recovered"
+			}
+		]
+	};
+}
+
+function testResolutionConfirmsAcceptanceAfterInterruptedWrite(tw) {
+	var f = fixture(tw);
+
+	restoreRecipient(f, f.runtime);
+
+	var decision = retainingResolution(
+		"repair-resolution-post-write-0001"
+	);
+	var ownerBefore = f.wiki.getTiddlerText(f.target);
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+	var caught = null;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (!injected && effect.title === f.journal) {
+			injected = true;
+			throw new Error("Interrupted after resolution acceptance");
+		}
+
+		return result;
+	};
+
+	try {
+		f.runtime.resolveEvent(
+			f.journal,
+			f.originalId,
+			decision
+		);
+	} catch (error) {
+		caught = error;
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(caught);
+	assert(caught.acceptanceUncertain);
+	assert(caught.obligationTitle === f.journal);
+	assert(caught.eventId === f.originalId);
+	assert(caught.decisionId === decision.id);
+	assert(!f.runtime.executing);
+
+	var accepted = f.record();
+
+	assert(accepted.work !== null);
+	assert(accepted.work.id === decision.id);
+	assert(!Object.prototype.hasOwnProperty.call(
+		accepted.events,
+		f.originalId
+	));
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.attempts.length === 1);
+
+	var before = f.wiki.getTiddlerText(f.journal);
+	var restarted = f.restart();
+	var replayApply = restarted.store.apply;
+	var writes = 0;
+	var repeated;
+
+	restarted.store.apply = function (effect) {
+		writes++;
+		return replayApply.call(this, effect);
+	};
+
+	try {
+		repeated = restarted.resolveEvent(
+			f.journal,
+			f.originalId,
+			decision
+		);
+	} finally {
+		restarted.store.apply = replayApply;
+	}
+
+	assert(repeated.status === "already-accepted");
+	assert(writes === 0);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.attempts.length === 1);
+}
+
+function testResolutionRetriesAfterPreWriteFailure(tw) {
+	var f = fixture(tw);
+
+	restoreRecipient(f, f.runtime);
+
+	var decision = retainingResolution(
+		"repair-resolution-pre-write-0001"
+	);
+	var before = f.wiki.getTiddlerText(f.journal);
+	var ownerBefore = f.wiki.getTiddlerText(f.target);
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+	var caught = null;
+
+	f.runtime.store.apply = function (effect) {
+		if (effect.title === f.journal) {
+			injected = true;
+			throw new Error("Resolution acceptance write unavailable");
+		}
+
+		return originalApply.call(this, effect);
+	};
+
+	try {
+		f.runtime.resolveEvent(
+			f.journal,
+			f.originalId,
+			decision
+		);
+	} catch (error) {
+		caught = error;
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(caught);
+	assert(caught.acceptanceUncertain);
+	assert(caught.decisionId === decision.id);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.record().events[f.originalId].mode === "paused");
+	assert(!f.runtime.executing);
+
+	var restarted = f.restart();
+	var result = restarted.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	assert(result.status === "accepted");
+
+	var accepted = f.record();
+
+	assert(accepted.work.id === decision.id);
+	assert(!Object.prototype.hasOwnProperty.call(
+		accepted.events,
+		f.originalId
+	));
+	assert(accepted.diagnostics.filter(function (entry) {
+		return entry.action === "user-resolved" &&
+			entry.decision.id === decision.id;
+	}).length === 1);
+
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.attempts.length === 1);
+}
+
+function testResolutionMaterializationSurvivesRestart(tw) {
+	var f = fixture(tw);
+
+	restoreRecipient(f, f.runtime);
+
+	var decision = retainingResolution(
+		"repair-resolution-material-0001"
+	);
+
+	f.runtime.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	f.editJournal(function () {}, f.platform);
+
+	var originalApply = f.runtime.store.apply;
+	var injected = false;
+	var failedReport;
+
+	f.runtime.store.apply = function (effect) {
+		var result = originalApply.call(this, effect);
+
+		if (!injected && effect.title === f.target) {
+			injected = true;
+			throw new Error("Interrupted after recovered registry write");
+		}
+
+		return result;
+	};
+
+	try {
+		failedReport = f.runtime.recover();
+	} finally {
+		f.runtime.store.apply = originalApply;
+	}
+
+	assert(injected);
+	assert(failedReport.entries.some(function (entry) {
+		return entry.title === f.journal &&
+			entry.status === "failed";
+	}));
+
+	assert(f.registry().recovered.data === 42);
+	assert(f.attempts.length === 1);
+
+	var interrupted = f.record();
+
+	assert(interrupted.work !== null);
+	assert(interrupted.work.id === decision.id);
+	assert(Object.keys(interrupted.events).length === 0);
+	assert(
+		f.wiki.getTiddler(f.journal)
+			.fields["clerus-custody"] === "user"
+	);
+	assert(
+		f.wiki.getTiddler(f.target)
+			.fields["clerus-suspended"] !== "yes"
+	);
+
+	/*
+	The administrative receipt remains usable while accepted
+	material work is unfinished.
+	*/
+	var restarted = f.restart();
+	var bodyBefore = f.wiki.getTiddlerText(f.journal);
+
+	var repeated = restarted.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	assert(repeated.status === "already-accepted");
+	assert(f.wiki.getTiddlerText(f.journal) === bodyBefore);
+
+	f.editJournal(function () {}, f.platform);
+
+	var recovered = restarted.recover();
+
+	assert(recovered.entries.some(function (entry) {
+		return entry.title === f.journal &&
+			entry.results &&
+			entry.results.indexOf("already-applied") !== -1;
+	}));
+
+	assert(f.attempts.length === 1);
+	assert(f.registry().recovered.data === 42);
+
+	var history = f.record();
+
+	assert(history.work === null);
+	assert(Object.keys(history.events).length === 0);
+	assert(history.diagnostics.filter(function (entry) {
+		return entry.action === "user-resolved" &&
+			entry.decision.id === decision.id;
+	}).length === 1);
+	assert(
+		f.wiki.getTiddler(f.journal)
+			.fields["clerus-custody"] === "user"
+	);
+
+	var ownerBefore = f.wiki.getTiddlerText(f.target);
+
+	restarted.recover();
+	restarted.drainFlows();
+
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.attempts.length === 1);
+}
+
+function testResolutionIdentityRejectsChangedInstructions(tw) {
+	var f = fixture(tw);
+
+	restoreRecipient(f, f.runtime);
+
+	var decision = retainingResolution(
+		"repair-resolution-identity-0001"
+	);
+
+	f.runtime.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	f.editJournal(function () {}, f.platform);
+	f.runtime.recover();
+
+	assert(f.record().work === null);
+	assert(f.registry().recovered.data === 42);
+
+	var changed = retainingResolution(decision.id);
+	changed.operations[1].destinationKey = "different-destination";
+
+	var before = f.wiki.getTiddlerText(f.journal);
+	var ownerBefore = f.wiki.getTiddlerText(f.target);
+	var caught = null;
+
+	try {
+		f.runtime.resolveEvent(
+			f.journal,
+			f.originalId,
+			changed
+		);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(
+		String(caught.message).indexOf(
+			"Resolution identity has different content"
+		) !== -1
+	);
+	assert(!caught.acceptanceUncertain);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
+	assert(f.attempts.length === 1);
+	assert(!f.runtime.executing);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["failure preserves the authoritative event", testInitialFailurePreservesObligation],
@@ -658,7 +987,11 @@ exports.run = function (tw) {
 		["administrative resolution accepts retained documents without invoking executor", testAdministrativeResolutionAcceptsRetainedDocuments],
 		["administrative resolution records destruction without owner write", testAdministrativeResolutionCanDestroyWithoutOwnerWrite],
 		["administrative resolution rejects incomplete disposition", testAdministrativeResolutionRejectsPartialDisposition],
-		["administrative resolution does not grant operational custody", testAdministrativeResolutionDoesNotGrantCustody]
+		["administrative resolution does not grant operational custody", testAdministrativeResolutionDoesNotGrantCustody],
+		["administrative resolution confirms acceptance after an interrupted write", testResolutionConfirmsAcceptanceAfterInterruptedWrite],
+		["administrative resolution retries after a pre-write failure", testResolutionRetriesAfterPreWriteFailure],
+		["administrative resolution materialization survives restart", testResolutionMaterializationSurvivesRestart],
+		["administrative resolution identity rejects changed instructions", testResolutionIdentityRejectsChangedInstructions]
 	];
 
 	var results = cases.map(function (item) {
