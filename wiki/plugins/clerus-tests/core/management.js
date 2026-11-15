@@ -2899,6 +2899,217 @@ function testAcceptedResolutionCannotBeEditedIntoAnotherDecision(tw) {
 	}
 }
 
+function resolutionCard(f, title) {
+	var items = require(
+		"$:/plugins/clerus/core/resolution-view.js"
+	).read({
+		wiki: f.wiki,
+		platform: f.platform
+	});
+
+	var item = items.find(function (entry) {
+		return entry.title === title;
+	});
+
+	assert(item, "Missing resolution card");
+	return item;
+}
+
+function testResolutionCardSeparatesDraftAndAcceptedContent(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+
+		var item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "unconfirmed");
+		assert(item.decisionError);
+		assert(item.accepted === null);
+		assert(!item.canAccept);
+		assert(item.dependencies.indexOf(delivery.journal) !== -1);
+
+		var request = f.record(prepared.resolution);
+		request.decision.operations[0] = {
+			operation: "retain",
+			key: "input",
+			destinationKey: "recovered"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		item = resolutionCard(f, prepared.resolution);
+
+		assert(item.canAccept);
+		assert(item.accepted === null);
+
+		f.adapter.command("accept-resolution", prepared.resolution);
+
+		var journalBefore = f.wiki.getTiddlerText(delivery.journal);
+		var ownerBefore = f.wiki.getTiddlerText(delivery.job);
+
+		item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "accepted");
+		assert(item.contentMatches);
+		assert(item.activeAcceptedWork);
+		assert(!item.canAccept);
+		assert(
+			item.accepted.decision.operations[0].destinationKey ===
+				"recovered"
+		);
+
+		request.decision.operations[0] = {
+			operation: "destroy",
+			key: "input"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "changed");
+		assert(!item.contentMatches);
+		assert(item.activeAcceptedWork);
+		assert(!item.canAccept);
+		assert(item.decision.operations[0].operation === "destroy");
+		assert(
+			item.accepted.decision.operations[0].operation === "retain"
+		);
+		assert(
+			item.accepted.decision.operations[0].destinationKey ===
+				"recovered"
+		);
+
+		/*
+		The model is detached and read-only with respect to wiki
+		state. Even mutating the returned value changes nothing.
+		*/
+		item.accepted.decision.operations[0].destinationKey =
+			"tampered";
+
+		assert(
+			resolutionCard(f, prepared.resolution)
+				.accepted.decision.operations[0].destinationKey ===
+					"recovered"
+		);
+		assert(
+			f.wiki.getTiddlerText(delivery.journal) === journalBefore
+		);
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+
+		f.adapter.command("release", delivery.journal);
+
+		item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "changed");
+		assert(item.accepted !== null);
+		assert(!item.activeAcceptedWork);
+		assert(f.record(delivery.job).recovered.data === 42);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testResolutionCardDoesNotInferNonAcceptanceFromAbsence(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+
+		var original = f.wiki.getTiddler(delivery.journal);
+
+		f.wiki.deleteTiddler(delivery.journal);
+
+		var item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "unconfirmed");
+		assert(item.evidenceError);
+		assert(item.accepted === null);
+		assert(!item.canAccept);
+		assert(!f.wiki.tiddlerExists(delivery.journal));
+
+		f.wiki.addTiddler(new tw.Tiddler(original, {
+			text: "{broken"
+		}));
+
+		item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "unconfirmed");
+		assert(item.evidenceError);
+		assert(item.accepted === null);
+		assert(!item.canAccept);
+		assert(
+			f.wiki.getTiddlerText(delivery.journal) === "{broken"
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
+function testResolutionCardFindsReceiptDespiteEditedDecisionId(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0].operation = "destroy";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		f.adapter.command("accept-resolution", prepared.resolution);
+
+		request.decision.id = "edited-resolution-identity-0001";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		var item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "changed");
+		assert(item.decisionError);
+		assert(item.accepted !== null);
+		assert(item.accepted.decision.id === prepared.decisionId);
+		assert(!item.contentMatches);
+		assert(!item.canAccept);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -2952,7 +3163,10 @@ exports.run = function (tw) {
 		["management: resolution confirms the same request after a post-write failure", function (tw) {
 			testResolutionAcceptanceWriteFailure(tw, true);
 		}],
-		["management: editing an accepted request cannot replace its decision", testAcceptedResolutionCannotBeEditedIntoAnotherDecision]
+		["management: editing an accepted request cannot replace its decision", testAcceptedResolutionCannotBeEditedIntoAnotherDecision],
+		["management: resolution card separates draft and accepted content", testResolutionCardSeparatesDraftAndAcceptedContent],
+		["management: missing resolution evidence does not imply non-acceptance", testResolutionCardDoesNotInferNonAcceptanceFromAbsence],
+		["management: resolution card finds receipt despite an edited decision identity", testResolutionCardFindsReceiptDespiteEditedDecisionId]
 	];
 
 	var results = cases.map(function (item) {
