@@ -3110,6 +3110,152 @@ function testResolutionCardFindsReceiptDespiteEditedDecisionId(tw) {
 	}
 }
 
+function testResolutionWidgetTracksJournalDependencies(tw) {
+	var Widget = require(
+		"$:/plugins/clerus/core/widgets/resolutions.js"
+	)["clerus-resolutions"];
+
+	var refreshed = 0;
+	var childrenRefreshed = 0;
+	var journal = "$:/clerus/wal/node/resolution-widget-test";
+
+	var receiver = {
+		dependencies: new Set([journal]),
+
+		refreshSelf: function () {
+			refreshed++;
+		},
+
+		refreshChildren: function () {
+			childrenRefreshed++;
+			return false;
+		}
+	};
+
+	var changes = {};
+	changes[journal] = { modified: true };
+
+	assert(Widget.prototype.refresh.call(receiver, changes));
+	assert(refreshed === 1);
+	assert(childrenRefreshed === 0);
+
+	changes = {
+		"$:/clerus/resolutions/widget-test": { modified: true }
+	};
+
+	assert(Widget.prototype.refresh.call(receiver, changes));
+	assert(refreshed === 2);
+	assert(childrenRefreshed === 0);
+
+	changes = {
+		"Unrelated Resolution Widget Target": { modified: true }
+	};
+
+	assert(!Widget.prototype.refresh.call(receiver, changes));
+	assert(refreshed === 2);
+	assert(childrenRefreshed === 1);
+}
+
+function testResolutionWidgetRendersAcceptedContentWithoutExecution(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0] = {
+			operation: "retain",
+			key: "input",
+			destinationKey: "recovered"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		f.adapter.command("accept-resolution", prepared.resolution);
+
+		/*
+		Add harmless diagnostic display data to the accepted
+		event snapshot and keep its identity evidence consistent.
+		The actual accepted material work stays unchanged.
+		*/
+		var sentinel = "<script>resolution-escape-sentinel</script>";
+		var record = f.record(delivery.journal);
+		var receipt = record.diagnostics.find(function (entry) {
+			return entry.action === "user-resolved";
+		});
+
+		receipt.snapshot.registry.input.data = sentinel;
+
+		var fingerprint = require(
+			"$:/plugins/clerus/core/event-schema.js"
+		).fingerprint(receipt.snapshot);
+
+		receipt.fingerprint = fingerprint;
+		record.evidence.identities[delivery.eventId] = fingerprint;
+
+		request.fingerprint = fingerprint;
+		request.decision.operations[0] = {
+			operation: "destroy",
+			key: "input"
+		};
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(delivery.journal),
+			{ text: JSON.stringify(record) }
+		));
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		var journalBefore = f.wiki.getTiddlerText(delivery.journal);
+		var requestBefore = f.wiki.getTiddlerText(prepared.resolution);
+		var ownerBefore = f.wiki.getTiddlerText(delivery.job);
+		var reportBefore = f.wiki.getTiddlerText(f.adapter.reportTitle);
+
+		var html = f.wiki.renderText(
+			"text/html",
+			"text/vnd.tiddlywiki",
+			"<$clerus-resolutions/>"
+		);
+
+		assert(html.indexOf("Принято в WAL") !== -1);
+		assert(html.indexOf("Черновик решения") !== -1);
+		assert(
+			html.indexOf(
+				"Черновик отличается от принятого решения"
+			) !== -1
+		);
+		assert(html.indexOf("recovered") !== -1);
+		assert(html.indexOf("resolution-escape-sentinel") !== -1);
+		assert(html.indexOf(sentinel) === -1);
+		assert(html.indexOf("Принять распоряжение в WAL") === -1);
+
+		assert(
+			f.wiki.getTiddlerText(delivery.journal) === journalBefore
+		);
+		assert(
+			f.wiki.getTiddlerText(prepared.resolution) === requestBefore
+		);
+		assert(f.wiki.getTiddlerText(delivery.job) === ownerBefore);
+		assert(
+			f.wiki.getTiddlerText(f.adapter.reportTitle) === reportBefore
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -3166,7 +3312,9 @@ exports.run = function (tw) {
 		["management: editing an accepted request cannot replace its decision", testAcceptedResolutionCannotBeEditedIntoAnotherDecision],
 		["management: resolution card separates draft and accepted content", testResolutionCardSeparatesDraftAndAcceptedContent],
 		["management: missing resolution evidence does not imply non-acceptance", testResolutionCardDoesNotInferNonAcceptanceFromAbsence],
-		["management: resolution card finds receipt despite an edited decision identity", testResolutionCardFindsReceiptDespiteEditedDecisionId]
+		["management: resolution card finds receipt despite an edited decision identity", testResolutionCardFindsReceiptDespiteEditedDecisionId],
+		["management: resolution widget refreshes on journal dependencies", testResolutionWidgetTracksJournalDependencies],
+		["management: resolution widget separates accepted content and renders safely", testResolutionWidgetRendersAcceptedContentWithoutExecution]
 	];
 
 	var results = cases.map(function (item) {
