@@ -102,6 +102,74 @@ function decision(value) {
 	};
 }
 
+function readReceipt(record, decisionId) {
+	events.identity(decisionId);
+
+	var matches = record.diagnostics.filter(function (entry) {
+		return entry.action === "user-resolved" &&
+			entry.decision &&
+			entry.decision.id === decisionId;
+	});
+
+	if (matches.length === 0) {
+		return null;
+	}
+
+	if (matches.length !== 1) {
+		throw new Error("Resolution receipt is ambiguous");
+	}
+
+	var receipt = matches[0];
+	var acceptedDecision;
+	var snapshot;
+
+	try {
+		events.identity(receipt.event);
+
+		acceptedDecision = decision(receipt.decision);
+		snapshot = events.validate(receipt.snapshot);
+
+		var space = jobTitles.classify(snapshot.recipient.title);
+
+		if (
+			receipt.phase !== "administrative" ||
+			snapshot.kind !== "delivery" ||
+			snapshot.establishing === true ||
+			!space ||
+			!space.persistent ||
+			!hasOwn(record.evidence.identities, receipt.event) ||
+			record.evidence.identities[receipt.event] !==
+				receipt.fingerprint ||
+			events.fingerprint(snapshot) !== receipt.fingerprint ||
+			hasOwn(record.events, receipt.event)
+		) {
+			throw new Error("Invalid receipt content");
+		}
+
+		var covered = acceptedDecision.operations.map(function (operation) {
+			return operation.key;
+		}).sort();
+
+		if (
+			JSON.stringify(covered) !==
+				JSON.stringify(Object.keys(snapshot.registry).sort())
+		) {
+			throw new Error("Receipt does not cover its incoming registry");
+		}
+	} catch (cause) {
+		var error = new Error("Invalid resolution receipt");
+		error.cause = cause;
+		throw error;
+	}
+
+	return {
+		eventId: receipt.event,
+		fingerprint: receipt.fingerprint,
+		decision: acceptedDecision,
+		snapshot: snapshot
+	};
+}
+
 function resolve(options) {
 	schemas.assertPlatform(options.platform);
 	events.identity(options.eventId);
@@ -146,22 +214,13 @@ function resolve(options) {
 		};
 	}
 
-	var previous = record.diagnostics.filter(function (entry) {
-		return entry.action === "user-resolved" &&
-			entry.decision &&
-			entry.decision.id === instruction.id;
-	});
+	var previous = readReceipt(record, instruction.id);
 
-	if (previous.length > 0) {
+	if (previous !== null) {
 		if (
-			previous.length !== 1 ||
-			previous[0].event !== options.eventId ||
-			JSON.stringify(previous[0].decision) !==
-				JSON.stringify(instruction) ||
-			!hasOwn(record.evidence.identities, options.eventId) ||
-			previous[0].fingerprint !==
-				record.evidence.identities[options.eventId] ||
-			hasOwn(record.events, options.eventId)
+			previous.eventId !== options.eventId ||
+			JSON.stringify(previous.decision) !==
+				JSON.stringify(instruction)
 		) {
 			throw new Error("Resolution identity has different content");
 		}
@@ -342,3 +401,4 @@ function resolve(options) {
 
 exports.decision = decision;
 exports.resolve = resolve;
+exports.readReceipt = readReceipt;

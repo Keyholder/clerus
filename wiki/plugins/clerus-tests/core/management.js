@@ -3256,6 +3256,68 @@ function testResolutionWidgetRendersAcceptedContentWithoutExecution(tw) {
 	}
 }
 
+function testResolutionCardAndReplayRejectTheSameDamagedReceipt(tw) {
+	var f = fixture(tw);
+
+	try {
+		f.adapter.start();
+
+		var delivery = pausedDocumentDelivery(f, tw);
+		var prepared = f.adapter.command(
+			"prepare-resolution",
+			delivery.journal,
+			delivery.eventId
+		);
+		var request = f.record(prepared.resolution);
+
+		request.decision.operations[0].operation = "destroy";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(prepared.resolution),
+			{ text: JSON.stringify(request) }
+		));
+
+		f.adapter.command("accept-resolution", prepared.resolution);
+
+		var record = f.record(delivery.journal);
+		var receipt = record.diagnostics.find(function (entry) {
+			return entry.action === "user-resolved";
+		});
+
+		receipt.snapshot.registry.input.data = "damaged history";
+
+		f.wiki.addTiddler(new tw.Tiddler(
+			f.wiki.getTiddler(delivery.journal),
+			{ text: JSON.stringify(record) }
+		));
+
+		var before = f.wiki.getTiddlerText(delivery.journal);
+		var item = resolutionCard(f, prepared.resolution);
+
+		assert(item.state === "unconfirmed");
+		assert(item.accepted === null);
+		assert(!item.canAccept);
+		assert(
+			item.evidenceError.indexOf(
+				"Invalid resolution receipt"
+			) !== -1
+		);
+
+		throws(function () {
+			f.adapter.command(
+				"accept-resolution",
+				prepared.resolution
+			);
+		}, "Invalid resolution receipt");
+
+		assert(
+			f.wiki.getTiddlerText(delivery.journal) === before
+		);
+	} finally {
+		f.adapter.dispose();
+	}
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["management: start and dispose are idempotent", testStartIsIdempotent],
@@ -3314,7 +3376,8 @@ exports.run = function (tw) {
 		["management: missing resolution evidence does not imply non-acceptance", testResolutionCardDoesNotInferNonAcceptanceFromAbsence],
 		["management: resolution card finds receipt despite an edited decision identity", testResolutionCardFindsReceiptDespiteEditedDecisionId],
 		["management: resolution widget refreshes on journal dependencies", testResolutionWidgetTracksJournalDependencies],
-		["management: resolution widget separates accepted content and renders safely", testResolutionWidgetRendersAcceptedContentWithoutExecution]
+		["management: resolution widget separates accepted content and renders safely", testResolutionWidgetRendersAcceptedContentWithoutExecution],
+		["management: resolution card and replay reject the same damaged receipt", testResolutionCardAndReplayRejectTheSameDamagedReceipt]
 	];
 
 	var results = cases.map(function (item) {

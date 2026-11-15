@@ -976,6 +976,60 @@ function testResolutionIdentityRejectsChangedInstructions(tw) {
 	assert(!f.runtime.executing);
 }
 
+function testResolutionRejectsDamagedReceipt(tw, damage, fragment) {
+	var f = fixture(tw);
+	var decision = {
+		id: "repair-resolution-damaged-receipt-0001",
+		operations: [
+			{ operation: "destroy", key: "reference" },
+			{ operation: "destroy", key: "input" }
+		]
+	};
+
+	f.runtime.resolveEvent(
+		f.journal,
+		f.originalId,
+		decision
+	);
+
+	f.editJournal(function (record) {
+		var receipt = record.diagnostics.find(function (entry) {
+			return entry.action === "user-resolved";
+		});
+
+		damage(record, receipt);
+	});
+
+	var before = f.wiki.getTiddlerText(f.journal);
+	var ownerBefore = JSON.stringify(
+		f.wiki.getTiddler(f.target).fields
+	);
+	var caught = null;
+
+	try {
+		f.runtime.resolveEvent(
+			f.journal,
+			f.originalId,
+			decision
+		);
+	} catch (error) {
+		caught = error;
+	}
+
+	assert(caught);
+	assert(
+		String(caught.message).indexOf(fragment) !== -1
+	);
+	assert(!caught.acceptanceUncertain);
+	assert(f.wiki.getTiddlerText(f.journal) === before);
+	assert(
+		JSON.stringify(f.wiki.getTiddler(f.target).fields) ===
+			ownerBefore
+	);
+	assert(f.attempts.length === 1);
+	assert(!f.runtime.executing);
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["failure preserves the authoritative event", testInitialFailurePreservesObligation],
@@ -991,7 +1045,36 @@ exports.run = function (tw) {
 		["administrative resolution confirms acceptance after an interrupted write", testResolutionConfirmsAcceptanceAfterInterruptedWrite],
 		["administrative resolution retries after a pre-write failure", testResolutionRetriesAfterPreWriteFailure],
 		["administrative resolution materialization survives restart", testResolutionMaterializationSurvivesRestart],
-		["administrative resolution identity rejects changed instructions", testResolutionIdentityRejectsChangedInstructions]
+		["administrative resolution identity rejects changed instructions", testResolutionIdentityRejectsChangedInstructions],
+		["administrative resolution rejects a receipt with a changed snapshot", function (tw) {
+			testResolutionRejectsDamagedReceipt(
+				tw,
+				function (record, receipt) {
+					receipt.snapshot.registry.input.data = 99;
+				},
+				"Invalid resolution receipt"
+			);
+		}],
+		["administrative resolution rejects a receipt with a changed phase", function (tw) {
+			testResolutionRejectsDamagedReceipt(
+				tw,
+				function (record, receipt) {
+					receipt.phase = "reaction";
+				},
+				"Invalid resolution receipt"
+			);
+		}],
+		["administrative resolution rejects ambiguous receipts", function (tw) {
+			testResolutionRejectsDamagedReceipt(
+				tw,
+				function (record, receipt) {
+					record.diagnostics.push(
+						JSON.parse(JSON.stringify(receipt))
+					);
+				},
+				"Resolution receipt is ambiguous"
+			);
+		}]
 	];
 
 	var results = cases.map(function (item) {

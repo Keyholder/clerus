@@ -140,55 +140,30 @@ function readOne(options, tiddler, title) {
 		return item;
 	}
 
-	var receipts = record.diagnostics.filter(function (entry) {
-		return entry.action === "user-resolved" &&
-			entry.decision &&
-			entry.decision.id === expectedId;
-	});
+	var receipt;
 
-	if (receipts.length > 0) {
-		try {
-			if (receipts.length !== 1) {
-				throw new Error("Resolution receipt is ambiguous");
-			}
+	try {
+		receipt = resolutions.readReceipt(record, expectedId);
+	} catch (error) {
+		item.evidenceError = String(error.message);
+		return item;
+	}
 
-			var receipt = receipts[0];
-			var acceptedDecision = resolutions.decision(receipt.decision);
-			var snapshot = events.validate(receipt.snapshot);
+	if (receipt !== null) {
+		item.accepted = receipt;
 
-			if (
-				receipt.phase !== "administrative" ||
-				!hasOwn(record.evidence.identities, receipt.event) ||
-				record.evidence.identities[receipt.event] !==
-					receipt.fingerprint ||
-				events.fingerprint(snapshot) !== receipt.fingerprint ||
-				hasOwn(record.events, receipt.event)
-			) {
-				throw new Error("Invalid resolution receipt");
-			}
+		item.contentMatches = item.decision !== null &&
+			request.eventId === receipt.eventId &&
+			request.fingerprint === receipt.fingerprint &&
+			JSON.stringify(item.decision) ===
+				JSON.stringify(receipt.decision);
 
-			item.accepted = {
-				eventId: receipt.event,
-				fingerprint: receipt.fingerprint,
-				decision: acceptedDecision,
-				snapshot: snapshot
-			};
+		item.activeAcceptedWork = record.work !== null &&
+			record.work.id === expectedId;
 
-			item.contentMatches = item.decision !== null &&
-				request.eventId === receipt.event &&
-				request.fingerprint === receipt.fingerprint &&
-				JSON.stringify(item.decision) ===
-					JSON.stringify(acceptedDecision);
-
-			item.activeAcceptedWork = record.work !== null &&
-				record.work.id === expectedId;
-
-			item.state = item.contentMatches
-				? "accepted"
-				: "changed";
-		} catch (error) {
-			item.evidenceError = String(error.message);
-		}
+		item.state = item.contentMatches
+			? "accepted"
+			: "changed";
 
 		return item;
 	}
