@@ -231,7 +231,7 @@ function testPublicManagementSurface(tw) {
 		"observationStatus",
 		"resetObservation",
 		"runDeferred",
-		"drainFlows",
+		"drainMessages",
 		"recover",
 		"resume",
 		"collect",
@@ -262,7 +262,7 @@ function testPublicManagementSurface(tw) {
 		"lifecycle",
 		"readJobs",
 		"executePersistentIngress",
-		"drainOfficialWork",
+		"drainMessageQueues",
 		"passDepth"
 	].forEach(function (name) {
 		assert(api[name] === undefined, "Exposed internal member: " + name);

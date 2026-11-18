@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/tests/core/flow-scheduler.js
+title: $:/plugins/clerus/tests/core/message-dispatch.js
 type: application/javascript
 module-type: library
 \*/
@@ -135,7 +135,7 @@ function testCascadeCompletesSynchronously(tw) {
 	assert(root.status === "completed");
 	assert(root.pending.length === 1);
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(trace.join(",") === "manager,worker");
 	assert(report.completed.length === 2);
@@ -144,7 +144,7 @@ function testCascadeCompletesSynchronously(tw) {
 	assert(f.registry("worker").received.data === 42);
 	assert(!f.wiki.getTiddler(root.obligation));
 
-	var repeated = f.runtime.drainFlows();
+	var repeated = f.runtime.drainMessages();
 
 	assert(repeated.completed.length === 0);
 	assert(repeated.errors.length === 0);
@@ -166,7 +166,7 @@ function testUnavailableExecutorPreservesMessage(tw) {
 
 	var id = root.pending[0].id;
 
-	var first = f.runtime.drainFlows();
+	var first = f.runtime.drainMessages();
 
 	assert(first.unavailable.length === 1);
 	assert(first.remaining === 1);
@@ -178,7 +178,7 @@ function testUnavailableExecutorPreservesMessage(tw) {
 		incoming.destroy("input");
 	};
 
-	var second = f.runtime.drainFlows();
+	var second = f.runtime.drainMessages();
 
 	assert(second.completed.length === 1);
 	assert(second.errors.length === 0);
@@ -214,7 +214,7 @@ function testFailedBranchDoesNotStopSibling(tw) {
 		});
 	});
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(report.errors.length === 1);
 	assert(report.completed.length === 1);

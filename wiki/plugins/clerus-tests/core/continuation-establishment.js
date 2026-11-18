@@ -144,7 +144,7 @@ function testEstablishment(tw) {
 	assert(!f.wiki.tiddlerExists(f.target));
 	assert(f.initialized() === 0);
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(f.initialized() === 1);
 	assert(!f.wiki.tiddlerExists(title));
@@ -163,7 +163,7 @@ function testPausedEstablishmentKeepsReservation(tw) {
 	var f = fixture(tw, true);
 	var title = start(f);
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(f.initialized() === 1);
 	assert(!f.wiki.tiddlerExists(f.target));
@@ -205,7 +205,7 @@ function testAcceptedBirthRecoversWithoutInitializer(tw) {
 	};
 
 	try {
-		f.runtime.drainFlows();
+		f.runtime.drainMessages();
 	} finally {
 		f.runtime.store.apply = originalApply;
 	}
@@ -230,7 +230,7 @@ function testAcceptedBirthRecoversWithoutInitializer(tw) {
 	var restarted = f.restart();
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.initialized() === 1);
 	assert(!f.wiki.tiddlerExists(title));

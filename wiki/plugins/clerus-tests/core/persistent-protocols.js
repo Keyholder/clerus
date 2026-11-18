@@ -261,11 +261,11 @@ function testUpwardAndDownwardCascade(tw) {
 	);
 
 	assert(result.status === "completed");
-	assert(observation.attempts(result.flow).errors.length === 0);
-	assert(result.flow.continuations.every(function (pass) {
+	assert(observation.attempts(result.delivery).errors.length === 0);
+	assert(result.delivery.continuations.every(function (pass) {
 		return pass.errors.length === 0;
 	}));
-	assert(result.flow.remaining === 0);
+	assert(result.delivery.remaining === 0);
 
 	assert(
 		trace.join(",") ===
@@ -398,8 +398,8 @@ function testStaffedAssignmentRoundTrip(tw) {
 	);
 
 	assert(first.status === "completed");
-	assert(observation.attempts(first.flow).errors.length === 0);
-	assert(first.flow.continuations.every(function (pass) {
+	assert(observation.attempts(first.delivery).errors.length === 0);
+	assert(first.delivery.continuations.every(function (pass) {
 		return pass.errors.length === 0;
 	}));
 	assert(workerIsActive(f.runtime, f.titles.worker));
@@ -414,8 +414,8 @@ function testStaffedAssignmentRoundTrip(tw) {
 	);
 
 	assert(returned.status === "completed");
-	assert(observation.attempts(returned.flow).errors.length === 0);
-	assert(returned.flow.continuations.every(function (pass) {
+	assert(observation.attempts(returned.delivery).errors.length === 0);
+	assert(returned.delivery.continuations.every(function (pass) {
 		return pass.errors.length === 0;
 	}));
 	assert(state.returned === 1);
@@ -468,7 +468,7 @@ function testInterruptedAssignmentReception(tw) {
 
 	assert(injected);
 
-	var errors = observation.attempts(result.flow).errors;
+	var errors = observation.attempts(result.delivery).errors;
 
 	assert(errors.length === 1);
 	assert(errors[0].result.phase === "materialization");

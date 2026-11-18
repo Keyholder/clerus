@@ -268,7 +268,7 @@ function create(options) {
 		return {
 			prototypeReceipts: receipts,
 			recovery: runtime.recover(),
-			delivery: runtime.drainFlows()
+			delivery: runtime.drainMessages()
 		};
 	}
 

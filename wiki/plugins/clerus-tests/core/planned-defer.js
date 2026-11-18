@@ -127,7 +127,7 @@ function testEffectRequiresPersistentRecipient() {
 	}, "Invalid persistent deferred effect");
 }
 
-function testAcceptanceRemainsExplicitlyClosed() {
+function testProposalIncludesDeferredEffects() {
 	var value = effect();
 
 	var proposal = {
@@ -135,7 +135,6 @@ function testAcceptanceRemainsExplicitlyClosed() {
 		owner: {
 			title: value.recipient.title,
 			executor: value.recipient.executor,
-
 			state: {
 				title: value.recipient.title,
 				type: "application/json",
@@ -154,15 +153,17 @@ function testAcceptanceRemainsExplicitlyClosed() {
 		}
 	};
 
-	throws(function () {
-		proposals.validate(proposal);
-	}, "requires deferred-obligation support");
+	var before = JSON.stringify(proposal);
+	var normalized = proposals.validate(proposal);
 
-	var normalized = proposals.validate(proposal, {
-		allowDeferred: true
-	});
-
+	assert(normalized.plan.effects.length === 0);
+	assert(normalized.plan.messages.length === 0);
 	assert(normalized.plan.deferred.length === 1);
+	assert(normalized.plan.deferred[0].id === value.id);
+
+	normalized.plan.deferred[0].recipient.executor = "local-change";
+
+	assert(JSON.stringify(proposal) === before);
 }
 
 function testSealRetainsRequest() {
@@ -187,7 +188,10 @@ exports.run = function () {
 		["planned defer: operation failure discards the request", testFailedOperationDiscardsRequest],
 		["planned defer: recipient identity cannot change", testRecipientCannotChange],
 		["planned defer: effect requires a persistent recipient", testEffectRequiresPersistentRecipient],
-		["planned defer: unsupported acceptance does not swallow the request", testAcceptanceRemainsExplicitlyClosed],
+		[
+			"planned defer: proposal includes isolated deferred effects",
+			testProposalIncludesDeferredEffects
+		],
 		["planned defer: sealed export retains the request", testSealRetainsRequest]
 	];
 

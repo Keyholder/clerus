@@ -154,9 +154,7 @@ function testBirthRemainsVirtual(tw) {
 	assert(!f.wiki.getTiddler(f.target));
 	assert(proposal.owner.state === null);
 
-	var normalized = proposals.validate(proposal, {
-		allowMessages: true
-	});
+	var normalized = proposals.validate(proposal);
 
 	assert(normalized.plan.effects.length === 1);
 

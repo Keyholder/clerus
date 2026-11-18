@@ -198,7 +198,7 @@ function testDeliveryAndRetention(tw) {
 			});
 	}));
 
-	var result = f.runtime.drainFlows();
+	var result = f.runtime.drainMessages();
 
 	assert(calls === 1);
 	assert(result.summary.waiting.notifications.ready === 0);
@@ -234,7 +234,7 @@ function testFailureAndRetry(tw) {
 	});
 
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	var record = f.record();
 
@@ -275,7 +275,7 @@ function testFailureAndRetry(tw) {
 	));
 
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(calls.length === 2);
 	assert(calls[0] === f.eventId);
@@ -311,7 +311,7 @@ function testMaterializationDoesNotReplayHandler(tw) {
 	};
 
 	try {
-		f.runtime.drainFlows();
+		f.runtime.drainMessages();
 	} finally {
 		f.runtime.store.apply = originalApply;
 	}
@@ -332,7 +332,7 @@ function testMaterializationDoesNotReplayHandler(tw) {
 	var restarted = f.restart();
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(calls === 1);
 	assert(!f.wiki.tiddlerExists(f.journal));
@@ -388,7 +388,7 @@ function testDeliveryRefreshesKeys(tw) {
 		waiting.evidence.identities[f.eventId] === fingerprint
 	);
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(calls === 1);
 	assert(!f.wiki.tiddlerExists(f.journal));
@@ -425,7 +425,7 @@ function testRemovedSubscriptionConsumesNotification(tw) {
 		{ text: JSON.stringify(registry) }
 	));
 
-	var result = f.runtime.drainFlows();
+	var result = f.runtime.drainMessages();
 
 	assert(calls === 0);
 	assert(!f.wiki.tiddlerExists(f.journal));

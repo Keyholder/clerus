@@ -144,7 +144,7 @@ function initialize(f, event, operational, incoming) {
 function testSuccessfulBirth(tw) {
 	var f = fixture(tw, initialize);
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(report.errors.length === 0);
 	assert(report.completed.length === 1);
@@ -171,7 +171,7 @@ function testRejectedInitializationCreatesNothing(tw) {
 		throw new Error("Initialization rejected");
 	});
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(report.errors.length === 1);
 	assert(report.errors[0].result.phase === "reaction");
@@ -221,7 +221,7 @@ function testInterruptedBirthDoesNotRepeatInitialization(tw) {
 	var report;
 
 	try {
-		report = f.runtime.drainFlows();
+		report = f.runtime.drainMessages();
 	} finally {
 		f.runtime.store.apply = originalApply;
 	}
@@ -260,7 +260,7 @@ function testOccupiedAddressIsPreserved(tw) {
 		text: "intervention"
 	}));
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(report.unavailable.length === 1);
 	assert(report.remaining === 1);

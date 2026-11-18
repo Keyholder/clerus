@@ -114,7 +114,7 @@ function testCollectionWaitsForWholeFlow(tw) {
 	);
 
 	assert(result.status === "completed");
-	assert(result.flow.errors.length === 0);
+	assert(result.delivery.errors.length === 0);
 	assert(received);
 
 	// One collection pass deletes the unretained superior.
@@ -126,7 +126,7 @@ function testCollectionWaitsForWholeFlow(tw) {
 	assert(first.removed.join(",") === source);
 
 	// The newly released target is considered at the next boundary.
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(!f.wiki.getTiddler(target));
 	assert(

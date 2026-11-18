@@ -202,7 +202,7 @@ function testFoundingAndReport(tw) {
 
 	assert(founded.status === "completed");
 
-	var attempts = observation.attempts(founded.flow);
+	var attempts = observation.attempts(founded.delivery);
 
 	assert(attempts.errors.length === 0);
 	assert(attempts.completed.length === 1);
@@ -244,7 +244,7 @@ function testFailedInitializationPreservesDocuments(tw) {
 		{ type: "found" }
 	);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 1);
 	assert(attempts.errors[0].result.lifecycle.dismissed);
@@ -318,7 +318,7 @@ function testInterruptedBirthDoesNotReinitialize(tw) {
 
 	assert(injected);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 1);
 	assert(attempts.errors[0].result.phase === "materialization");
@@ -348,7 +348,7 @@ function testInterruptedBirthDoesNotReinitialize(tw) {
 	assert(pending[0].event.registry.contract.form === "contract");
 	assert(pending[0].event.registry.assignment.form === "mission");
 
-	var retried = f.runtime.drainFlows();
+	var retried = f.runtime.drainMessages();
 	var retriedAttempts = observation.attempts(retried);
 
 	assert(retriedAttempts.unavailable.length === 1);
@@ -420,7 +420,7 @@ function testUnrecordedAcknowledgementPreservesObligation(tw) {
 
 	assert(injected);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 1);
 	assert(attempts.errors[0].result.phase === "acknowledgement");
@@ -448,7 +448,7 @@ function testUnrecordedAcknowledgementPreservesObligation(tw) {
 	*/
 	f.runtime.recover();
 
-	var retried = f.runtime.drainFlows();
+	var retried = f.runtime.drainMessages();
 
 	assert(
 		observation.attempts(retried).unavailable.length === 1
@@ -494,7 +494,7 @@ function testRecordedAcknowledgementFinishesWithoutReinitialization(tw) {
 
 	assert(injected);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 1);
 	assert(attempts.errors[0].result.phase === "acknowledgement");
@@ -525,7 +525,7 @@ function testRecordedAcknowledgementFinishesWithoutReinitialization(tw) {
 	assert(f.dismissed() === 0);
 	assert(f.wiki.getTiddler(workerTitle).fields.text === body);
 
-	var drained = f.runtime.drainFlows();
+	var drained = f.runtime.drainMessages();
 
 	assert(
 		observation.attempts(drained).completed.length === 0

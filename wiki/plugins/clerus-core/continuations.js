@@ -573,11 +573,7 @@ function create(options) {
 		}
 
 		var event = record.events[id].event;
-
-		var proposal = proposals.validate(value, {
-			allowMessages: true,
-			allowDeferred: true
-		});
+		var proposal = proposals.validate(value);
 
 		if (
 			proposal.owner.title !== event.recipient.title ||

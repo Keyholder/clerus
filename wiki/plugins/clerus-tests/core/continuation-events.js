@@ -270,7 +270,7 @@ function testDeliveryConsumesEvent(tw) {
 
 	assert(calls === 0);
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(report.continuations.length !== 0);
 	assert(calls === 1);
@@ -284,7 +284,7 @@ function testDeliveryConsumesEvent(tw) {
 	assert(registry.received.data === 42);
 	assert(registry.charter.status.phase === "received");
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 	assert(calls === 1);
 }
 
@@ -303,7 +303,7 @@ function testEmptyDeliveryStillCompletes(tw) {
 	var title = f.runtime.continuations.accept(f.work);
 
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(calls === 1);
 	assert(!f.wiki.tiddlerExists(title));
@@ -333,7 +333,7 @@ function testReactionFailurePausesEvent(tw) {
 	var title = f.runtime.continuations.accept(f.work);
 
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	var journal = f.wiki.getTiddler(title);
 	var record = JSON.parse(journal.fields.text);
@@ -350,7 +350,7 @@ function testReactionFailurePausesEvent(tw) {
 			.charter.status.phase !== "must-not-materialize"
 	);
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 	assert(calls === 1);
 }
 
@@ -387,7 +387,7 @@ function testAcceptedConsequencesDoNotReplayHandler(tw) {
 	};
 
 	try {
-		f.runtime.drainFlows();
+		f.runtime.drainMessages();
 	} finally {
 		f.runtime.store.apply = originalApply;
 	}
@@ -408,7 +408,7 @@ function testAcceptedConsequencesDoNotReplayHandler(tw) {
 	));
 
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(calls === 1);
 	assert(!f.wiki.tiddlerExists(title));

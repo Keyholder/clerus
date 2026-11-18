@@ -149,9 +149,9 @@ function testPendingMessageDoesNotRetainFormerSender(tw) {
 	var sent = f.runtime.dispatch(source, { type: "test" });
 
 	assert(
-		observation.attempts(sent.flow).unavailable.length === 1
+		observation.attempts(sent.delivery).unavailable.length === 1
 	);
-	assert(sent.flow.summary.waiting.deliveries.ready === 1);
+	assert(sent.delivery.summary.waiting.deliveries.ready === 1);
 
 	var collected = f.runtime.collect();
 
@@ -165,7 +165,7 @@ function testPendingMessageDoesNotRetainFormerSender(tw) {
 		incoming.move("input", operational, "received");
 	};
 
-	var delivered = f.runtime.drainFlows();
+	var delivered = f.runtime.drainMessages();
 	var attempts = observation.attempts(delivered);
 
 	assert(attempts.errors.length === 0);
@@ -290,7 +290,7 @@ function testAcceptedBirthProtectsUnreferencedChild(tw) {
 
 	assert(injected);
 	assert(
-		observation.attempts(founded.flow).errors.length === 1
+		observation.attempts(founded.delivery).errors.length === 1
 	);
 	assert(initializations === 1);
 

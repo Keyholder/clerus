@@ -15,10 +15,7 @@ var works = require(
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 
 function convert(value, id, platform, establishing) {
-	var proposal = proposals.validate(value, {
-		allowMessages: true,
-		allowDeferred: true
-	});
+	var proposal = proposals.validate(value);
 
 	if (
 		proposal.owner.state === null &&

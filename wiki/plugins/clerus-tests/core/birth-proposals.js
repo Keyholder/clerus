@@ -189,7 +189,7 @@ function testMissingBirthEffectIsRejected(tw) {
 	f.proposal.plan.effects = [];
 
 	throws(function () {
-		proposals.validate(f.proposal, { allowMessages: true });
+		proposals.validate(f.proposal);
 	}, "must create its owner");
 
 	assert(f.manager.pending(f.journal).length === 1);

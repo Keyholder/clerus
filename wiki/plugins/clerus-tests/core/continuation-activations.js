@@ -100,7 +100,7 @@ function fixture(tw, reschedule) {
 	});
 
 	runtime.recover();
-	runtime.drainFlows();
+	runtime.drainMessages();
 
 	return {
 		wiki: wiki,
@@ -132,7 +132,7 @@ function testActivationWaits(tw) {
 	assert(ids.length === 1);
 	assert(record.events[ids[0]].event.kind === "activation");
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 	assert(f.ticks.length === 0);
 
 	var report = f.runtime.runDeferred();

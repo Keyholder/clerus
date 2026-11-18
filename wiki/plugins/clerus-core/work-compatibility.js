@@ -27,11 +27,7 @@ var reservations = require(
 );
 
 function proposalView(value) {
-	var proposal = proposals.validate(value, {
-		allowMessages: true,
-		allowDeferred: true
-	});
-
+	var proposal = proposals.validate(value);
 	var writes = proposal.plan.effects.map(function (effect) {
 		return effect.title;
 	}).sort();

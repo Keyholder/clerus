@@ -136,7 +136,7 @@ function testOrderDefersIndependentReport(tw) {
 		{ type: "test" }
 	);
 
-	assert(ordered.flow.errors.length === 0);
+	assert(ordered.delivery.errors.length === 0);
 	assert(f.trace.join(",") === "order");
 	assert(f.runtime.deferred.inspect().length === 1);
 

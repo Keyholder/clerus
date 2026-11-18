@@ -162,7 +162,7 @@ function errors(report) {
 
 function testSuccessfulDelivery(tw) {
 	var f = fixture(tw);
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(errors(report).length === 0);
 	assert(f.calls.length === 1);
@@ -201,7 +201,7 @@ function testInterruptionBeforeAcknowledgement(tw) {
 	var report;
 
 	try {
-		report = f.runtime.drainFlows();
+		report = f.runtime.drainMessages();
 	} finally {
 		f.runtime.store.apply = originalApply;
 	}
@@ -221,7 +221,7 @@ function testInterruptionBeforeAcknowledgement(tw) {
 	var restarted = f.restart();
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.counter() === 2);
 	assert(f.calls.length === 2);
@@ -257,7 +257,7 @@ function testRecordedAcknowledgementPreventsReplay(tw) {
 	};
 
 	try {
-		var report = f.runtime.drainFlows();
+		var report = f.runtime.drainMessages();
 		assert(errors(report).length === 1);
 	} finally {
 		f.runtime.store.apply = originalApply;
@@ -270,7 +270,7 @@ function testRecordedAcknowledgementPreventsReplay(tw) {
 	var restarted = f.restart();
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.counter() === 1);
 	assert(f.calls.length === 1);
@@ -279,7 +279,7 @@ function testRecordedAcknowledgementPreventsReplay(tw) {
 
 function testFailureKeepsPartialEffects(tw) {
 	var f = fixture(tw, { fail: true });
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(errors(report).length === 1);
 	assert(errors(report)[0].result.phase === "reaction");
@@ -297,7 +297,7 @@ function testFailureKeepsPartialEffects(tw) {
 			"user"
 	);
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 	assert(f.calls.length === 1);
 }
 
@@ -306,7 +306,7 @@ function testEphemeralEstablishment(tw) {
 
 	assert(!f.wiki.tiddlerExists(f.target));
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assert(errors(report).length === 0);
 	assert(f.calls.length === 1);

@@ -232,7 +232,7 @@ function testReleaseAndEntryAreSeparate(tw) {
 		f.destination.store.read(f.target).fields
 	));
 
-	restartedSource.drainFlows();
+	restartedSource.drainMessages();
 
 	assert(!f.sourceWiki.tiddlerExists(f.journal));
 	assert(f.calls() === 1);

@@ -39,9 +39,7 @@ function normalizeFields(fields) {
 	).after;
 }
 
-function validate(value, options) {
-	options = options || {};
-
+function validate(value) {
 	var proposal = schemas.copyJSON(value);
 
 	fieldsOnly(proposal, [
@@ -147,15 +145,6 @@ function validate(value, options) {
 			throw new Error("Proposal messages must be an array");
 		}
 
-		if (
-			proposal.plan.messages.length > 0 &&
-			options.allowMessages !== true
-		) {
-			throw new Error(
-				"Message-bearing proposal requires a transactional flow"
-			);
-		}
-
 		var messageIds = new Set();
 
 		messages = proposal.plan.messages.map(function (value) {
@@ -183,15 +172,6 @@ function validate(value, options) {
 	if (proposal.plan.deferred !== undefined) {
 		if (!Array.isArray(proposal.plan.deferred)) {
 			throw new Error("Proposal deferred effects must be an array");
-		}
-
-		if (
-			proposal.plan.deferred.length > 0 &&
-			options.allowDeferred !== true
-		) {
-			throw new Error(
-				"Deferred proposal requires deferred-obligation support"
-			);
 		}
 
 		var deferredRecipients = new Set();
@@ -223,7 +203,7 @@ function validate(value, options) {
 		});
 	}
 
-	var result = {
+	return schemas.copyJSON({
 		version: 1,
 		owner: {
 			title: proposal.owner.title,
@@ -232,19 +212,11 @@ function validate(value, options) {
 		},
 		plan: {
 			version: 1,
-			effects: effects
+			effects: effects,
+			messages: messages,
+			deferred: deferred
 		}
-	};
-
-	if (options.allowMessages === true) {
-		result.plan.messages = messages;
-	}
-
-	if (options.allowDeferred === true) {
-		result.plan.deferred = deferred;
-	}
-
-	return schemas.copyJSON(result);
+	});
 }
 
 exports.validate = validate;

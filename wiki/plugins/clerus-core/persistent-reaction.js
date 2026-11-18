@@ -90,17 +90,6 @@ function execute(options) {
 		);
 	}
 
-	/*
-	Reject obsolete ingress explicitly. Silently treating it as
-	an independent external event could execute the wrong work.
-	*/
-	if (
-		Object.prototype.hasOwnProperty.call(options, "flow") ||
-		Object.prototype.hasOwnProperty.call(options, "deferred")
-	) {
-		throw new Error("Unsupported persistent delivery address");
-	}
-
 	if (
 		options.continuation !== undefined &&
 		(

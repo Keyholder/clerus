@@ -133,7 +133,7 @@ function testPersistentForwardsToEphemeral(tw) {
 		}
 	});
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assertNoContinuationErrors(report);
 	assert(trace.join(",") === "manager,worker");
@@ -152,7 +152,7 @@ function testPersistentForwardsToEphemeral(tw) {
 		assert(entry.title === journal);
 	});
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 	assert(trace.join(",") === "manager,worker");
 }
 
@@ -285,7 +285,7 @@ function testEphemeralReportReachesPersistentSuperior(tw) {
 	var setup = reportingFixture(tw, false);
 	var f = setup.f;
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 
 	assertNoContinuationErrors(report);
 
@@ -299,7 +299,7 @@ function testEphemeralReportReachesPersistentSuperior(tw) {
 	assert(report.ephemeralRemaining === 0);
 	assert(report.remaining === 0);
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(
 		setup.trace.join(",") ===
@@ -311,7 +311,7 @@ function testEphemeralOrderDefersReportToNewWave(tw) {
 	var setup = reportingFixture(tw, true);
 	var f = setup.f;
 
-	var first = f.runtime.drainFlows();
+	var first = f.runtime.drainMessages();
 
 	assertNoContinuationErrors(first);
 	assert(setup.trace.join(",") === "manager:order");

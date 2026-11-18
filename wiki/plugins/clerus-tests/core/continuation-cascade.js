@@ -188,7 +188,7 @@ function fixture(tw, settings) {
 				obligation: title,
 				results: results,
 				pending: pending,
-				flow: runtime.drainFlows()
+				delivery: runtime.drainMessages()
 			};
 		}
 	};
@@ -211,8 +211,8 @@ function testSingleJournalCascade(tw) {
 
 	assert(result.status === "completed");
 	assert(result.obligation);
-	assert(result.flow.errors.length === 0);
-	assert(continuationErrors(result.flow).length === 0);
+	assert(result.delivery.errors.length === 0);
+	assert(continuationErrors(result.delivery).length === 0);
 
 	assert(f.trace.join(",") === "root,manager,worker");
 	assert(f.observedJournals.length === 2);
@@ -281,7 +281,7 @@ function testForwardingPublicationInterruption(tw) {
 	assert(injected);
 	assert(f.trace.join(",") === "root,manager");
 
-	var errors = continuationErrors(result.flow);
+	var errors = continuationErrors(result.delivery);
 
 	assert(errors.length === 1);
 	assert(errors[0].result.phase === "materialization");
@@ -309,7 +309,7 @@ function testForwardingPublicationInterruption(tw) {
 	*/
 	assert(f.trace.join(",") === "root,manager");
 
-	var drained = restarted.drainFlows();
+	var drained = restarted.drainMessages();
 
 	assert(continuationErrors(drained).length === 0);
 	assert(f.trace.join(",") === "root,manager,worker");
@@ -323,7 +323,7 @@ function testFailurePreservesForwardedInput(tw) {
 
 	assert(f.trace.join(",") === "root,manager");
 
-	var errors = continuationErrors(result.flow);
+	var errors = continuationErrors(result.delivery);
 
 	assert(errors.length === 1);
 	assert(errors[0].result.phase === "reaction");
@@ -340,7 +340,7 @@ function testFailurePreservesForwardedInput(tw) {
 	);
 	assert(journal.fields["clerus-custody"] === "user");
 
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(f.trace.join(",") === "root,manager");
 }

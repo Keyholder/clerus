@@ -24,7 +24,7 @@ function create(options) {
 		"observationStatus",
 		"resetObservation",
 		"runDeferred",
-		"drainFlows",
+		"drainMessages",
 		"recover",
 		"resume",
 		"collect",

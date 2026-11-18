@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/tests/core/runtime-flows.js
+title: $:/plugins/clerus/tests/core/runtime-messages.js
 type: application/javascript
 module-type: library
 \*/
@@ -133,17 +133,17 @@ function testDispatchDrainsFlow(tw) {
 		{ type: "test" }
 	);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(result.status === "completed");
 	assert(attempts.completed.length === 2);
 	assert(attempts.errors.length === 0);
 
-	assert(result.flow.summary.complete);
-	assert(result.flow.summary.materializations === 0);
-	assert(result.flow.summary.waiting.deliveries.ready === 0);
-	assert(result.flow.summary.waiting.deliveries.paused === 0);
-	assert(result.flow.remaining === 0);
+	assert(result.delivery.summary.complete);
+	assert(result.delivery.summary.materializations === 0);
+	assert(result.delivery.summary.waiting.deliveries.ready === 0);
+	assert(result.delivery.summary.waiting.deliveries.paused === 0);
+	assert(result.delivery.remaining === 0);
 
 	assert(f.calls.root === 1);
 	assert(f.calls.manager === 1);
@@ -166,7 +166,7 @@ function testFailedRecipientIsSuspended(tw) {
 		{ type: "test" }
 	);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(result.status === "completed");
 	assert(attempts.errors.length === 1);
@@ -202,7 +202,7 @@ function testFailedRecipientIsSuspended(tw) {
 	);
 
 	assert(
-		result.flow.summary.waiting.deliveries.paused === 1
+		result.delivery.summary.waiting.deliveries.paused === 1
 	);
 }
 
@@ -253,7 +253,7 @@ function testRecoveryQueuesWithoutCallingHandlers(tw) {
 
 	assert(injected);
 	assert(
-		observation.attempts(result.flow).errors.length === 1
+		observation.attempts(result.delivery).errors.length === 1
 	);
 	assert(f.calls.root === 1);
 	assert(f.calls.manager === 1);
@@ -271,7 +271,7 @@ function testRecoveryQueuesWithoutCallingHandlers(tw) {
 	assert(recovery.summary.materializations === 0);
 	assert(recovery.summary.waiting.deliveries.ready === 1);
 
-	var completed = restarted.drainFlows();
+	var completed = restarted.drainMessages();
 	var attempts = observation.attempts(completed);
 
 	assert(attempts.completed.length === 1);

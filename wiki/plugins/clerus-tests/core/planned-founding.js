@@ -144,11 +144,11 @@ function testCompleteFoundingPath(tw) {
 
 	assert(result.status === "completed");
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 0);
 	assert(attempts.completed.length === 1);
-	assert(result.flow.summary.waiting.deliveries.ready === 0);
+	assert(result.delivery.summary.waiting.deliveries.ready === 0);
 
 	assert(f.births() === 1);
 
@@ -196,9 +196,9 @@ function testAcceptedReservationPreventsSecondFounding(tw) {
 
 	assert(first.status === "completed");
 	assert(
-		observation.attempts(first.flow).unavailable.length === 1
+		observation.attempts(first.delivery).unavailable.length === 1
 	);
-	assert(first.flow.summary.waiting.deliveries.ready === 1);
+	assert(first.delivery.summary.waiting.deliveries.ready === 1);
 	assert(f.births() === 0);
 
 	var before = f.wiki.getTiddler(f.founder).fields.text;

@@ -129,7 +129,7 @@ function fixture(tw) {
 	});
 
 	runtime.recover();
-	runtime.drainFlows();
+	runtime.drainMessages();
 
 	/*
 		Everything below models user edits through ordinary TW5
@@ -245,7 +245,7 @@ function testSameEventCanBeRetriedAfterRepair(tw) {
 	/*
 		Restoring the job does not resume its paused event.
 	*/
-	restarted.drainFlows();
+	restarted.drainMessages();
 	assert(f.attempts.length === 1);
 
 	f.editJournal(function (record) {
@@ -259,14 +259,14 @@ function testSameEventCanBeRetriedAfterRepair(tw) {
 		f.record().evidence.identities[f.originalId] === fingerprint
 	);
 
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.attempts.length === 2);
 	assert(f.attempts[0] === f.attempts[1]);
 	assert(f.registry().received.data === 42);
 	assert(!f.wiki.tiddlerExists(f.journal));
 
-	restarted.drainFlows();
+	restarted.drainMessages();
 	assert(f.attempts.length === 2);
 }
 
@@ -283,7 +283,7 @@ function testReadyEventWaitsForRecipientResumption(tw) {
 		record.events[f.originalId].mode = "ready";
 	}, f.platform);
 
-	var report = f.runtime.drainFlows();
+	var report = f.runtime.drainMessages();
 	var blocked = [];
 
 	report.continuations.forEach(function (pass) {
@@ -380,7 +380,7 @@ function testReplacementUsesNewIdentity(tw) {
 	}, f.platform);
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.attempts.length === 2);
 	assert(f.attempts[0] === f.originalId);
@@ -919,7 +919,7 @@ function testResolutionMaterializationSurvivesRestart(tw) {
 	var ownerBefore = f.wiki.getTiddlerText(f.target);
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.wiki.getTiddlerText(f.target) === ownerBefore);
 	assert(f.attempts.length === 1);

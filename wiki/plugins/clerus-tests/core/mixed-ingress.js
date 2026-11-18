@@ -184,10 +184,10 @@ function testEphemeralReportStartsPersistentFlow(tw) {
 	assert(result.persistent[0].result.obligation);
 
 	assert(
-		observation.attempts(result.flow).completed.length === 1
+		observation.attempts(result.delivery).completed.length === 1
 	);
 	assert(
-		observation.attempts(result.flow).errors.length === 0
+		observation.attempts(result.delivery).errors.length === 0
 	);
 
 	var peer = JSON.parse(
@@ -209,7 +209,7 @@ function testSenderFailureDoesNotCancelAcceptedReport(tw) {
 	assert(result.persistent.length === 1);
 	assert(result.persistent[0].result.status === "completed");
 	assert(
-		observation.attempts(result.flow).completed.length === 1
+		observation.attempts(result.delivery).completed.length === 1
 	);
 
 	assert(

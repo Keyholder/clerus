@@ -150,7 +150,7 @@ function testTickStartsIndependentReportWave(tw) {
 	var ordered = f.start();
 
 	assert(ordered.status === "completed");
-	assert(ordered.flow.errors.length === 0);
+	assert(ordered.delivery.errors.length === 0);
 	assert(f.calls.ticks === 0);
 	assert(f.calls.reports === 0);
 
@@ -173,16 +173,16 @@ function testTickStartsIndependentReportWave(tw) {
 	assert(activation.event.recipient.title === f.worker);
 	assert(activation.event.recipient.executor === "worker");
 
-	assert(ordered.flow.summary.materializations === 0);
-	assert(ordered.flow.summary.waiting.deliveries.ready === 0);
-	assert(ordered.flow.summary.waiting.activations.ready === 1);
+	assert(ordered.delivery.summary.materializations === 0);
+	assert(ordered.delivery.summary.waiting.deliveries.ready === 0);
+	assert(ordered.delivery.summary.waiting.activations.ready === 1);
 
 	var report = f.runtime.runDeferred();
 
 	assert(report.errors.length === 0);
 	assert(report.activations.length === 1);
 	assert(report.activations[0].result.status === "completed");
-	assert(report.activations[0].result.flow.errors.length === 0);
+	assert(report.activations[0].result.delivery.errors.length === 0);
 	assert(report.summary.waiting.activations.ready === 0);
 	assert(f.calls.ticks === 1);
 	assert(f.calls.reports === 1);
@@ -278,7 +278,7 @@ function testInterruptedTickRecoversWithoutRedispatch(tw) {
 	assert(f.calls.ticks === 1);
 	assert(f.calls.reports === 0);
 
-	var delivered = restarted.drainFlows();
+	var delivered = restarted.drainMessages();
 
 	assert(
 		observation.attempts(delivered).errors.length === 0

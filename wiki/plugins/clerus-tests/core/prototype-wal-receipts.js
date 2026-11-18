@@ -324,7 +324,7 @@ exports.run = function (tw) {
 		["prototype receipts: malformed WAL is not absence", testMalformedWalIsNotAbsence],
 		["prototype receipts: empty WAL permits entry before deadline", testEmptyWalEnablesEarlyEntry],
 		["prototype receipts: diagnostics do not constitute empty success", testDiagnosticsAreNotEmptySuccess],
-		["prototype receipts: legacy marker cannot infer completion from absence", testLegacyMarkerDoesNotInferCompletion],
+		["prototype receipts: marker without a deadline cannot infer completion from absence", testLegacyMarkerDoesNotInferCompletion],
 		["prototype receipts: empty WAL evidence may precede the job", testEvidenceMayPrecedeJob]
 	];
 

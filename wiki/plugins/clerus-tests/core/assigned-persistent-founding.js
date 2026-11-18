@@ -299,7 +299,7 @@ function testNormalFounding(tw) {
 
 	assert(result.status === "completed");
 	assert(
-		observation.attempts(result.flow).errors.length === 0
+		observation.attempts(result.delivery).errors.length === 0
 	);
 
 	verifyCompleted(
@@ -414,7 +414,7 @@ function testInterruption(tw, point) {
 		f.calls.initializer === (birthAttempted ? 1 : 0)
 	);
 
-	var delivered = restarted.drainFlows();
+	var delivered = restarted.drainMessages();
 
 	assert(
 		observation.attempts(delivered).errors.length === 0

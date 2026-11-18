@@ -1,5 +1,5 @@
 /*\
-title: $:/plugins/clerus/tests/core/flow-acceptance.js
+title: $:/plugins/clerus/tests/core/event-acceptance.js
 type: application/javascript
 module-type: library
 \*/

@@ -98,7 +98,7 @@ function Runtime(options) {
 	});
 
 	/*
-	Read-only compatibility views for internal diagnostics/tests.
+	Read-only diagnostic projections of pass-coordinator state.
 	The coordinator owns the state.
 	*/
 	Object.defineProperties(this, {
@@ -533,7 +533,7 @@ Runtime.prototype.summarizeObligations = function () {
 	});
 };
 
-Runtime.prototype.drainContinuationWork = function () {
+Runtime.prototype.drainContinuationMessages = function () {
 	var report = {
 		completed: [],
 		blocked: [],
@@ -727,7 +727,7 @@ Runtime.prototype.drainContinuationWork = function () {
 	return report;
 };
 
-Runtime.prototype.drainOfficialWork = function () {
+Runtime.prototype.drainMessageQueues = function () {
 	var result = {
 		completed: [],
 		blocked: [],
@@ -745,7 +745,7 @@ Runtime.prototype.drainOfficialWork = function () {
 		}
 
 		var existing = new Set(this.scheduler.queue);
-		var continuation = this.drainContinuationWork();
+		var continuation = this.drainContinuationMessages();
 
 		result.continuations.push(continuation);
 
@@ -895,7 +895,7 @@ function dispatchContinuationActivation(title, id) {
 			result
 		);
 
-		result.flow = this.drainOfficialWork();
+		result.delivery = this.drainMessageQueues();
 
 		return result;
 	} finally {
@@ -1019,7 +1019,7 @@ function dispatchPass(title, event, incoming) {
 				incoming
 			);
 
-			ephemeralResult.flow = this.drainOfficialWork();
+			ephemeralResult.delivery = this.drainMessageQueues();
 
 			return ephemeralResult;
 		}
@@ -1102,7 +1102,7 @@ function dispatchPass(title, event, incoming) {
 			result
 		);
 
-		result.flow = this.drainOfficialWork();
+		result.delivery = this.drainMessageQueues();
 
 		return result;
 	} finally {
@@ -1382,7 +1382,7 @@ function observePass() {
 				}
 			}
 
-			passes.push(this.drainFlows());
+			passes.push(this.drainMessages());
 		}
 
 		return passes;
@@ -1543,18 +1543,18 @@ Runtime.prototype.inspect = function () {
 	};
 };
 
-function drainFlowsPass() {
+function drainMessagesPass() {
 	if (
 		this.executing ||
 		this.scheduler.running
 	) {
-		throw new Error("Cannot start a nested flow pass");
+		throw new Error("Cannot start a nested message pass");
 	}
 
 	this.executing = true;
 
 	try {
-		return this.drainOfficialWork();
+		return this.drainMessageQueues();
 	} finally {
 		this.executing = false;
 	}
@@ -1755,10 +1755,10 @@ Runtime.prototype.runDeferred = function () {
 	);
 };
 
-Runtime.prototype.drainFlows = function () {
+Runtime.prototype.drainMessages = function () {
 	return this.passes.run(
 		this,
-		drainFlowsPass,
+		drainMessagesPass,
 		arguments,
 		true
 	);

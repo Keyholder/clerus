@@ -106,7 +106,7 @@ function testPendingDeliveryNotSenderHistory(tw) {
 	);
 
 	assert(
-		observation.attempts(result.flow).unavailable.length === 1
+		observation.attempts(result.delivery).unavailable.length === 1
 	);
 
 	var pending = f.retention();
@@ -119,7 +119,7 @@ function testPendingDeliveryNotSenderHistory(tw) {
 		throw new Error("Target rejected delivery");
 	};
 
-	var delivered = f.runtime.drainFlows();
+	var delivered = f.runtime.drainMessages();
 
 	assert(
 		observation.attempts(delivered).errors.length === 1
@@ -329,7 +329,7 @@ function testAcceptedBirthRetainsWithoutSuperiorReference(tw) {
 
 	assert(injected);
 	assert(
-		observation.attempts(result.flow).errors.length === 1
+		observation.attempts(result.delivery).errors.length === 1
 	);
 	assert(initialized === 1);
 

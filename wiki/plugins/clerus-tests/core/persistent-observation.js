@@ -498,7 +498,7 @@ function testPersistentBatchContinuesAfterReactionFailure(tw) {
 	retries the paused event or repeats the successful one.
 	*/
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 	f.runtime.observe();
 
 	assert(f.count("a-failing") === 1);
@@ -548,7 +548,7 @@ function testMixedBatchSurvivesEphemeralReactionFailure(tw) {
 
 	f.runtime.observe();
 	f.runtime.recover();
-	f.runtime.drainFlows();
+	f.runtime.drainMessages();
 
 	assert(f.count("a-ephemeral") === 1);
 	assert(f.count("b-persistent") === 1);
@@ -631,7 +631,7 @@ function testInterruptedMixedBatchRecoversRegisteredNotification(tw) {
 	var restarted = f.restart();
 
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.count("c-persistent") === 1);
 
@@ -644,7 +644,7 @@ function testInterruptedMixedBatchRecoversRegisteredNotification(tw) {
 
 	restarted.observe();
 	restarted.recover();
-	restarted.drainFlows();
+	restarted.drainMessages();
 
 	assert(f.count("a-ephemeral") === 1);
 	assert(f.count("b-unavailable") === 0);
@@ -877,7 +877,7 @@ function movingObserverFixture(tw) {
 				));
 
 				source.runtime.recover();
-				return source.runtime.drainFlows();
+				return source.runtime.drainMessages();
 			}
 		};
 	}
@@ -999,7 +999,7 @@ function testOldNotificationRemainsAtSourceAfterMove(tw) {
 	);
 
 	f.source.runtime.recover();
-	f.source.runtime.drainFlows();
+	f.source.runtime.drainMessages();
 
 	assert(f.calls.length === 1);
 }
@@ -1056,7 +1056,7 @@ function testOldNotificationCannotWriteMovedRegistry(tw) {
 	);
 
 	f.source.runtime.recover();
-	f.source.runtime.drainFlows();
+	f.source.runtime.drainMessages();
 
 	assert(f.calls.length === 1);
 }

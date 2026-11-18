@@ -133,12 +133,12 @@ function testPersistentOrderReachesEphemeralChain(tw) {
 
 	assert(result.status === "completed");
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 0);
 	assert(attempts.completed.length === 1);
-	assert(result.flow.summary.waiting.deliveries.ready === 0);
-	assert(result.flow.summary.waiting.deliveries.paused === 0);
+	assert(result.delivery.summary.waiting.deliveries.ready === 0);
+	assert(result.delivery.summary.waiting.deliveries.paused === 0);
 
 	assert(f.trace.join(",") === "root,manager,worker");
 	assert(f.ids[0]);
@@ -159,7 +159,7 @@ function testEphemeralFailureBecomesFlowEvidence(tw) {
 		{ type: "test" }
 	);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 1);
 	assert(attempts.errors[0].result.phase === "reaction");
@@ -224,16 +224,16 @@ function testInfrastructureFailurePreservesPendingDelivery(tw) {
 
 	assert(injected);
 
-	var attempts = observation.attempts(result.flow);
+	var attempts = observation.attempts(result.delivery);
 
 	assert(attempts.errors.length === 1);
 	assert(attempts.errors[0].result.phase === "materialization");
 	assert(!attempts.errors[0].result.lifecycle);
-	assert(result.flow.summary.waiting.deliveries.ready === 1);
+	assert(result.delivery.summary.waiting.deliveries.ready === 1);
 
 	assert(f.ids.length === 1);
 
-	var retried = f.runtime.drainFlows();
+	var retried = f.runtime.drainMessages();
 
 	assert(
 		observation.attempts(retried).errors.length === 0

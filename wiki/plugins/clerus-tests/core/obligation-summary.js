@@ -137,8 +137,8 @@ function testUnavailableAttemptsDoNotMultiplyObligations(tw) {
 	var f = fixture(tw);
 	f.publish();
 
-	var first = f.runtime.drainFlows();
-	var second = f.runtime.drainFlows();
+	var first = f.runtime.drainMessages();
+	var second = f.runtime.drainMessages();
 
 	assert(first.summary.complete);
 	assert(second.summary.complete);
