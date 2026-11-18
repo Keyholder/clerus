@@ -6,15 +6,10 @@ module-type: library
 
 "use strict";
 
-var FlowScheduler = require(
-	"$:/plugins/clerus/core/flow-scheduler.js"
-).Scheduler;
-
-var legacyRoot = require(
-	"$:/plugins/clerus/tests/legacy-flow-root.js"
+var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var continuationRoot = require(
+	"$:/plugins/clerus/tests/continuation-root.js"
 );
-
-var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {
@@ -60,11 +55,6 @@ function fixture(tw, handlers) {
 
 	write("worker");
 
-	var store = new Store({
-		wiki: wiki,
-		Tiddler: tw.Tiddler
-	});
-
 	var sequence = 0;
 
 	function newId() {
@@ -74,8 +64,9 @@ function fixture(tw, handlers) {
 			String(sequence).padStart(16, "0");
 	}
 
-	var scheduler = new FlowScheduler({
-		store: store,
+	var runtime = new Runtime({
+		wiki: wiki,
+		Tiddler: tw.Tiddler,
 		platform: platform,
 		newId: newId,
 
@@ -84,13 +75,15 @@ function fixture(tw, handlers) {
 		}
 	});
 
+	var store = runtime.store;
+
 	return {
 		wiki: wiki,
 		titles: titles,
-		scheduler: scheduler,
+		runtime: runtime,
 
 		root: function (handler) {
-			return legacyRoot.start({
+			return continuationRoot.start({
 				store: store,
 				title: titles.root,
 				platform: platform,
@@ -142,10 +135,7 @@ function testCascadeCompletesSynchronously(tw) {
 	assert(root.status === "completed");
 	assert(root.pending.length === 1);
 
-	f.scheduler.track(root.obligation);
-	f.scheduler.track(root.obligation);
-
-	var report = f.scheduler.drain();
+	var report = f.runtime.drainFlows();
 
 	assert(trace.join(",") === "manager,worker");
 	assert(report.completed.length === 2);
@@ -153,6 +143,12 @@ function testCascadeCompletesSynchronously(tw) {
 	assert(report.remaining === 0);
 	assert(f.registry("worker").received.data === 42);
 	assert(!f.wiki.getTiddler(root.obligation));
+
+	var repeated = f.runtime.drainFlows();
+
+	assert(repeated.completed.length === 0);
+	assert(repeated.errors.length === 0);
+	assert(trace.join(",") === "manager,worker");
 }
 
 function testUnavailableExecutorPreservesMessage(tw) {
@@ -170,9 +166,7 @@ function testUnavailableExecutorPreservesMessage(tw) {
 
 	var id = root.pending[0].id;
 
-	f.scheduler.track(root.obligation);
-
-	var first = f.scheduler.drain();
+	var first = f.runtime.drainFlows();
 
 	assert(first.unavailable.length === 1);
 	assert(first.remaining === 1);
@@ -184,7 +178,7 @@ function testUnavailableExecutorPreservesMessage(tw) {
 		incoming.destroy("input");
 	};
 
-	var second = f.scheduler.drain();
+	var second = f.runtime.drainFlows();
 
 	assert(second.completed.length === 1);
 	assert(second.errors.length === 0);
@@ -197,7 +191,11 @@ function testFailedBranchDoesNotStopSibling(tw) {
 	var received = 0;
 
 	var f = fixture(tw, {
-		manager: function () {
+		manager: function (event) {
+			if (event.type === "suspended") {
+				return;
+			}
+
 			throw new Error("Manager failed");
 		},
 
@@ -216,9 +214,7 @@ function testFailedBranchDoesNotStopSibling(tw) {
 		});
 	});
 
-	f.scheduler.track(root.obligation);
-
-	var report = f.scheduler.drain();
+	var report = f.runtime.drainFlows();
 
 	assert(report.errors.length === 1);
 	assert(report.completed.length === 1);
@@ -229,8 +225,19 @@ function testFailedBranchDoesNotStopSibling(tw) {
 	var record = JSON.parse(journal.fields.text);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(record.pending.length === 0);
-	assert(record.errors.length === 1);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(record.diagnostics.length === 1);
+
+	var ids = Object.keys(record.events);
+
+	assert(ids.length === 1);
+	assert(record.events[ids[0]].mode === "paused");
+	assert(
+		record.events[ids[0]].event.recipient.executor === "manager"
+	);
+	assert(record.events[ids[0]].event.registry.input.data === 42);
 }
 
 exports.run = function (tw) {

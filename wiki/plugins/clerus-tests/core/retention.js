@@ -7,7 +7,7 @@ module-type: library
 "use strict";
 
 var retention = require("$:/plugins/clerus/core/retention.js");
-var messages = require("$:/plugins/clerus/core/message-effect.js");
+var events = require("$:/plugins/clerus/core/event-schema.js");
 
 function assert(condition, message) {
 	if (!condition) {
@@ -72,53 +72,71 @@ function testOperationalReferencesAreImmediateGrounds() {
 	assert(report.candidates.includes(title("unreferenced")));
 }
 
-function message() {
+function continuation() {
 	return {
-		version: 1,
-		kind: "official-message",
-		id: "retention-message-identity",
+		version: 2,
+		kind: "continuation",
 		platform: "browser",
-		type: "order",
-		source: {
-			title: title("source"),
-			executor: "source"
+		retainUntil: 0,
+		work: null,
+		events: {},
+		evidence: {
+			identities: {},
+			receipts: {}
 		},
+		diagnostics: []
+	};
+}
+
+function addEvent(record, id, event, mode) {
+	record.events[id] = {
+		mode: mode,
+		event: event
+	};
+
+	record.evidence.identities[id] = events.fingerprint(event);
+}
+
+function testPendingNotHistoryRetains() {
+	var body = continuation();
+	var id = "retention-message-identity";
+
+	var event = {
+		kind: "delivery",
+		type: "order",
 		recipient: {
 			title: title("target"),
 			executor: "target"
 		},
 		registry: {}
 	};
-}
 
-function testPendingNotHistoryRetains() {
-	var pending = message();
-	var body = {
-		version: 1,
-		kind: "flow",
-		platform: "browser",
-		active: null,
-		pending: [pending],
-		seen: {},
-		errors: []
-	};
-
-	body.seen[pending.id] = messages.fingerprint(pending);
+	addEvent(body, id, event, "ready");
 
 	var jobs = [job("source"), job("target")];
 
 	var active = evaluate(jobs, [
-		wal("pending", "flow", body)
+		wal("pending", "continuation", body)
 	]);
 
 	assert(active.complete);
+	assert(active.retained.length === 1);
 	assert(active.retained[0].title === title("target"));
 	assert(active.candidates.includes(title("source")));
 
-	body.pending = [];
+	delete body.events[id];
+
+	/*
+	The fingerprint and a diagnostic snapshot are history,
+	not another location of the delivered documents.
+	*/
+	body.diagnostics.push({
+		phase: "historical",
+		snapshot: event
+	});
 
 	var historical = evaluate(jobs, [
-		wal("historical", "flow", body)
+		wal("historical", "continuation", body)
 	]);
 
 	assert(historical.complete);
@@ -142,32 +160,24 @@ function testAcceptedFutureReferenceRetains() {
 		}))
 	});
 
-	var body = {
-		version: 1,
-		kind: "plan",
-		platform: "browser",
+	var body = continuation();
 
-		proposal: {
+	body.work = {
+		version: 2,
+		id: "retention-future-reference-work-0001",
+		checks: [],
+		transitions: [{
 			version: 1,
-			owner: {
-				title: owner.title,
-				executor: "owner",
-				state: before
-			},
-			plan: {
-				version: 1,
-				effects: [{
-					version: 1,
-					title: owner.title,
-					before: before,
-					after: after
-				}]
-			}
-		}
+			title: owner.title,
+			before: before,
+			after: after
+		}],
+		blocks: [],
+		emits: []
 	};
 
 	var report = evaluate([owner, job("target")], [
-		wal("accepted", "plan", body)
+		wal("accepted", "continuation", body)
 	]);
 
 	assert(report.complete);
@@ -175,37 +185,30 @@ function testAcceptedFutureReferenceRetains() {
 	assert(report.candidates.length === 0);
 }
 
-function testPausedDeferredRetains() {
-	var effect = {
-		version: 1,
-		kind: "deferred-event",
-		id: "retention-deferred-identity",
-		platform: "browser",
+function testPausedActivationRetains() {
+	var body = continuation();
+	var id = "retention-activation-identity";
+
+	addEvent(body, id, {
+		kind: "activation",
 		recipient: {
 			title: title("target"),
 			executor: "target"
 		}
-	};
+	}, "paused");
 
 	var report = evaluate([job("target")], [
-		wal(
-			"deferred-" + effect.id,
-			"deferred",
-			{
-				version: 1,
-				kind: "deferred",
-				platform: "browser",
-				effect: effect
-			},
-			{
-				"clerus-deferred-effect": JSON.stringify(effect)
-			}
-		)
+		wal("paused-activation", "continuation", body)
 	]);
 
 	assert(report.complete);
 	assert(report.retained.length === 1);
-	assert(report.retained[0].reasons[0].kind === "deferred-event");
+	assert(report.retained[0].title === title("target"));
+	assert(report.retained[0].reasons.some(function (reason) {
+		return reason.kind === "waiting-event" &&
+			reason.event === id;
+	}));
+	assert(report.candidates.length === 0);
 }
 
 function testUnknownKnowledgePreventsCandidates() {
@@ -255,7 +258,10 @@ exports.run = function () {
 		["retention: immediate operational references retain independently", testOperationalReferencesAreImmediateGrounds],
 		["retention: pending work retains but history does not", testPendingNotHistoryRetains],
 		["retention: accepted future references retain", testAcceptedFutureReferenceRetains],
-		["retention: paused deferred obligation retains", testPausedDeferredRetains],
+		[
+			"retention: paused activation retains its recipient",
+			testPausedActivationRetains
+		],
 		["retention: unknown knowledge prevents candidates", testUnknownKnowledgePreventsCandidates],
 		["retention: active mission retains without its project", testActiveMissionRetainsWithoutProject]
 	];

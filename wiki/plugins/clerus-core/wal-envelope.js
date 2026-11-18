@@ -8,20 +8,9 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 
-var KINDS = [
-	"plan", "flow", "deferred", "incident", "continuation"
-];
+var KINDS = ["continuation"];
 
 function supports(version, kind) {
-	if (version === 1) {
-		return (
-			kind === "plan" ||
-			kind === "flow" ||
-			kind === "deferred" ||
-			kind === "incident"
-		);
-	}
-
 	return version === 2 && kind === "continuation";
 }
 
@@ -110,7 +99,7 @@ function read(fields) {
 		);
 	}
 
-	if (record.version !== 1 && record.version !== 2) {
+	if (record.version !== 2) {
 		return unavailable(
 			"unsupported",
 			platform,

@@ -6,57 +6,60 @@ module-type: library
 
 "use strict";
 
-/*
-Attempt reports from the two dispatchers.
+var envelopes = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
+);
+var continuations = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
 
-These arrays describe attempts, not authoritative outstanding work.
+/*
+The runtime's top-level arrays already aggregate continuation
+attempts. Nested passes are diagnostic detail, not extra attempts.
+
+These arrays do not describe authoritative outstanding work.
 */
 function attempts(report) {
-	var result = {
+	return {
 		completed: (report.completed || []).slice(),
 		blocked: (report.blocked || []).slice(),
 		unavailable: (report.unavailable || []).slice(),
 		errors: (report.errors || []).slice()
 	};
-
-	(report.continuations || []).forEach(function (pass) {
-		Object.keys(result).forEach(function (name) {
-			result[name] = result[name].concat(
-				pass[name] || []
-			);
-		});
-	});
-
-	return result;
 }
 
-function pendingDeliveryIds(wiki, title) {
-	var tiddler = wiki.getTiddler(title);
+/*
+Return outstanding delivery identities, including paused events.
 
-	if (!tiddler) {
+Unpublished work.emits are intentionally not included: this helper
+observes waiting deliveries, not every accepted future emission.
+*/
+function pendingDeliveryIds(wiki, title) {
+	if (!wiki.tiddlerExists(title)) {
+		if (wiki.isShadowTiddler(title)) {
+			throw new Error("Event journal is shadow-backed");
+		}
+
 		return [];
 	}
 
-	var record = JSON.parse(tiddler.fields.text);
+	var tiddler = wiki.getTiddler(title);
+	var platform = envelopes.platformOf(title);
 
-	if (record.version === 1 && record.kind === "flow") {
-		return record.pending.map(function (message) {
-			return message.id;
-		}).sort();
-	}
+	var record = continuations.validate(
+		envelopes.requireRecord(
+			require("$:/plugins/clerus/core/store.js")
+				.capture(tiddler),
+			platform,
+			"continuation"
+		),
+		platform,
+		title
+	);
 
-	if (
-		record.version === 2 &&
-		record.kind === "continuation"
-	) {
-		return Object.keys(record.events).filter(function (id) {
-			return (
-				record.events[id].event.kind === "delivery"
-			);
-		}).sort();
-	}
-
-	throw new Error("Expected a supported event journal");
+	return Object.keys(record.events).filter(function (id) {
+		return record.events[id].event.kind === "delivery";
+	}).sort();
 }
 
 exports.attempts = attempts;

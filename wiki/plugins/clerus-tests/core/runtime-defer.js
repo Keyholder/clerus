@@ -204,7 +204,9 @@ function testNewTickWaitsForNextPass(tw) {
 	var second = f.runtime.runDeferred();
 
 	assert(second.activations.length === 1);
-	assert(second.persistentRemaining === 0);
+	assert(second.summary.complete);
+	assert(second.summary.waiting.activations.ready === 0);
+	assert(second.summary.waiting.activations.paused === 0);
 	assert(f.calls.ticks === 2);
 	assert(f.calls.reports === 2);
 }

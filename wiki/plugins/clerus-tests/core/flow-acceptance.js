@@ -6,8 +6,8 @@ module-type: library
 
 "use strict";
 
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
@@ -69,13 +69,20 @@ function fixture(tw) {
 		Tiddler: tw.Tiddler
 	});
 
+	var sequence = 0;
+
+	function newId() {
+		sequence++;
+
+		return "accept-continuation-" +
+			String(sequence).padStart(12, "0");
+	}
+
 	function service() {
-		return flows.create({
+		return continuations.create({
 			store: store,
 			platform: platform,
-			newId: function () {
-				return "accept-flow-root-identity";
-			}
+			newId: newId
 		});
 	}
 
@@ -105,21 +112,25 @@ function fixture(tw) {
 		};
 	}
 
-	var title = manager.register({
-		version: 1,
-		owner: {
-			title: titles.root,
-			executor: "root",
-			state: store.read(titles.root).fields
-		},
-		plan: {
-			version: 1,
-			effects: [],
-			messages: [
-				message("first"),
-				message("second")
-			]
-		}
+	var title = manager.accept({
+		version: 2,
+		id: newId(),
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: ["first", "second"].map(function (name) {
+			var outgoing = message(name);
+
+			return {
+				id: outgoing.id,
+				event: {
+					kind: "delivery",
+					type: "order",
+					recipient: outgoing.recipient,
+					registry: outgoing.registry
+				}
+			};
+		})
 	});
 
 	manager.resume(title);
@@ -179,7 +190,7 @@ function testAcceptanceReplacesOnlyOneMessage(tw) {
 	assert(!f.registry("first").received);
 
 	assert(
-		f.manager.accept(
+		f.manager.acceptEvent(
 			f.journal,
 			f.messageId("first"),
 			proposal
@@ -188,49 +199,57 @@ function testAcceptanceReplacesOnlyOneMessage(tw) {
 
 	var record = f.manager.read(f.journal).record;
 
-	assert(record.active.owner.title === f.titles.first);
-	assert(record.pending.length === 1);
-	assert(record.pending[0].id === f.messageId("second"));
+	assert(record.work !== null);
+	assert(record.work.blocks.includes(f.titles.first));
+	assert(!record.events[f.messageId("first")]);
+	assert(Object.keys(record.events).length === 1);
+	assert(record.events[f.messageId("second")].mode === "ready");
 	assert(!f.registry("first").received);
 
-	// Active materialization suppresses delivery of pending siblings.
+	// Active materialization suppresses sibling delivery.
 	assert(f.manager.pending(f.journal).length === 0);
 
-	var pending = f.manager.resume(f.journal);
+	var results = f.manager.resume(f.journal);
+	var pending = f.manager.pending(f.journal);
 
+	assert(results.length === 1);
 	assert(f.calls() === 1);
 	assert(f.registry("first").received.data.name === "first");
 	assert(pending.length === 1);
 	assert(pending[0].id === f.messageId("second"));
 
+	/*
+	A completed input is not available for another acceptance.
+	Its fingerprint remains evidence, not a new execution.
+	*/
 	assert(
-		f.manager.accept(
+		f.manager.acceptEvent(
 			f.journal,
 			f.messageId("first"),
 			proposal
-		) === "already-completed"
+		) === "unavailable"
 	);
 }
 
 function testLastRecipientClosesFlow(tw) {
 	var f = fixture(tw);
 
-	f.manager.accept(
+	f.manager.acceptEvent(
 		f.journal,
 		f.messageId("first"),
 		f.proposal("first")
 	);
 	f.manager.resume(f.journal);
 
-	f.manager.accept(
+	f.manager.acceptEvent(
 		f.journal,
 		f.messageId("second"),
 		f.proposal("second")
 	);
 
-	var pending = f.manager.resume(f.journal);
+	var results = f.manager.resume(f.journal);
 
-	assert(pending.length === 0);
+	assert(results.length === 1);
 	assert(!f.wiki.getTiddler(f.journal));
 	assert(f.calls() === 2);
 	assert(f.registry("second").received.data.name === "second");
@@ -247,12 +266,12 @@ function testInterventionPreservesPendingMessage(tw) {
 	));
 
 	throws(function () {
-		f.manager.accept(
+		f.manager.acceptEvent(
 			f.journal,
 			f.messageId("first"),
 			proposal
 		);
-	}, "owner state has changed");
+	}, "baseline has changed");
 
 	assert(f.wiki.getTiddler(f.journal).fields.text === before);
 	assert(f.manager.pending(f.journal).length === 2);
@@ -264,7 +283,7 @@ function testWrongRecipientCannotConsumeMessage(tw) {
 	var before = f.wiki.getTiddler(f.journal).fields.text;
 
 	throws(function () {
-		f.manager.accept(
+		f.manager.acceptEvent(
 			f.journal,
 			f.messageId("first"),
 			f.proposal("second")
@@ -294,7 +313,7 @@ function testInterruptedAcceptanceDoesNotRepeatHandler(tw) {
 
 	try {
 		throws(function () {
-			f.manager.accept(
+			f.manager.acceptEvent(
 				f.journal,
 				f.messageId("first"),
 				proposal
@@ -310,12 +329,15 @@ function testInterruptedAcceptanceDoesNotRepeatHandler(tw) {
 
 	var preserved = f.manager.read(f.journal).record;
 
-	assert(preserved.active !== null);
-	assert(preserved.active.owner.title === f.titles.first);
+	assert(preserved.work !== null);
+	assert(preserved.work.blocks.includes(f.titles.first));
+	assert(!preserved.events[f.messageId("first")]);
 
-	// A fresh manager resumes the recorded result, not the handler.
-	var pending = f.service().resume(f.journal);
+	var restarted = f.service();
+	var results = restarted.resume(f.journal);
+	var pending = restarted.pending(f.journal);
 
+	assert(results.length === 1);
 	assert(f.calls() === 1);
 	assert(f.registry("first").received.data.name === "first");
 	assert(pending.length === 1);

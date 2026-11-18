@@ -8,16 +8,6 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var envelopes = require("$:/plugins/clerus/core/wal-envelope.js");
-var acceptedPlans = require(
-	"$:/plugins/clerus/core/accepted-plan-schema.js"
-);
-var flows = require("$:/plugins/clerus/core/flow-schema.js");
-var deferred = require(
-	"$:/plugins/clerus/core/deferred-schema.js"
-);
-var incidents = require(
-	"$:/plugins/clerus/core/incident-schema.js"
-);
 var continuations = require(
 	"$:/plugins/clerus/core/continuation-schema.js"
 );
@@ -39,170 +29,67 @@ function evaluate(options) {
 		journals: {
 			total: 0,
 			owned: 0,
-			notOwned: 0,
-			historical: 0
+			notOwned: 0
 		},
 		materializations: 0,
 		waiting: {
-			deliveries: {
-				ready: 0,
-				paused: 0
-			},
-			activations: {
-				ready: 0,
-				paused: 0
-			},
-			notifications: {
-				ready: 0,
-				paused: 0
-			}
+			deliveries: { ready: 0, paused: 0 },
+			activations: { ready: 0, paused: 0 },
+			notifications: { ready: 0, paused: 0 }
 		},
 		unreadable: []
 	};
 
-	options.store.snapshot().materialized.forEach(
-		function (fields) {
-			if (
-				envelopes.platformOf(fields.title) !==
-					options.platform
-			) {
-				return;
-			}
-
-			result.journals.total++;
-
-			if (
-				fields["clerus-custody"] === options.platform
-			) {
-				result.journals.owned++;
-			} else {
-				result.journals.notOwned++;
-			}
-
-			try {
-				var envelope = envelopes.read(fields);
-
-				if (envelope.kind !== "ready") {
-					throw new Error(envelope.reason);
-				}
-
-				var record = envelope.record;
-
-				/*
-					Validate the complete body before counting
-					any of its obligations.
-				*/
-				if (record.kind === "plan") {
-					acceptedPlans.validate(
-						record,
-						options.platform
-					);
-
-					result.materializations++;
-					return;
-				}
-
-				if (record.kind === "flow") {
-					var flow = flows.validate(
-						record,
-						options.platform
-					);
-
-					if (flow.active !== null) {
-						result.materializations++;
-					}
-
-					result.waiting.deliveries.ready +=
-						flow.pending.length;
-
-					return;
-				}
-
-				if (record.kind === "deferred") {
-					var waiting = deferred.validate(
-						record,
-						options.platform
-					);
-
-					if (
-						fields.title !==
-							"$:/clerus/wal/" +
-							options.platform +
-							"/deferred-" +
-							waiting.effect.id ||
-						fields["clerus-deferred-effect"] !==
-							JSON.stringify(waiting.effect)
-					) {
-						throw new Error(
-							"Deferred obligation identity mismatch"
-						);
-					}
-
-					result.waiting.activations.ready++;
-					return;
-				}
-
-				if (record.kind === "incident") {
-					incidents.validate(
-						record,
-						options.platform
-					);
-
-					result.journals.historical++;
-					return;
-				}
-
-				if (record.kind === "continuation") {
-					var continuation = continuations.validate(
-						record,
-						options.platform,
-						fields.title
-					);
-
-					if (continuation.work !== null) {
-						result.materializations++;
-					}
-
-					Object.keys(
-						continuation.events
-					).forEach(function (id) {
-						var entry = continuation.events[id];
-
-						var buckets = {
-							activation: result.waiting.activations,
-							delivery: result.waiting.deliveries,
-							notification: result.waiting.notifications
-						};
-
-						var bucket = buckets[entry.event.kind];
-
-						if (!bucket) {
-							throw new Error(
-								"Unsupported waiting event kind"
-							);
-						}
-
-						bucket[entry.mode]++;
-					});
-
-					return;
-				}
-
-				throw new Error(
-					"Unsupported obligation summary kind"
-				);
-			} catch (error) {
-				result.complete = false;
-
-				result.unreadable.push({
-					title: fields.title,
-					error: String(
-						error && error.message || error
-					)
-				});
-			}
+	options.store.snapshot().materialized.forEach(function (fields) {
+		if (
+			envelopes.platformOf(fields.title) !== options.platform
+		) {
+			return;
 		}
-	);
+
+		result.journals.total++;
+
+		if (fields["clerus-custody"] === options.platform) {
+			result.journals.owned++;
+		} else {
+			result.journals.notOwned++;
+		}
+
+		try {
+			var record = continuations.validate(
+				envelopes.requireRecord(
+					fields,
+					options.platform,
+					"continuation"
+				),
+				options.platform,
+				fields.title
+			);
+
+			if (record.work !== null) {
+				result.materializations++;
+			}
+
+			Object.keys(record.events).forEach(function (id) {
+				var entry = record.events[id];
+
+				var buckets = {
+					delivery: result.waiting.deliveries,
+					activation: result.waiting.activations,
+					notification: result.waiting.notifications
+				};
+
+				buckets[entry.event.kind][entry.mode]++;
+			});
+		} catch (error) {
+			result.complete = false;
+
+			result.unreadable.push({
+				title: fields.title,
+				error: String(error && error.message || error)
+			});
+		}
+	});
 
 	result.unreadable.sort(function (left, right) {
 		return left.title < right.title

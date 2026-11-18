@@ -73,6 +73,8 @@ exports.create = function (options) {
 			version: 2,
 			kind: "continuation",
 			platform: options.platform,
+			retainUntil: options.now() +
+				(options.prototypeWalReceipts ? 150000 : 0),
 			work: work,
 			events: {},
 			evidence: {
@@ -81,10 +83,6 @@ exports.create = function (options) {
 			},
 			diagnostics: []
 		};
-
-		if (options.prototypeWalReceipts) {
-			record.retainUntil = options.now() + 150000;
-		}
 
 		publishRecord(record, journal);
 	}

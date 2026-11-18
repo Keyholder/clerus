@@ -13,6 +13,9 @@ var plannedReactions = require(
 var observation = require(
 	"$:/plugins/clerus/tests/protocol-observation.js"
 );
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -303,7 +306,13 @@ function testUnfinishedPlanBlocksButDoesNotConsumeMessage(tw) {
 		}
 	});
 
-	var blocker = f.runtime.obligations.accept(proposal);
+	var blocker = f.runtime.continuations.accept(
+		proposalWork.convert(
+			proposal,
+			f.runtime.newId(),
+			f.platform
+		)
+	);
 
 	var first = f.start();
 

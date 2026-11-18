@@ -66,9 +66,7 @@ function validate(value, platform, journal) {
 		"identities", "receipts"
 	], "continuation evidence");
 
-	var deadline = hasOwn(record, "retainUntil")
-		? custodySchema.retainUntil(record.retainUntil)
-		: undefined;
+	var deadline = custodySchema.retainUntil(record.retainUntil);
 
 	var work = record.work === null
 		? null
@@ -190,6 +188,7 @@ function validate(value, platform, journal) {
 		version: 2,
 		kind: "continuation",
 		platform: platform,
+		retainUntil: deadline,
 		work: work,
 		events: waiting,
 		evidence: {
@@ -201,10 +200,6 @@ function validate(value, platform, journal) {
 		},
 		diagnostics: diagnostics
 	};
-
-	if (deadline !== undefined) {
-		result.retainUntil = deadline;
-	}
 
 	return schemas.copyJSON(result);
 }

@@ -9,24 +9,18 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var Store = require("$:/plugins/clerus/core/store.js").Store;
+var storeTransition = require(
+	"$:/plugins/clerus/core/store.js"
+).transition;
 var Scheduler = require("$:/plugins/clerus/core/scheduler.js").Scheduler;
 var observation = require("$:/plugins/clerus/core/observation.js");
 var incidents = require("$:/plugins/clerus/core/incidents.js");
 var lifecycle = require("$:/plugins/clerus/core/lifecycle.js");
 var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
 var missions = require("$:/plugins/clerus/core/missions.js");
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
-);
 var persistentReactions = require(
 	"$:/plugins/clerus/core/persistent-reaction.js"
 );
-var flowObligations = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
-);
-var FlowScheduler = require(
-	"$:/plugins/clerus/core/flow-scheduler.js"
-).Scheduler;
 var ephemeralReactions = require(
 	"$:/plugins/clerus/core/reaction.js"
 );
@@ -35,9 +29,6 @@ var MaterializationError = require(
 ).MaterializationError;
 var deferredActivations = require(
 	"$:/plugins/clerus/core/deferred.js"
-);
-var deferredObligations = require(
-	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 var retention = require("$:/plugins/clerus/core/retention.js");
 var collection = require("$:/plugins/clerus/core/collection.js");
@@ -71,6 +62,9 @@ var continuationTermination = require(
 );
 var continuationResolution = require(
 	"$:/plugins/clerus/core/continuation-resolution.js"
+);
+var walEnvelope = require(
+	"$:/plugins/clerus/core/wal-envelope.js"
 );
 
 function Runtime(options) {
@@ -183,17 +177,6 @@ function Runtime(options) {
 		newId: this.newId
 	});
 
-	this.persistentDeferred = deferredObligations.create({
-		store: this.store,
-		platform: this.platform
-	});
-
-	this.obligations = obligations.create({
-		store: this.store,
-		platform: this.platform,
-		newId: options.newId
-	});
-
 	this.continuations = continuations.create({
 		store: this.store,
 		platform: this.platform,
@@ -232,27 +215,6 @@ function Runtime(options) {
 
 		checkDeferred: this.deferred.check,
 		acceptDeferred: this.deferred.request
-	});
-
-	this.flows = flowObligations.create({
-		store: this.store,
-		platform: this.platform,
-		newId: this.newId
-	});
-
-	this.flowScheduler = new FlowScheduler({
-		store: this.store,
-		platform: this.platform,
-		newId: this.newId,
-		resolveExecutor: this.resolveExecutor,
-
-		executeEphemeral: function (context) {
-			return this.executeEphemeralDelivery(context);
-		}.bind(this),
-
-		onResult: function (context) {
-			this.handleFlowResult(context);
-		}.bind(this)
 	});
 }
 
@@ -315,17 +277,6 @@ Runtime.prototype.handlePersistentResult = function (
 			? "ignored-error"
 			: notification.status
 	};
-
-	/*
-		A restricted notification may legally send messages
-		without changing its own operational registry.
-	*/
-	if (
-		notification.status === "completed" &&
-		notification.pending.length > 0
-	) {
-		this.flowScheduler.track(notification.obligation);
-	}
 };
 
 Runtime.prototype.executePersistentIngress = function (context) {
@@ -353,8 +304,8 @@ Runtime.prototype.executePersistentIngress = function (context) {
 	}
 
 	/*
-		No options.flow: this incoming event is not yet part of
-		a durable transactional flow.
+	This local ingress is not yet a durable continuation event.
+	Successful nonempty consequences are accepted independently.
 	*/
 	var result = persistentReactions.execute({
 		store: this.store,
@@ -373,17 +324,6 @@ Runtime.prototype.executePersistentIngress = function (context) {
 		context.event,
 		result
 	);
-
-	if (result.obligation) {
-		var journal = this.store.read(result.obligation);
-
-		if (
-			journal.kind === "materialized" &&
-			journal.fields["clerus-wal-kind"] === "flow"
-		) {
-			this.flowScheduler.track(result.obligation);
-		}
-	}
 
 	return result;
 };
@@ -542,7 +482,7 @@ Runtime.prototype.executeEphemeralContinuation = function (
 	return result;
 };
 
-Runtime.prototype.handleFlowResult = function (context) {
+Runtime.prototype.handleDeliveryResult = function (context) {
 	var space = jobTitles.classify(context.title);
 
 	if (space.persistent) {
@@ -763,7 +703,7 @@ Runtime.prototype.drainContinuationWork = function () {
 			);
 		}
 
-		this.handleFlowResult({
+		this.handleDeliveryResult({
 			title: event.recipient.title,
 			executor: event.recipient.executor,
 			handler: handler,
@@ -805,7 +745,9 @@ Runtime.prototype.drainOfficialWork = function () {
 		}
 
 		var existing = new Set(this.scheduler.queue);
-		var flow = this.flowScheduler.drain();
+		var continuation = this.drainContinuationWork();
+
+		result.continuations.push(continuation);
 
 		[
 			"completed",
@@ -813,16 +755,14 @@ Runtime.prototype.drainOfficialWork = function () {
 			"unavailable",
 			"errors"
 		].forEach(function (name) {
-			result[name] = result[name].concat(flow[name]);
+			result[name] = result[name].concat(
+				continuation[name]
+			);
 		});
 
-		result.continuations.push(
-			this.drainContinuationWork()
-		);
-
 		/*
-			Continue only if flow delivery accepted new ephemeral
-			work. Merely unavailable old work must not cause a spin.
+		New local messages require another scheduler pass.
+		Unavailable old messages must not cause a hot loop.
 		*/
 		var added = this.scheduler.queue.some(function (work) {
 			return !existing.has(work);
@@ -833,113 +773,41 @@ Runtime.prototype.drainOfficialWork = function () {
 		}
 	}
 
-	result.remaining = this.flowScheduler.queue.size;
+	var prefix = "$:/clerus/wal/" + this.platform + "/";
+
+	this.store.snapshot().materialized.forEach(function (fields) {
+		if (
+			fields.title.indexOf(prefix) !== 0 ||
+			fields["clerus-wal-kind"] !== "continuation" ||
+			fields["clerus-custody"] !== this.platform
+		) {
+			return;
+		}
+
+		try {
+			result.remaining += this.continuations.pending(
+				fields.title
+			).filter(function (entry) {
+				return entry.event.kind !== "activation";
+			}).length;
+		} catch (error) {
+			/*
+			Malformed journals are reported by recovery and the
+			summary, not interpreted as dispatchable events.
+			*/
+		}
+	}, this);
+
 	result.ephemeralRemaining = this.scheduler.queue.length;
 	result.summary = this.summarizeObligations();
 
 	return result;
 };
 
-function dispatchDeferredPass(title) {
-	if (
-		this.executing ||
-		this.scheduler.running ||
-		this.flowScheduler.running
-	) {
-		throw new Error("Cannot start a nested deferred delivery");
-	}
-
-	this.executing = true;
-
-	try {
-		var loaded = this.persistentDeferred.read(title);
-		var effect = loaded.effect;
-
-		var owner = this.store.read(effect.recipient.title);
-
-		if (
-			owner.kind !== "materialized" ||
-			owner.fields["clerus-executor"] !==
-				effect.recipient.executor
-		) {
-			return {
-				status: "unavailable",
-				reason: "deferred-recipient-changed"
-			};
-		}
-
-		if (
-			owner.fields["clerus-suspended"] === "yes" &&
-			this.custody.owns(owner.fields)
-		) {
-			return {
-				status: "blocked",
-				reason: "resumption-required",
-				obligations: []
-			};
-		}
-
-		var handler = this.resolveExecutor(
-			effect.recipient.executor
-		);
-
-		if (typeof handler !== "function") {
-			return {
-				status: "unavailable",
-				reason: "executor-unavailable"
-			};
-		}
-
-		var event = {
-			type: "tick",
-			id: effect.id
-		};
-
-		var result = persistentReactions.execute({
-			store: this.store,
-			title: effect.recipient.title,
-			platform: this.platform,
-			handler: handler,
-			newId: this.newId,
-
-			deferred: {
-				title: title,
-				id: effect.id
-			}
-		});
-
-		this.handlePersistentResult(
-			effect.recipient.title,
-			effect.recipient.executor,
-			handler,
-			event,
-			result
-		);
-
-		if (result.obligation) {
-			var journal = this.store.read(result.obligation);
-
-			if (
-				journal.kind === "materialized" &&
-				journal.fields["clerus-wal-kind"] === "flow"
-			) {
-				this.flowScheduler.track(result.obligation);
-			}
-		}
-
-		result.flow = this.drainOfficialWork();
-
-		return result;
-	} finally {
-		this.executing = false;
-	}
-}
-
 function dispatchContinuationActivation(title, id) {
 	if (
 		this.executing ||
-		this.scheduler.running ||
-		this.flowScheduler.running
+		this.scheduler.running
 	) {
 		throw new Error(
 			"Cannot start a nested continuation activation"
@@ -1039,41 +907,26 @@ function runDeferredPass() {
 	if (
 		this.executing ||
 		this.scheduler.running ||
-		this.flowScheduler.running ||
 		this.runningDeferred
 	) {
 		throw new Error("Cannot start a nested deferred pass");
 	}
 
 	var prefix = "$:/clerus/wal/" + this.platform + "/";
+	var activationBatch = [];
+	var discoveryErrors = [];
 
 	/*
-		Capture before running any tick, including ephemeral ones.
+	Capture durable activations before executing any tick,
+	including ephemeral ones.
 	*/
-	var persistentBatch = this.store.snapshot().materialized.filter(
-		function (fields) {
-			return fields.title.indexOf(prefix) === 0 &&
-				fields["clerus-wal-kind"] === "deferred" &&
-				fields["clerus-custody"] === this.platform;
-		},
-		this
-	).map(function (fields) {
-		return fields.title;
-	}).sort();
-
-	var activationBatch = [];
-	var activationDiscoveryErrors = [];
-
-	this.store.snapshot().materialized.filter(
-		function (fields) {
-			return (
-				fields.title.indexOf(prefix) === 0 &&
-				fields["clerus-wal-kind"] === "continuation" &&
-				fields["clerus-custody"] === this.platform
-			);
-		},
-		this
-	).map(function (fields) {
+	this.store.snapshot().materialized.filter(function (fields) {
+		return (
+			fields.title.indexOf(prefix) === 0 &&
+			fields["clerus-wal-kind"] === "continuation" &&
+			fields["clerus-custody"] === this.platform
+		);
+	}, this).map(function (fields) {
 		return fields.title;
 	}).sort().forEach(function (title) {
 		try {
@@ -1088,7 +941,7 @@ function runDeferredPass() {
 				}
 			);
 		} catch (error) {
-			activationDiscoveryErrors.push({
+			discoveryErrors.push({
 				title: title,
 				phase: "activation-discovery",
 				error: lifecycle.describeError(error)
@@ -1103,41 +956,8 @@ function runDeferredPass() {
 			return this.dispatch(title, event);
 		}.bind(this));
 
-		report.persistent = [];
-
-		persistentBatch.forEach(function (title) {
-			var current = this.store.read(title);
-
-			/*
-				An earlier reaction may have resolved or paused it.
-			*/
-			if (
-				current.kind !== "materialized" ||
-				current.fields["clerus-wal-kind"] !== "deferred" ||
-				current.fields["clerus-custody"] !== this.platform
-			) {
-				return;
-			}
-
-			try {
-				report.persistent.push({
-					title: title,
-					result: this.dispatchDeferred(title)
-				});
-			} catch (error) {
-				report.errors.push({
-					title: title,
-					phase: "persistent-deferred-delivery",
-					error: lifecycle.describeError(error)
-				});
-			}
-		}, this);
-
 		report.activations = [];
-
-		report.errors = report.errors.concat(
-			activationDiscoveryErrors
-		);
+		report.errors = report.errors.concat(discoveryErrors);
 
 		activationBatch.forEach(function (entry) {
 			var current = this.store.read(entry.title);
@@ -1170,13 +990,6 @@ function runDeferredPass() {
 			}
 		}, this);
 
-		report.persistentRemaining =
-			this.store.snapshot().materialized.filter(function (fields) {
-				return fields.title.indexOf(prefix) === 0 &&
-					fields["clerus-wal-kind"] === "deferred" &&
-					fields["clerus-custody"] === this.platform;
-			}, this).length;
-
 		report.summary = this.summarizeObligations();
 
 		return report;
@@ -1186,7 +999,7 @@ function runDeferredPass() {
 }
 
 function dispatchPass(title, event, incoming) {
-	if (this.executing || this.scheduler.running || this.flowScheduler.running) {
+	if (this.executing || this.scheduler.running) {
 		throw new Error("Cannot start a nested runtime dispatch");
 	}
 
@@ -1288,17 +1101,6 @@ function dispatchPass(title, event, incoming) {
 			event,
 			result
 		);
-
-		if (result.obligation) {
-			var journal = this.store.read(result.obligation);
-
-			if (
-				journal.kind === "materialized" &&
-				journal.fields["clerus-wal-kind"] === "flow"
-			) {
-				this.flowScheduler.track(result.obligation);
-			}
-		}
 
 		result.flow = this.drainOfficialWork();
 
@@ -1484,7 +1286,6 @@ function observePass() {
 	if (
 		this.executing ||
 		this.scheduler.running ||
-		this.flowScheduler.running ||
 		this.observing
 	) {
 		throw new Error("Cannot collect observations during execution");
@@ -1594,7 +1395,6 @@ function terminateEventPass(title, eventId) {
 	if (
 		this.executing ||
 		this.scheduler.running ||
-		this.flowScheduler.running ||
 		this.runningDeferred ||
 		this.observing
 	) {
@@ -1628,7 +1428,6 @@ function resolveEventPass(title, eventId, decision) {
 	if (
 		this.executing ||
 		this.scheduler.running ||
-		this.flowScheduler.running ||
 		this.runningDeferred ||
 		this.observing
 	) {
@@ -1747,8 +1546,7 @@ Runtime.prototype.inspect = function () {
 function drainFlowsPass() {
 	if (
 		this.executing ||
-		this.scheduler.running ||
-		this.flowScheduler.running
+		this.scheduler.running
 	) {
 		throw new Error("Cannot start a nested flow pass");
 	}
@@ -1765,64 +1563,110 @@ function drainFlowsPass() {
 function recoverPass() {
 	if (
 		this.executing ||
-		this.scheduler.running ||
-		this.flowScheduler.running
+		this.scheduler.running
 	) {
-		throw new Error("Cannot recover obligations during a reaction");
+		throw new Error(
+			"Cannot recover obligations during a reaction"
+		);
 	}
 
 	this.executing = true;
 
 	try {
-		var ordinary = this.obligations.recover();
+		var prefix = "$:/clerus/wal/" + this.platform + "/";
 
-		var flowTitles = ordinary.entries.filter(function (entry) {
-			return entry.status === "delegated" &&
-				entry.kind === "flow";
-		}).map(function (entry) {
-			return entry.title;
-		});
-
-		var flow = this.flows.recover({
-			titles: flowTitles
-		});
-
-		flow.entries.forEach(function (entry) {
-			if (entry.status === "pending") {
-				this.flowScheduler.track(entry.title);
+		var titles = this.store.snapshot().materialized.filter(
+			function (fields) {
+				return fields.title.indexOf(prefix) === 0;
 			}
+		).map(function (fields) {
+			return fields.title;
+		}).sort();
+
+		var entries = [];
+
+		titles.forEach(function (title) {
+			var current;
+
+			try {
+				current = this.store.read(title);
+
+				if (current.kind !== "materialized") {
+					entries.push({
+						title: title,
+						status: "absent"
+					});
+					return;
+				}
+
+				var envelope = walEnvelope.read(current.fields);
+
+				if (envelope.kind !== "ready") {
+					var rejection = new Error(envelope.reason);
+
+					rejection.unsupportedWal =
+						envelope.kind === "unsupported";
+
+					throw rejection;
+				}
+
+				/*
+				Validate even user-owned journals for diagnostics,
+				without claiming authority to rewrite them.
+				*/
+				continuationSchema.validate(
+					envelope.record,
+					this.platform,
+					title
+				);
+			} catch (error) {
+				var entry = {
+					title: title,
+					status: error && error.unsupportedWal
+						? "unsupported"
+						: "failed",
+					error: String(error && error.message || error)
+				};
+
+				if (
+					current &&
+					current.kind === "materialized" &&
+					current.fields["clerus-custody"] === this.platform
+				) {
+					try {
+						var after = schemas.copyJSON(current.fields);
+
+						after["clerus-custody"] = "user";
+						after["clerus-wal-error"] = JSON.stringify(
+							lifecycle.describeError(error)
+						);
+
+						this.store.apply(storeTransition(
+							title,
+							current.fields,
+							after
+						));
+					} catch (pauseError) {
+						entry.pauseError = String(
+							pauseError && pauseError.message ||
+							pauseError
+						);
+					}
+				}
+
+				entries.push(entry);
+				return;
+			}
+
+			var recovered = this.continuations.recover({
+				titles: [title]
+			});
+
+			entries = entries.concat(recovered.entries);
 		}, this);
 
-		var continuationTitles = ordinary.entries.filter(
-			function (entry) {
-				return (
-					entry.status === "delegated" &&
-					entry.kind === "continuation"
-				);
-			}
-		).map(function (entry) {
-			return entry.title;
-		});
-
-		var continuation = this.continuations.recover({
-			titles: continuationTitles
-		});
-
 		return {
-			entries: ordinary.entries.filter(function (entry) {
-				return !(
-					entry.status === "delegated" &&
-					(
-						entry.kind === "flow" ||
-						entry.kind === "continuation"
-					)
-				);
-			}).concat(
-				flow.entries,
-				continuation.entries
-			),
-
-			pendingFlowAttempts: this.flowScheduler.queue.size,
+			entries: entries,
 			summary: this.summarizeObligations()
 		};
 	} finally {
@@ -1848,7 +1692,6 @@ Runtime.prototype.collectionBarriers = function () {
 	if (
 		this.executing ||
 		this.scheduler.running ||
-		this.flowScheduler.running ||
 		this.runningDeferred
 	) {
 		reasons.push("execution-in-progress");
@@ -1930,15 +1773,6 @@ Runtime.prototype.resume = function () {
 	);
 };
 
-Runtime.prototype.dispatchDeferred = function () {
-	return this.passes.run(
-		this,
-		dispatchDeferredPass,
-		arguments,
-		true
-	);
-};
-
 Runtime.prototype.recover = function () {
 	return this.passes.run(
 		this,
@@ -1952,7 +1786,6 @@ function recordWalDeletionPass(journal) {
 	if (
 		this.executing ||
 		this.scheduler.running ||
-		this.flowScheduler.running ||
 		this.runningDeferred
 	) {
 		throw new Error(

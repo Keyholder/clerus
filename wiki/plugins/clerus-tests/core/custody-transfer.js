@@ -79,7 +79,8 @@ function fixture(tw) {
 			journal: journal,
 			work: workId,
 			from: sourcePlatform,
-			to: destinationPlatform
+			to: destinationPlatform,
+			retainUntil: 0
 		})
 	});
 
@@ -87,6 +88,7 @@ function fixture(tw) {
 		version: 2,
 		kind: "continuation",
 		platform: sourcePlatform,
+		retainUntil: 0,
 		work: {
 			version: 2,
 			id: workId,

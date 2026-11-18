@@ -9,8 +9,11 @@ module-type: library
 var messages = require(
 	"$:/plugins/clerus/core/message-effect.js"
 );
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
+);
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
 );
 var Store = require("$:/plugins/clerus/core/store.js").Store;
 
@@ -163,7 +166,7 @@ function testSendingDoesNotCreateRecipient(tw) {
 		Tiddler: tw.Tiddler
 	});
 
-	var manager = flows.create({
+	var manager = continuations.create({
 		store: store,
 		platform: platform,
 		newId: function () {
@@ -171,32 +174,40 @@ function testSendingDoesNotCreateRecipient(tw) {
 		}
 	});
 
-	var journal = manager.register({
+	var proposal = {
 		version: 1,
-
 		owner: {
 			title: outgoing.source.title,
 			executor: outgoing.source.executor,
 			state: store.read(outgoing.source.title).fields
 		},
-
 		plan: {
 			version: 1,
 			effects: [],
 			messages: [outgoing]
 		}
-	});
+	};
+
+	var journal = manager.accept(proposalWork.convert(
+		proposal,
+		"establishment-effect-work-0001",
+		platform
+	));
 
 	assert(store.read(outgoing.recipient.title).kind === "absent");
 
-	var pending = manager.resume(journal);
+	var results = manager.resume(journal);
+	var pending = manager.pending(journal);
 
+	assert(results.length === 0);
 	assert(pending.length === 1);
-	assert(pending[0].establishing);
-	assert(pending[0].registry.contract.form === "contract");
+	assert(pending[0].event.establishing);
+	assert(pending[0].event.registry.contract.form === "contract");
 	assert(store.read(outgoing.recipient.title).kind === "absent");
 
-	var repeated = manager.resume(journal);
+	manager.resume(journal);
+
+	var repeated = manager.pending(journal);
 
 	assert(repeated.length === 1);
 	assert(repeated[0].id === outgoing.id);

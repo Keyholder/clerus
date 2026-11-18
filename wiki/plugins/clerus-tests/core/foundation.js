@@ -26,12 +26,6 @@ var establishmentInput = require(
 var PassCoordinator = require(
 	"$:/plugins/clerus/core/external-pass.js"
 ).Coordinator;
-var acceptedPlans = require(
-	"$:/plugins/clerus/core/accepted-plan-schema.js"
-);
-var deferredSchema = require(
-	"$:/plugins/clerus/core/deferred-schema.js"
-);
 var incidentSchema = require(
 	"$:/plugins/clerus/core/incident-schema.js"
 );
@@ -1087,160 +1081,6 @@ function testExternalPassFailures() {
 	);
 }
 
-function testAcceptedPlanProtocol() {
-	var title = "$:/clerus/jobs/accepted-schema-owner";
-
-	var before = {
-		title: title,
-		type: "application/json",
-		"clerus-executor": "test",
-		"clerus-custody": "browser",
-		text: JSON.stringify({
-			charter: charter()
-		})
-	};
-
-	var after = schemas.copyJSON(before);
-
-	after.text = JSON.stringify({
-		charter: {
-			form: "charter",
-			status: { phase: "completed" }
-		}
-	});
-
-	var record = {
-		version: 1,
-		kind: "plan",
-		platform: "browser",
-		proposal: {
-			version: 1,
-			owner: {
-				title: title,
-				executor: "test",
-				state: before
-			},
-			plan: {
-				version: 1,
-				effects: [
-					stores.transition(title, before, after)
-				]
-			}
-		}
-	};
-
-	var original = JSON.stringify(record);
-	var result = acceptedPlans.validate(record, "browser");
-
-	assert(result.version === 1);
-	assert(result.proposal.plan.effects.length === 1);
-
-	result.proposal.owner.state.text = "local";
-	assert(JSON.stringify(record) === original);
-
-	var future = schemas.copyJSON(record);
-	future.version = 2;
-
-	throws(function () {
-		acceptedPlans.validate(future, "browser");
-	}, "Invalid accepted-plan record");
-
-	var extended = schemas.copyJSON(record);
-	extended.future = {};
-
-	throws(function () {
-		acceptedPlans.validate(extended, "browser");
-	}, "Invalid accepted-plan record");
-
-	throws(function () {
-		acceptedPlans.validate(record, "node");
-	}, "Invalid accepted-plan record");
-
-	var empty = schemas.copyJSON(record);
-	empty.proposal.plan.effects = [];
-
-	throws(function () {
-		acceptedPlans.validate(empty, "browser");
-	}, "must contain effects");
-
-	assert(
-		acceptedPlans.validate(
-			empty,
-			"browser",
-			true
-		).proposal.plan.effects.length === 0
-	);
-
-	var unauthorized = schemas.copyJSON(record);
-
-	unauthorized.proposal.owner.state["clerus-custody"] = "user";
-	unauthorized.proposal.plan.effects[0].before[
-		"clerus-custody"
-	] = "user";
-
-	throws(function () {
-		acceptedPlans.validate(unauthorized, "browser");
-	}, "Invalid accepted target authority");
-}
-
-function testDeferredProtocol() {
-	var record = {
-		version: 1,
-		kind: "deferred",
-		platform: "browser",
-		effect: {
-			version: 1,
-			kind: "deferred-event",
-			id: "deferred-schema-identity",
-			platform: "browser",
-			recipient: {
-				title: "$:/clerus/jobs/deferred-schema-owner",
-				executor: "test"
-			}
-		}
-	};
-
-	var before = JSON.stringify(record);
-	var result = deferredSchema.validate(record, "browser");
-
-	assert(result.effect.id === record.effect.id);
-
-	result.effect.recipient.executor = "local";
-	assert(JSON.stringify(record) === before);
-
-	var future = schemas.copyJSON(record);
-	future.version = 2;
-
-	throws(function () {
-		deferredSchema.validate(future, "browser");
-	}, "Invalid deferred obligation");
-
-	var extended = schemas.copyJSON(record);
-	extended.future = {};
-
-	throws(function () {
-		deferredSchema.validate(extended, "browser");
-	}, "Invalid deferred obligation");
-
-	var foreign = schemas.copyJSON(record);
-	foreign.effect.platform = "node";
-
-	throws(function () {
-		deferredSchema.validate(foreign, "browser");
-	}, "another platform");
-
-	var futureEffect = schemas.copyJSON(record);
-	futureEffect.effect.version = 2;
-
-	throws(function () {
-		deferredSchema.validate(futureEffect, "browser");
-	}, "Invalid persistent deferred effect");
-
-	throws(function () {
-		deferredSchema.validate(record, "node");
-	}, "Invalid deferred obligation");
-}
-
 function testIncidentProtocol() {
 	var record = {
 		version: 1,
@@ -1284,17 +1124,16 @@ function testIncidentProtocol() {
 
 function testWalEnvelopeReading() {
 	var body = {
-		version: 1,
-		kind: "incident",
-		platform: "browser",
-		incident: {}
+		version: 2,
+		kind: "continuation",
+		platform: "browser"
 	};
 
 	var fields = {
 		title: "$:/clerus/wal/browser/envelope-test",
 		type: "application/json",
 		"clerus-custody": "user",
-		"clerus-wal-kind": "incident",
+		"clerus-wal-kind": "continuation",
 		text: JSON.stringify(body)
 	};
 
@@ -1311,22 +1150,19 @@ function testWalEnvelopeReading() {
 	assert(ready.kind === "ready");
 	assert(ready.platform === "browser");
 
-	ready.record.incident.local = true;
-	assert(!read(body).record.incident.local);
+	ready.record.local = true;
+	assert(!read(body).record.local);
 
 	var future = schemas.copyJSON(body);
-	future.version = 2;
-
+	future.version = 99;
 	assert(read(future).kind === "unsupported");
 
 	var malformed = schemas.copyJSON(body);
-	malformed.version = "1";
-
+	malformed.version = "2";
 	assert(read(malformed).kind === "unreadable");
 
 	var foreign = schemas.copyJSON(body);
 	foreign.platform = "node";
-
 	assert(read(foreign).kind === "unreadable");
 
 	var unknown = schemas.copyJSON(body);
@@ -1335,7 +1171,7 @@ function testWalEnvelopeReading() {
 	fields["clerus-wal-kind"] = "future";
 	assert(read(unknown).kind === "unsupported");
 
-	fields["clerus-wal-kind"] = "incident";
+	fields["clerus-wal-kind"] = "continuation";
 	assert(read(unknown).kind === "unreadable");
 
 	fields.text = "{broken";
@@ -1345,13 +1181,17 @@ function testWalEnvelopeReading() {
 	fields.type = "text/plain";
 	assert(walEnvelope.read(fields).kind === "unreadable");
 
-	// Envelope support does not imply body validity.
+	/*
+	Envelope support selects a schema. It does not establish
+	body validity, execution readiness or custody.
+	*/
 	fields.type = "application/json";
+
 	assert(read({
-		version: 1,
-		kind: "incident",
+		version: 2,
+		kind: "continuation",
 		platform: "browser",
-		incident: null
+		work: "invalid"
 	}).kind === "ready");
 }
 
@@ -1360,50 +1200,111 @@ function testRequiredWalEnvelope() {
 		title: "$:/clerus/wal/browser/required-envelope",
 		type: "application/json",
 		"clerus-custody": "user",
-		"clerus-wal-kind": "flow",
+		"clerus-wal-kind": "continuation",
 		text: JSON.stringify({
-			version: 1,
-			kind: "flow",
+			version: 2,
+			kind: "continuation",
 			platform: "browser"
 		})
 	};
 
 	var before = JSON.stringify(fields);
 
-	// Supported outer envelope; body validation belongs to flow-schema.
 	var record = walEnvelope.requireRecord(
 		fields,
 		"browser",
-		"flow"
+		"continuation"
 	);
 
-	assert(record.kind === "flow");
+	assert(record.kind === "continuation");
 	assert(JSON.stringify(fields) === before);
 	assert(fields["clerus-custody"] === "user");
 
 	throws(function () {
-		walEnvelope.requireRecord(fields, "node", "flow");
+		walEnvelope.requireRecord(
+			fields,
+			"node",
+			"continuation"
+		);
 	}, "another platform");
 
 	throws(function () {
 		walEnvelope.requireRecord(fields, "browser", "plan");
-	}, "Unexpected WAL kind");
+	}, "Invalid expected WAL kind");
 
 	var future = JSON.parse(fields.text);
-	future.version = 2;
+	future.version = 99;
 	fields.text = JSON.stringify(future);
 
 	throws(function () {
-		walEnvelope.requireRecord(fields, "browser", "flow");
+		walEnvelope.requireRecord(
+			fields,
+			"browser",
+			"continuation"
+		);
 	}, "Unsupported WAL version");
 
-	future.version = 1;
+	future.version = 2;
 	fields.text = JSON.stringify(future);
 	fields["clerus-wal-kind"] = "plan";
 
 	throws(function () {
-		walEnvelope.requireRecord(fields, "browser", "flow");
+		walEnvelope.requireRecord(
+			fields,
+			"browser",
+			"continuation"
+		);
 	}, "Invalid WAL envelope");
+}
+
+function testLegacyWalIsUnsupported() {
+	["plan", "flow", "deferred", "incident"].forEach(function (kind) {
+		var fields = {
+			title: "$:/clerus/wal/browser/legacy-" + kind,
+			type: "application/json",
+			"clerus-custody": "user",
+			"clerus-wal-kind": kind,
+			text: JSON.stringify({
+				version: 1,
+				kind: kind,
+				platform: "browser"
+			})
+		};
+
+		var before = JSON.stringify(fields);
+		var result = walEnvelope.read(fields);
+
+		assert(result.kind === "unsupported");
+		assert(result.record === null);
+		assert(JSON.stringify(fields) === before);
+	});
+}
+
+function testIncidentAddressBoundary() {
+	var fields = {
+		title: "$:/clerus/incidents/browser/foundation-test",
+		type: "application/json",
+		"clerus-custody": "user",
+		"clerus-incident-kind": "executor-failure",
+		text: JSON.stringify({
+			version: 1,
+			kind: "incident",
+			platform: "browser",
+			incident: { error: { message: "Historical failure" } }
+		})
+	};
+
+	assert(
+		incidentSchema.read(fields, "browser")
+			.incident.error.message === "Historical failure"
+	);
+	assert(walEnvelope.platformOf(fields.title) === null);
+
+	fields.title = "$:/clerus/wal/browser/incident-test";
+
+	throws(function () {
+		incidentSchema.read(fields, "browser");
+	}, "Invalid incident tiddler envelope");
 }
 
 function testEstablishingMessageContract() {
@@ -1499,11 +1400,17 @@ exports.run = function (tw) {
 		["establishment input: unique isolated mandate and durability", testEstablishmentInput],
 		["external pass: outer boundary owns collection", testExternalPassBoundaries],
 		["external pass: execution and collection failures stay distinct", testExternalPassFailures],
-		["accepted-plan protocol: version, isolation and accepted authority", testAcceptedPlanProtocol],
-		["deferred protocol: body version and platform binding", testDeferredProtocol],
 		["incident protocol: strict envelope and opaque diagnostics", testIncidentProtocol],
 		["WAL envelope: version, kind and platform classification", testWalEnvelopeReading],
 		["WAL envelope: required kind does not authorize custody", testRequiredWalEnvelope],
+		[
+			"WAL envelope: all legacy external kinds are unsupported",
+			testLegacyWalIsUnsupported
+		],
+		[
+			"incident diagnostics: address space is separate from WAL",
+			testIncidentAddressBoundary
+		],
 		["message protocol: founding contract checks preserve precedence", testEstablishingMessageContract],
 	];
 

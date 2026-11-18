@@ -11,6 +11,9 @@ var envelopes = require("$:/plugins/clerus/core/wal-envelope.js");
 var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
+var continuations = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
 
 var hasOwn = Function.call.bind(Object.prototype.hasOwnProperty);
 
@@ -72,48 +75,23 @@ function fromWork(work, identities) {
 function fromRecord(record) {
 	var claims = [];
 
-	if (record.kind === "plan") {
-		return fromProposal(record.proposal);
+	if (record.work !== null) {
+		claims = claims.concat(fromWork(
+			record.work,
+			record.evidence.identities
+		));
 	}
 
-	if (record.kind === "flow") {
-		if (record.active !== null) {
-			claims = claims.concat(
-				fromProposal(record.active)
-			);
+	Object.keys(record.events).forEach(function (id) {
+		var event = record.events[id].event;
+
+		if (event.establishing === true) {
+			claims.push({
+				title: event.recipient.title,
+				kind: "establishment"
+			});
 		}
-
-		record.pending.forEach(function (message) {
-			if (message.establishing === true) {
-				claims.push({
-					title: message.recipient.title,
-					kind: "establishment"
-				});
-			}
-		});
-
-		return claims;
-	}
-
-	if (record.kind === "continuation") {
-		if (record.work !== null) {
-			claims = claims.concat(fromWork(
-				record.work,
-				record.evidence.identities
-			));
-		}
-
-		Object.keys(record.events).forEach(function (id) {
-			var event = record.events[id].event;
-
-			if (event.establishing === true) {
-				claims.push({
-					title: event.recipient.title,
-					kind: "establishment"
-				});
-			}
-		});
-	}
+	});
 
 	return claims;
 }
@@ -179,7 +157,13 @@ function check(options) {
 			);
 		}
 
-		fromRecord(envelope.record).forEach(function (claim) {
+		var record = continuations.validate(
+			envelope.record,
+			envelope.platform,
+			fields.title
+		);
+
+		fromRecord(record).forEach(function (claim) {
 			if (requested.has(claim.title)) {
 				throw new Error(
 					"Establishment address is reserved: " +

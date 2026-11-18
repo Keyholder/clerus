@@ -257,14 +257,12 @@ function journalCard(item, platform) {
 
 	var record = item.record;
 
-	if (record.retainUntil !== undefined) {
-		content.push(element("div", [
-			text(
-				"Минимальный срок существования WAL, Unix ms: " +
-				record.retainUntil
-			)
-		]));
-	}
+	content.push(element("div", [
+		text(
+			"Минимальный срок существования WAL, Unix ms: " +
+			record.retainUntil
+		)
+	]));
 
 	if (record.work !== null) {
 		content.push(element("div", [

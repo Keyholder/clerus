@@ -96,6 +96,7 @@ function fixture(tw, handler) {
 			version: 2,
 			kind: "continuation",
 			platform: platform,
+			retainUntil: 0,
 			work: {
 				version: 2,
 				id: "persistent-notification-work-0001",

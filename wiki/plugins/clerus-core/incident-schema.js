@@ -9,10 +9,10 @@ module-type: library
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 
 /*
-Version 1 historical incident envelope.
+Historical diagnostic format, independent of the WAL protocol.
 
-The diagnostic payload is intentionally opaque. It does not
-represent executable work or establish retention grounds.
+The opaque payload does not represent executable work or
+establish retention grounds.
 */
 function validate(value, platform) {
 	schemas.assertPlatform(platform);
@@ -38,10 +38,17 @@ function validate(value, platform) {
 }
 
 function read(fields, platform) {
+	schemas.assertPlatform(platform);
+
+	var prefix = "$:/clerus/incidents/" + platform + "/";
+
 	if (
 		!schemas.isRecord(fields) ||
+		typeof fields.title !== "string" ||
+		fields.title.indexOf(prefix) !== 0 ||
+		fields.title.length === prefix.length ||
 		fields.type !== "application/json" ||
-		fields["clerus-wal-kind"] !== "incident" ||
+		fields["clerus-incident-kind"] !== "executor-failure" ||
 		typeof fields.text !== "string"
 	) {
 		throw new Error("Invalid incident tiddler envelope");

@@ -102,6 +102,7 @@ function create(options) {
 			version: 2,
 			kind: "continuation",
 			platform: options.platform,
+			retainUntil: newDeadline(),
 			work: value,
 			events: {},
 			evidence: {
@@ -111,15 +112,11 @@ function create(options) {
 			diagnostics: []
 		};
 
-		if (retention.delay > 0) {
-			initial.retainUntil = newDeadline();
-
-			if (initial.work !== null) {
-				initial.work = custodySchema.withRetention(
-					initial.work,
-					initial.retainUntil
-				);
-			}
+		if (initial.work !== null) {
+			initial.work = custodySchema.withRetention(
+				initial.work,
+				initial.retainUntil
+			);
 		}
 
 		var record = continuationSchema.validate(
@@ -347,10 +344,7 @@ function create(options) {
 
 			var canDelete = empty &&
 				!terminatedHistory &&
-				(
-					record.retainUntil === undefined ||
-					currentTime() >= record.retainUntil
-				);
+				currentTime() >= record.retainUntil;
 
 			if (canDelete) {
 				options.store.apply(stores.transition(
@@ -635,10 +629,7 @@ function create(options) {
 			birth
 		);
 
-		if (
-			work !== null &&
-			record.retainUntil !== undefined
-		) {
+		if (work !== null) {
 			work = custodySchema.withRetention(
 				work,
 				record.retainUntil

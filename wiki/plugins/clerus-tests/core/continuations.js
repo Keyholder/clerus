@@ -12,6 +12,9 @@ var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
 var retention = require("$:/plugins/clerus/core/retention.js");
+var continuationSchema = require(
+	"$:/plugins/clerus/core/continuation-schema.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -99,6 +102,9 @@ function fixture(tw, retention) {
 			version: 2,
 			kind: "continuation",
 			platform: platform,
+			retainUntil: retention
+				? retention.now() + retention.delay
+				: 0,
 			work: value,
 			events: {},
 			evidence: {
@@ -107,10 +113,6 @@ function fixture(tw, retention) {
 			},
 			diagnostics: []
 		};
-
-		if (retention && retention.delay > 0) {
-			record.retainUntil = retention.now() + retention.delay;
-		}
 
 		wiki.addTiddler(new tw.Tiddler({
 			title: title,
@@ -825,6 +827,61 @@ function testTerminationRetriesAfterPreWriteFailure(tw) {
 	);
 }
 
+function testDeadlineIsRequired(tw) {
+	var f = fixture(tw);
+	var title = f.publish(
+		"required-deadline",
+		f.work("required-deadline-work-0001")
+	);
+
+	var record = JSON.parse(f.wiki.getTiddlerText(title));
+	delete record.retainUntil;
+
+	var caught = false;
+
+	try {
+		continuationSchema.validate(record, f.platform, title);
+	} catch (error) {
+		caught = true;
+	}
+
+	assert(caught, "Continuation without retainUntil must be rejected");
+}
+
+function testZeroDelayStillRecordsDeadline(tw) {
+	var now = 2000000;
+
+	var f = fixture(tw, {
+		delay: 0,
+		now: function () {
+			return now;
+		}
+	});
+
+	var title = f.runtime.continuations.accept(
+		f.work("zero-delay-deadline-work-0001")
+	);
+
+	var record = JSON.parse(f.wiki.getTiddlerText(title));
+
+	assert(record.retainUntil === now);
+	assert(record.work !== null);
+
+	/*
+	Deadline expiry does not discard accepted work.
+	The material effects still have to be completed.
+	*/
+	now++;
+
+	f.runtime.recover();
+
+	assert(
+		JSON.parse(f.wiki.getTiddlerText(f.first))
+			.charter.status.phase === "completed"
+	);
+	assert(!f.wiki.tiddlerExists(title));
+}
+
 exports.run = function (tw) {
 	var cases = [
 		["runtime recovers a material continuation", testRuntimeRecovery],
@@ -838,7 +895,15 @@ exports.run = function (tw) {
 		["termination confirms an interrupted write after restart", testTerminationConfirmsInterruptedWrite],
 		["termination preserves sibling events and their retention", testTerminationPreservesSiblingEvents],
 		["termination rejects active materialization", testTerminationRejectsActiveMaterialization],
-		["termination retries safely after a pre-write failure", testTerminationRetriesAfterPreWriteFailure]
+		["termination retries safely after a pre-write failure", testTerminationRetriesAfterPreWriteFailure],
+		[
+			"continuation deadline is mandatory",
+			testDeadlineIsRequired
+		],
+		[
+			"zero retention delay still records an authoritative deadline",
+			testZeroDelayStillRecordsDeadline
+		]
 	];
 
 	var results = cases.map(function (item) {

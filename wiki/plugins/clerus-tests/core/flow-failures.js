@@ -6,8 +6,8 @@ module-type: library
 
 "use strict";
 
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
@@ -72,13 +72,20 @@ function fixture(tw) {
 		Tiddler: tw.Tiddler
 	});
 
+	var sequence = 0;
+
+	function newId() {
+		sequence++;
+
+		return "failure-continuation-" +
+			String(sequence).padStart(12, "0");
+	}
+
 	function service() {
-		return flows.create({
+		return continuations.create({
 			store: store,
 			platform: platform,
-			newId: function () {
-				return "failure-flow-root-identity";
-			}
+			newId: newId
 		});
 	}
 
@@ -105,21 +112,25 @@ function fixture(tw) {
 
 	var manager = service();
 
-	var journal = manager.register({
-		version: 1,
-		owner: {
-			title: titles.root,
-			executor: "root",
-			state: store.read(titles.root).fields
-		},
-		plan: {
-			version: 1,
-			effects: [],
-			messages: [
-				message("first"),
-				message("second")
-			]
-		}
+	var journal = manager.accept({
+		version: 2,
+		id: newId(),
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: ["first", "second"].map(function (name) {
+			var outgoing = message(name);
+
+			return {
+				id: outgoing.id,
+				event: {
+					kind: "delivery",
+					type: "order",
+					recipient: outgoing.recipient,
+					registry: outgoing.registry
+				}
+			};
+		})
 	});
 
 	manager.resume(journal);
@@ -154,7 +165,7 @@ function fixture(tw) {
 				}
 			});
 
-			manager.accept(
+			manager.acceptEvent(
 				journal,
 				message("second").id,
 				proposal
@@ -169,38 +180,56 @@ function testSiblingContinuesAndErrorsRemain(tw) {
 	var f = fixture(tw);
 	var firstBefore = f.wiki.getTiddler(f.titles.first).fields.text;
 
-	var failure = f.manager.fail(
+	var failure = f.manager.failEvent(
 		f.journal,
 		f.id("first"),
 		f.recipient("first"),
 		new Error("Recipient failed")
 	);
 
-	assert(failure.status === "failed");
-	assert(failure.pending.length === 1);
-	assert(failure.pending[0].id === f.id("second"));
+	assert(failure === "paused");
+
+	var pending = f.manager.pending(f.journal);
+
+	assert(pending.length === 1);
+	assert(pending[0].id === f.id("second"));
 
 	var ongoing = f.manager.read(f.journal).record;
 
-	assert(ongoing.errors.length === 1);
-	assert(ongoing.active === null);
+	assert(ongoing.diagnostics.length === 1);
+	assert(ongoing.work === null);
+	assert(ongoing.events[f.id("first")].mode === "paused");
 	assert(
 		f.wiki.getTiddler(f.journal)
 			.fields["clerus-custody"] === f.platform
 	);
 
+	// Destroying incoming memo needs no operational transition.
 	assert(f.completeSecond().length === 0);
 
 	var journal = f.wiki.getTiddler(f.journal);
 	var completed = JSON.parse(journal.fields.text);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(completed.pending.length === 0);
-	assert(completed.active === null);
-	assert(completed.errors.length === 1);
-	assert(completed.errors[0].error.message === "Recipient failed");
-	assert(f.wiki.getTiddler(f.titles.first).fields.text === firstBefore);
+	assert(completed.work === null);
+	assert(Object.keys(completed.events).length === 1);
+	assert(completed.events[f.id("first")].mode === "paused");
+	assert(
+		completed.events[f.id("first")]
+			.event.registry.input.data === "first"
+	);
+	assert(completed.diagnostics.length === 1);
+	assert(
+		completed.diagnostics[0].error.message === "Recipient failed"
+	);
+	assert(
+		f.wiki.getTiddler(f.titles.first).fields.text === firstBefore
+	);
 
+	/*
+	A paused event retains its recipient, but is not active
+	materialization and therefore creates no material barrier.
+	*/
 	var barrier = barriers.collect({ store: f.store });
 
 	assert(barrier.inspect().complete);
@@ -213,7 +242,7 @@ function testWrongRecipientCannotFailMessage(tw) {
 	var before = f.wiki.getTiddler(f.journal).fields.text;
 
 	throws(function () {
-		f.manager.fail(
+		f.manager.failEvent(
 			f.journal,
 			f.id("first"),
 			f.recipient("second"),
@@ -227,22 +256,24 @@ function testWrongRecipientCannotFailMessage(tw) {
 function testRepeatedFailureDoesNotDuplicateEvidence(tw) {
 	var f = fixture(tw);
 
-	f.manager.fail(
+	f.manager.failEvent(
 		f.journal,
 		f.id("first"),
 		f.recipient("first"),
 		new Error("First failure")
 	);
 
-	var repeated = f.manager.fail(
+	var repeated = f.manager.failEvent(
 		f.journal,
 		f.id("first"),
 		f.recipient("first"),
 		new Error("Repeated failure")
 	);
 
-	assert(repeated.status === "already-completed");
-	assert(f.manager.read(f.journal).record.errors.length === 1);
+	assert(repeated === "unavailable");
+	assert(
+		f.manager.read(f.journal).record.diagnostics.length === 1
+	);
 }
 
 function testInterruptedFailureRegistration(tw) {
@@ -263,7 +294,7 @@ function testInterruptedFailureRegistration(tw) {
 
 	try {
 		throws(function () {
-			f.manager.fail(
+			f.manager.failEvent(
 				f.journal,
 				f.id("first"),
 				f.recipient("first"),
@@ -275,11 +306,16 @@ function testInterruptedFailureRegistration(tw) {
 	}
 
 	var manager = f.service();
-	var pending = manager.resume(f.journal);
+
+	manager.resume(f.journal);
+
+	var pending = manager.pending(f.journal);
+	var record = manager.read(f.journal).record;
 
 	assert(pending.length === 1);
 	assert(pending[0].id === f.id("second"));
-	assert(manager.read(f.journal).record.errors.length === 1);
+	assert(record.events[f.id("first")].mode === "paused");
+	assert(record.diagnostics.length === 1);
 }
 
 exports.run = function (tw) {

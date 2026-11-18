@@ -8,7 +8,6 @@ module-type: library
 
 var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
-
 var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
@@ -18,14 +17,8 @@ var continuations = require(
 var proposalWork = require(
 	"$:/plugins/clerus/core/proposal-work.js"
 );
-var flowObligations = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
-);
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
-);
-var deferredObligations = require(
-	"$:/plugins/clerus/core/deferred-obligations.js"
 );
 var observation = require(
 	"$:/plugins/clerus/core/observation.js"
@@ -54,28 +47,28 @@ function failed(phase, error, title) {
 	};
 }
 
-function messageEvent(message) {
-	if (message.kind === "notification") {
-		return Object.assign({}, message.notification, {
-			id: message.id
+function messageEvent(delivery) {
+	if (delivery.kind === "notification") {
+		return Object.assign({}, delivery.notification, {
+			id: delivery.id
 		});
 	}
 
-	if (message.kind === "activation") {
+	if (delivery.kind === "activation") {
 		return {
 			type: "tick",
-			id: message.id
+			id: delivery.id
 		};
 	}
 
 	var event = {
-		type: message.type,
-		id: message.id
+		type: delivery.type,
+		id: delivery.id
 	};
 
-	if (message.type === "report") {
-		event.project = message.project;
-		event.role = message.role.slice();
+	if (delivery.type === "report") {
+		event.project = delivery.project;
+		event.role = delivery.role.slice();
 	}
 
 	return event;
@@ -97,36 +90,33 @@ function execute(options) {
 		);
 	}
 
+	/*
+	Reject obsolete ingress explicitly. Silently treating it as
+	an independent external event could execute the wrong work.
+	*/
+	if (
+		Object.prototype.hasOwnProperty.call(options, "flow") ||
+		Object.prototype.hasOwnProperty.call(options, "deferred")
+	) {
+		throw new Error("Unsupported persistent delivery address");
+	}
+
+	if (
+		options.continuation !== undefined &&
+		(
+			!schemas.isRecord(options.continuation) ||
+			typeof options.continuation.title !== "string" ||
+			typeof options.continuation.eventId !== "string"
+		)
+	) {
+		throw new Error("Invalid continuation delivery address");
+	}
+
 	var manager = continuations.create({
 		store: options.store,
 		platform: options.platform,
 		newId: options.newId
 	});
-
-	var flows = flowObligations.create({
-		store: options.store,
-		platform: options.platform,
-		newId: options.newId
-	});
-
-	var deferred = deferredObligations.create({
-		store: options.store,
-		platform: options.platform
-	});
-
-	if (
-		[
-			options.flow,
-			options.deferred,
-			options.continuation
-		].filter(function (value) {
-			return value !== undefined;
-		}).length > 1
-	) {
-		throw new Error(
-			"A reaction can consume only one incoming obligation"
-		);
-	}
 
 	var blockers = barriers.collect({
 		store: options.store
@@ -140,136 +130,18 @@ function execute(options) {
 	}
 
 	var delivery = null;
-	var deferredDelivery = false;
-	var continuationDelivery = false;
 	var incomingObligation = null;
 	var event = options.event;
 	var incoming = options.incoming;
 
-	if (options.flow !== undefined) {
-		if (
-			!options.flow ||
-			typeof options.flow.title !== "string" ||
-			typeof options.flow.messageId !== "string"
-		) {
-			throw new Error("Invalid flow delivery address");
-		}
-
-		incomingObligation = options.flow.title;
-		
-		try {
-			delivery = flows.pending(options.flow.title).find(
-				function (message) {
-					return message.id === options.flow.messageId;
-				}
-			);
-
-			if (!delivery) {
-				return {
-					status: "unavailable",
-					reason: "flow-message-not-pending"
-				};
-			}
-
-			var current = options.store.read(options.title);
-			var establishing = delivery.establishing === true;
-
-			var recipientMatches = delivery.recipient.title === options.title &&
-				(
-					establishing
-						? current.kind === "absent"
-						: current.kind === "materialized" &&
-							current.fields["clerus-executor"] ===
-								delivery.recipient.executor
-				);
-
-			if (!recipientMatches) {
-				return {
-					status: "unavailable",
-					reason: establishing
-						? "establishment-target-occupied"
-						: "flow-recipient-changed"
-				};
-			}
-
-			event = messageEvent(delivery);
-			incoming = delivery.registry;
-		} catch (error) {
-			return failed(
-				"preparation",
-				error,
-				options.flow.title
-			);
-		}
-	}
-
-	if (options.deferred !== undefined) {
-		if (
-			!options.deferred ||
-			typeof options.deferred.title !== "string" ||
-			typeof options.deferred.id !== "string"
-		) {
-			throw new Error("Invalid deferred delivery address");
-		}
-
-		incomingObligation = options.deferred.title;
-
-		try {
-			var loadedDeferred = deferred.read(incomingObligation);
-			var effect = loadedDeferred.effect;
-			var deferredOwner = options.store.read(options.title);
-
-			if (
-				effect.id !== options.deferred.id ||
-				effect.recipient.title !== options.title ||
-				deferredOwner.kind !== "materialized" ||
-				deferredOwner.fields["clerus-executor"] !==
-					effect.recipient.executor
-			) {
-				return {
-					status: "unavailable",
-					reason: "deferred-recipient-changed"
-				};
-			}
-
-			delivery = effect;
-			deferredDelivery = true;
-
-			event = {
-				type: "tick",
-				id: effect.id
-			};
-
-			incoming = undefined;
-		} catch (error) {
-			return failed(
-				"preparation",
-				error,
-				incomingObligation
-			);
-		}
-	}
-
 	if (options.continuation !== undefined) {
-		if (
-			!options.continuation ||
-			typeof options.continuation.title !== "string" ||
-			typeof options.continuation.eventId !== "string"
-		) {
-			throw new Error(
-				"Invalid continuation delivery address"
-			);
-		}
-
 		incomingObligation = options.continuation.title;
 
 		try {
 			var pendingEvent = manager.pending(
 				incomingObligation
 			).find(function (entry) {
-				return (
-					entry.id === options.continuation.eventId
-				);
+				return entry.id === options.continuation.eventId;
 			});
 
 			if (!pendingEvent) {
@@ -286,7 +158,7 @@ function execute(options) {
 
 			var recipient = options.store.read(options.title);
 
-			var recipientMatches = (
+			var recipientMatches =
 				delivery.recipient.title === options.title &&
 				(
 					delivery.establishing === true
@@ -294,8 +166,7 @@ function execute(options) {
 						: recipient.kind === "materialized" &&
 							recipient.fields["clerus-executor"] ===
 								delivery.recipient.executor
-				)
-			);
+				);
 
 			if (!recipientMatches) {
 				return {
@@ -306,7 +177,6 @@ function execute(options) {
 				};
 			}
 
-			continuationDelivery = true;
 			event = messageEvent(delivery);
 			incoming = delivery.kind === "delivery"
 				? delivery.registry
@@ -335,19 +205,23 @@ function execute(options) {
 				options.acknowledgeResumption === true
 		};
 
-		var wrappedHandler = function (event, operational, incoming) {
+		var wrappedHandler = function (
+			deliveredEvent,
+			operational,
+			incomingRegistry
+		) {
 			/*
-			The stored notification and its fingerprint stay unchanged.
-			Only the delivery view follows current subscriptions.
+			Refresh only the delivery view. The authoritative
+			notification and its fingerprint stay unchanged.
 
-			A vanished subscription is consumed by a successful empty
-			reaction, through the normal proposal acceptance protocol.
+			A vanished subscription consumes the event through
+			successful acceptance of an empty reaction.
 			*/
 			if (
-				continuationDelivery &&
+				delivery !== null &&
 				delivery.kind === "notification"
 			) {
-				var current = observation.refresh(event, {
+				var current = observation.refresh(deliveredEvent, {
 					store: options.store,
 					platform: options.platform
 				});
@@ -356,7 +230,7 @@ function execute(options) {
 					return;
 				}
 
-				event = reactionEvents.prepare({
+				deliveredEvent = reactionEvents.prepare({
 					event: Object.assign({}, current, {
 						id: delivery.id
 					}),
@@ -368,13 +242,13 @@ function execute(options) {
 			invoked = true;
 
 			return options.handler(
-				event,
+				deliveredEvent,
 				operational,
-				incoming
+				incomingRegistry
 			);
 		};
 
-		if (delivery && delivery.establishing === true) {
+		if (delivery !== null && delivery.establishing === true) {
 			execution.resolveExecutor = function (name) {
 				if (name !== delivery.recipient.executor) {
 					throw new Error(
@@ -394,39 +268,19 @@ function execute(options) {
 		var failure = failed(
 			invoked ? "reaction" : "preparation",
 			error,
-			delivery ? incomingObligation : null
+			incomingObligation
 		);
 
-		if (delivery && invoked) {
+		if (delivery !== null && invoked) {
 			try {
-				if (continuationDelivery) {
-					manager.failEvent(
-						incomingObligation,
-						delivery.id,
-						delivery.recipient,
-						error
-					);
+				manager.failEvent(
+					incomingObligation,
+					delivery.id,
+					delivery.recipient,
+					error
+				);
 
-					failure.pending = [];
-				} else if (deferredDelivery) {
-					deferred.fail(
-						incomingObligation,
-						delivery.id,
-						delivery.recipient,
-						error
-					);
-
-					failure.pending = [];
-				} else {
-					var rejected = flows.fail(
-						incomingObligation,
-						delivery.id,
-						delivery.recipient,
-						error
-					);
-
-					failure.pending = rejected.pending;
-				}
+				failure.pending = [];
 			} catch (registrationError) {
 				var uncertain = failed(
 					"failure-registration",
@@ -443,36 +297,16 @@ function execute(options) {
 	}
 
 	var title = null;
-	var flow = (
-		delivery !== null &&
-		!continuationDelivery
-	);
 
 	try {
-		if (delivery) {
+		if (delivery !== null) {
 			title = incomingObligation;
 
-			var accepted;
-
-			if (continuationDelivery) {
-				accepted = manager.acceptEvent(
-					title,
-					delivery.id,
-					proposal
-				);
-			} else if (deferredDelivery) {
-				accepted = deferred.accept(
-					title,
-					delivery.id,
-					proposal
-				);
-			} else {
-				accepted = flows.accept(
-					title,
-					delivery.id,
-					proposal
-				);
-			}
+			var accepted = manager.acceptEvent(
+				title,
+				delivery.id,
+				proposal
+			);
 
 			if (accepted !== "accepted") {
 				return {
@@ -481,12 +315,10 @@ function execute(options) {
 				};
 			}
 		} else if (
-			proposal.plan.effects.length === 0 &&
-			proposal.plan.messages.length === 0 &&
-			proposal.plan.deferred.length === 0
+			proposal.plan.effects.length !== 0 ||
+			proposal.plan.messages.length !== 0 ||
+			proposal.plan.deferred.length !== 0
 		) {
-			title = null;
-		} else {
 			var work = proposalWork.convert(
 				proposal,
 				options.newId(),
@@ -515,15 +347,6 @@ function execute(options) {
 	}
 
 	try {
-		if (flow) {
-			return {
-				status: "completed",
-				obligation: title,
-				results: [],
-				pending: flows.resume(title)
-			};
-		}
-
 		var results = manager.resume(title);
 		var remaining = options.store.read(title);
 		var pending = [];

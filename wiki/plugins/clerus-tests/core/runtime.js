@@ -113,7 +113,18 @@ function testPersistentIncidentAndUntouchedRegistry(tw) {
 	var body = JSON.parse(incident.fields.text);
 
 	assert(incident.fields["clerus-custody"] === "user");
-	assert(incident.fields["clerus-wal-kind"] === "incident");
+	assert(incident.fields["clerus-incident-kind"] === "executor-failure");
+	assert(
+		transition.incident.indexOf(
+			"$:/clerus/incidents/" + f.platform + "/"
+		) === 0
+	);
+	assert(
+		!Object.prototype.hasOwnProperty.call(
+			incident.fields,
+			"clerus-wal-kind"
+		)
+	);
 	assert(body.kind === "incident");
 	assert(body.incident.owner.title === f.title);
 	assert(
@@ -250,7 +261,6 @@ function testPublicManagementSurface(tw) {
 		"observer",
 		"lifecycle",
 		"readJobs",
-		"dispatchDeferred",
 		"executePersistentIngress",
 		"drainOfficialWork",
 		"passDepth"
@@ -325,7 +335,7 @@ function testPublicEntryKeepsRuntimeGuards(tw) {
 	assert(f.runtime.recover().entries.length === 0);
 }
 
-function testRecoveryDoesNotRediscoverRejectedFlows(tw) {
+function testRecoveryPreservesUnsupportedJournals(tw) {
 	var f = fixture(tw, function () {}, true);
 
 	["user", f.platform].forEach(function (custody, index) {
@@ -351,7 +361,11 @@ function testRecoveryDoesNotRediscoverRejectedFlows(tw) {
 	var report = f.runtime.recover();
 
 	assert(report.entries.length === 2);
-	assert(report.pendingFlowAttempts === 0);
+	assert(!report.summary.complete);
+	assert(report.summary.unreadable.length === 2);
+	assert(report.summary.materializations === 0);
+	assert(report.summary.waiting.deliveries.ready === 0);
+	assert(report.summary.waiting.notifications.ready === 0);
 
 	var seen = new Set();
 
@@ -367,6 +381,24 @@ function testRecoveryDoesNotRediscoverRejectedFlows(tw) {
 		assert(current.fields["clerus-custody"] === "user");
 		assert(JSON.parse(current.fields.text).version === 2);
 	});
+
+	var before = report.entries.map(function (entry) {
+		return [
+			entry.title,
+			JSON.stringify(f.wiki.getTiddler(entry.title).fields)
+		];
+	});
+
+	var repeated = f.runtime.recover();
+
+	assert(repeated.entries.length === 2);
+	assert(!repeated.summary.complete);
+
+	before.forEach(function (entry) {
+		assert(
+			JSON.stringify(f.wiki.getTiddler(entry[0]).fields) === entry[1]
+		);
+	});
 }
 
 exports.run = function (tw) {
@@ -378,7 +410,10 @@ exports.run = function (tw) {
 		["public runtime: explicit frozen management surface", testPublicManagementSurface],
 		["public runtime: detached dispatch and isolated inspection", testPublicDispatchAndInspection],
 		["public runtime: internal entry guards remain effective", testPublicEntryKeepsRuntimeGuards],
-		["public runtime: recovery does not rediscover rejected flows", testRecoveryDoesNotRediscoverRejectedFlows]
+		[
+			"public runtime: recovery preserves unsupported journals without duplicate entries",
+			testRecoveryPreservesUnsupportedJournals
+		]
 	];
 
 	var results = cases.map(function (item) {

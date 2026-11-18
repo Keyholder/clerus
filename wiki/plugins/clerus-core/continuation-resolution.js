@@ -336,7 +336,7 @@ function resolve(options) {
 		options.platform
 	);
 
-	if (work !== null && record.retainUntil !== undefined) {
+	if (work !== null) {
 		work = custody.withRetention(work, record.retainUntil);
 	}
 

@@ -9,8 +9,8 @@ module-type: library
 var proposals = require(
 	"$:/plugins/clerus/core/proposal-schema.js"
 );
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var stores = require("$:/plugins/clerus/core/store.js");
 
@@ -61,35 +61,39 @@ function fixture(tw) {
 		Tiddler: tw.Tiddler
 	});
 
-	var manager = flows.create({
+	var sequence = 0;
+
+	function newId() {
+		sequence++;
+
+		return "birth-proposal-generated-" +
+			String(sequence).padStart(12, "0");
+	}
+
+	var manager = continuations.create({
 		store: store,
 		platform: platform,
-		newId: function () {
-			return "birth-proposal-flow-identity";
-		}
+		newId: newId
 	});
 
 	var messageId = "birth-proposal-message-0001";
 
-	var journal = manager.register({
-		version: 1,
-		owner: {
-			title: source,
-			executor: "source",
-			state: store.read(source).fields
-		},
-		plan: {
-			version: 1,
-			effects: [],
-			messages: [{
-				version: 1,
-				kind: "official-message",
-				id: messageId,
-				platform: platform,
+	var journal = manager.accept({
+		version: 2,
+		id: newId(),
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: [{
+			id: messageId,
+			event: {
+				kind: "delivery",
 				type: "order",
 				establishing: true,
-				source: { title: source, executor: "source" },
-				recipient: { title: target, executor: "worker" },
+				recipient: {
+					title: target,
+					executor: "worker"
+				},
 				registry: {
 					contract: {
 						form: "contract",
@@ -97,8 +101,8 @@ function fixture(tw) {
 						temp: false
 					}
 				}
-			}]
-		}
+			}
+		}]
 	});
 
 	manager.resume(journal);
@@ -147,7 +151,7 @@ function testAcceptanceDoesNotCreateOwner(tw) {
 	var f = fixture(tw);
 
 	assert(
-		f.manager.accept(
+		f.manager.acceptEvent(
 			f.journal,
 			f.messageId,
 			f.proposal
@@ -158,9 +162,24 @@ function testAcceptanceDoesNotCreateOwner(tw) {
 
 	var record = f.manager.read(f.journal).record;
 
-	assert(record.active.owner.state === null);
+	assert(record.work !== null);
+	assert(!Object.prototype.hasOwnProperty.call(
+		record.events,
+		f.messageId
+	));
 
-	assert(f.manager.resume(f.journal).length === 0);
+	var birth = record.work.transitions.find(function (effect) {
+		return effect.title === f.target;
+	});
+
+	assert(birth);
+	assert(birth.before === null);
+	assert(birth.after["clerus-executor"] === "worker");
+
+	var results = f.manager.resume(f.journal);
+
+	assert(results.length === 1);
+	assert(results[0] === "applied");
 	assert(f.wiki.getTiddler(f.target));
 	assert(!f.wiki.getTiddler(f.journal));
 }
@@ -187,12 +206,12 @@ function testOccupiedTargetPreservesMessage(tw) {
 	var before = f.wiki.getTiddler(f.journal).fields.text;
 
 	throws(function () {
-		f.manager.accept(
+		f.manager.acceptEvent(
 			f.journal,
 			f.messageId,
 			f.proposal
 		);
-	}, "owner state has changed");
+	}, "baseline has changed");
 
 	assert(f.wiki.getTiddler(f.journal).fields.text === before);
 	assert(f.wiki.getTiddlerText(f.target) === "intervention");
@@ -201,7 +220,7 @@ function testOccupiedTargetPreservesMessage(tw) {
 function testBirthRecoversAfterActualWrite(tw) {
 	var f = fixture(tw);
 
-	f.manager.accept(
+	f.manager.acceptEvent(
 		f.journal,
 		f.messageId,
 		f.proposal
@@ -240,7 +259,9 @@ function testBirthRecoversAfterActualWrite(tw) {
 		{ "clerus-custody": f.platform }
 	));
 
-	assert(f.manager.resume(f.journal).length === 0);
+	var results = f.manager.resume(f.journal);
+	assert(results.length === 1);
+	assert(results[0] === "already-applied");
 	assert(!f.wiki.getTiddler(f.journal));
 
 	var registry = JSON.parse(

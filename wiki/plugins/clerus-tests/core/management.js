@@ -2479,6 +2479,7 @@ function pausedDocumentDelivery(f, tw) {
 			version: 2,
 			kind: "continuation",
 			platform: f.platform,
+			retainUntil: 0,
 			work: null,
 			events: waiting,
 			evidence: {

@@ -6,7 +6,12 @@ module-type: library
 
 "use strict";
 
-var flows = require("$:/plugins/clerus/core/flow-obligations.js");
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
+);
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
+);
 var stores = require("$:/plugins/clerus/core/store.js");
 
 function assert(condition, message) {
@@ -99,7 +104,7 @@ function fixture(tw, messageOnly) {
 		}
 	};
 
-	var service = flows.create({
+	var service = continuations.create({
 		store: store,
 		platform: platform,
 		newId: function () {
@@ -120,33 +125,47 @@ function fixture(tw, messageOnly) {
 				wiki.getTiddler(title),
 				{ "clerus-custody": platform }
 			));
+		},
+
+		accept: function () {
+			return service.accept(proposalWork.convert(
+				proposal,
+				"flow-root-work-identity-0001",
+				platform
+			));
 		}
 	};
 }
 
 function testRootBecomesPendingMessages(tw) {
 	var f = fixture(tw);
-	var title = f.service.register(f.proposal);
+	var title = f.accept();
 
 	assert(f.service.pending(title).length === 0);
 
-	var messages = f.service.resume(title);
+	var results = f.service.resume(title);
 	var record = f.service.read(title).record;
+	var pending = f.service.pending(title);
 
-	assert(messages.length === 1);
-	assert(record.active === null);
-	assert(record.pending.length === 1);
-	assert(Object.keys(record.seen).length === 1);
+	assert(results.length === 1);
+	assert(record.work === null);
+	assert(pending.length === 1);
+	assert(pending[0].event.registry.note.data === 42);
+	assert(Object.keys(record.events).length === 1);
+	assert(Object.keys(record.evidence.identities).length === 1);
 
 	var repeated = f.service.resume(title);
 
-	assert(repeated.length === 1);
-	assert(f.service.read(title).record.pending.length === 1);
+	assert(repeated.length === 0);
+	assert(f.service.pending(title).length === 1);
+	assert(
+		f.service.pending(title)[0].id === pending[0].id
+	);
 }
 
 function testInterruptedRootRecovers(tw) {
 	var f = fixture(tw);
-	var title = f.service.register(f.proposal);
+	var title = f.accept();
 	var originalApply = f.store.apply;
 	var injected = false;
 
@@ -173,15 +192,16 @@ function testInterruptedRootRecovers(tw) {
 		f.wiki.getTiddler(title).fields.text
 	);
 
-	assert(paused.active !== null);
-	assert(paused.pending.length === 0);
+	assert(paused.work !== null);
+	assert(Object.keys(paused.events).length === 0);
 
 	f.restore(title);
 
-	var messages = f.service.resume(title);
+	var results = f.service.resume(title);
 
-	assert(messages.length === 1);
-	assert(f.service.read(title).record.active === null);
+	assert(results.length === 1);
+	assert(results[0] === "already-applied");
+	assert(f.service.read(title).record.work === null);
 	assert(f.service.pending(title).length === 1);
 }
 
@@ -189,12 +209,13 @@ function testMessageOnlyRoot(tw) {
 	var f = fixture(tw, true);
 	var before = f.wiki.getTiddler(f.owner).fields.text;
 
-	var title = f.service.register(f.proposal);
-	var messages = f.service.resume(title);
+	var title = f.accept();
+	var results = f.service.resume(title);
 
-	assert(messages.length === 1);
+	assert(results.length === 0);
+	assert(f.service.pending(title).length === 1);
 	assert(f.wiki.getTiddler(f.owner).fields.text === before);
-	assert(f.service.read(title).record.active === null);
+	assert(f.service.read(title).record.work === null);
 }
 
 exports.run = function (tw) {

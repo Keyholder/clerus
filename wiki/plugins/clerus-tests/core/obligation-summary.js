@@ -62,6 +62,7 @@ function fixture(tw) {
 			version: 2,
 			kind: "continuation",
 			platform: platform,
+			retainUntil: 0,
 			work: null,
 			events: {},
 			evidence: {

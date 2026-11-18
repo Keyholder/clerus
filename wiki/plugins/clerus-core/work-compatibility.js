@@ -147,27 +147,15 @@ function check(options) {
 			);
 		}
 
-		var record = envelope.record;
-		var other = null;
+		var continuation = continuations.validate(
+			envelope.record,
+			platform,
+			fields.title
+		);
 
-		if (record.kind === "continuation") {
-			var continuation = continuations.validate(
-				record,
-				platform,
-				fields.title
-			);
-
-			if (continuation.work !== null) {
-				other = workView(continuation.work);
-			}
-		} else if (record.kind === "plan") {
-			other = proposalView(record.proposal);
-		} else if (
-			record.kind === "flow" &&
-			record.active !== null
-		) {
-			other = proposalView(record.active);
-		}
+		var other = continuation.work === null
+			? null
+			: workView(continuation.work);
 
 		/*
 			Pending events, diagnostics and registration receipts

@@ -189,12 +189,10 @@ function create(options) {
 		resolveExecutor: resolveExecutor,
 		autoCollectJobs: false,
 
-		continuationRetention: prototypeWalReceipts
-			? {
-				delay: 150000,
-				now: clock
-			}
-			: undefined
+		continuationRetention: {
+			delay: prototypeWalReceipts ? 150000 : 0,
+			now: clock
+		}
 	});
 
 	var resolutionManagement = require(
@@ -291,6 +289,7 @@ function create(options) {
 			version: 2,
 			kind: "continuation",
 			platform: platform,
+			retainUntil: clock() + (prototypeWalReceipts ? 150000 : 0),
 			work: {
 				version: 2,
 				id: newId(),
@@ -325,10 +324,6 @@ function create(options) {
 			},
 			diagnostics: []
 		};
-
-		if (prototypeWalReceipts) {
-			initial.retainUntil = clock() + 150000;
-		}
 
 		var record = continuations.validate(
 			initial,
@@ -658,6 +653,8 @@ function create(options) {
 			version: 2,
 			kind: "continuation",
 			platform: platform,
+			retainUntil:
+				clock() + (prototypeWalReceipts ? 150000 : 0),
 			work: null,
 			events: {},
 			evidence: {
@@ -667,10 +664,7 @@ function create(options) {
 			diagnostics: []
 		};
 
-		if (prototypeWalReceipts) {
-			record.retainUntil = clock() + 150000;
-			marker.retainUntil = record.retainUntil;
-		}
+		marker.retainUntil = record.retainUntil;
 
 		var after = Object.assign({}, before, {
 			"clerus-custody": destination,
@@ -695,9 +689,7 @@ function create(options) {
 			job: title,
 			from: platform,
 			to: destination,
-			retainUntil: record.retainUntil === undefined
-				? null
-				: record.retainUntil
+			retainUntil: record.retainUntil
 		};
 	}
 
@@ -967,7 +959,6 @@ function create(options) {
 				if (
 					record.work === null &&
 					Object.keys(record.events).length === 0 &&
-					record.retainUntil !== undefined &&
 					record.retainUntil <= timestamp
 				) {
 					expired = true;

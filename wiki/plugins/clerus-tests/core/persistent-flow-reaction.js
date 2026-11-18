@@ -9,12 +9,12 @@ module-type: library
 var persistent = require(
 	"$:/plugins/clerus/core/persistent-reaction.js"
 );
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var Store = require("$:/plugins/clerus/core/store.js").Store;
-var legacyRoot = require(
-	"$:/plugins/clerus/tests/legacy-flow-root.js"
+var continuationRoot = require(
+	"$:/plugins/clerus/tests/continuation-root.js"
 );
 
 function assert(condition, message) {
@@ -67,16 +67,21 @@ function fixture(tw) {
 			String(sequence).padStart(12, "0");
 	}
 
-	function execute(title, handler, flow) {
-		return persistent.execute({
+	function execute(title, handler, continuation) {
+		var options = {
 			store: store,
 			title: title,
 			platform: platform,
 			event: { type: "test" },
 			handler: handler,
-			newId: newId,
-			flow: flow
-		});
+			newId: newId
+		};
+
+		if (continuation !== undefined) {
+			options.continuation = continuation;
+		}
+
+		return persistent.execute(options);
 	}
 
 	return {
@@ -87,7 +92,7 @@ function fixture(tw) {
 		platform: platform,
 
 		root: function () {
-			return legacyRoot.start({
+			return continuationRoot.start({
 				store: store,
 				title: source,
 				platform: platform,
@@ -115,12 +120,12 @@ function fixture(tw) {
 		deliver: function (root, handler) {
 			return execute(target, handler, {
 				title: root.obligation,
-				messageId: root.pending[0].id
+				eventId: root.pending[0].id
 			});
 		},
 
 		manager: function () {
-			return flows.create({
+			return continuations.create({
 				store: store,
 				platform: platform,
 				newId: newId
@@ -167,7 +172,7 @@ function testEndToEndAcceptance(tw) {
 	assert(!f.wiki.getTiddler(root.obligation));
 }
 
-function testReactionFailureCompletesOnlyItsBranch(tw) {
+function testReactionFailurePausesItsInput(tw) {
 	var f = fixture(tw);
 	var root = f.root();
 	var before = f.wiki.getTiddler(f.target).fields.text;
@@ -190,11 +195,18 @@ function testReactionFailureCompletesOnlyItsBranch(tw) {
 	var record = JSON.parse(journal.fields.text);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(record.pending.length === 0);
-	assert(record.active === null);
-	assert(record.errors.length === 1);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+
+	var id = root.pending[0].id;
+
+	assert(Object.keys(record.events).length === 1);
+	assert(record.events[id].mode === "paused");
+	assert(record.events[id].event.registry.input.data.value === 42);
+	assert(record.diagnostics.length === 1);
 	assert(
-		record.errors[0].error.message ===
+		record.diagnostics[0].error.message ===
 			"Recipient rejected its proposal"
 	);
 }
@@ -241,9 +253,10 @@ function testRecoveryDoesNotRepeatRecipient(tw) {
 		{ "clerus-custody": f.platform }
 	));
 
-	var pending = f.manager().resume(root.obligation);
+	var results = f.manager().resume(root.obligation);
 
-	assert(pending.length === 0);
+	assert(results.length === 1);
+	assert(results[0] === "already-applied");
 	assert(calls === 1);
 	assert(f.registry(f.target).received.data.value === 42);
 	assert(!f.wiki.getTiddler(root.obligation));
@@ -265,7 +278,7 @@ function testRecipientReplacementPreservesMessage(tw) {
 	});
 
 	assert(result.status === "unavailable");
-	assert(result.reason === "flow-recipient-changed");
+	assert(result.reason === "continuation-recipient-changed");
 	assert(!called);
 	assert(f.manager().pending(root.obligation).length === 1);
 }
@@ -273,7 +286,10 @@ function testRecipientReplacementPreservesMessage(tw) {
 exports.run = function (tw) {
 	var cases = [
 		["persistent flow reaction: sending and recipient acceptance are connected", testEndToEndAcceptance],
-		["persistent flow reaction: failed proposal becomes branch evidence", testReactionFailureCompletesOnlyItsBranch],
+		[
+			"persistent continuation reaction: failed proposal pauses its input",
+			testReactionFailurePausesItsInput
+		],
 		["persistent flow reaction: recovery does not repeat recipient", testRecoveryDoesNotRepeatRecipient],
 		["persistent flow reaction: executor replacement preserves pending work", testRecipientReplacementPreservesMessage]
 	];

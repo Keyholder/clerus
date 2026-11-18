@@ -72,27 +72,18 @@ function fixture(tw, initialize) {
 
 	var runtime = createRuntime();
 
-	var journal = runtime.flows.register({
-		version: 1,
-		owner: {
-			title: source,
-			executor: "source",
-			state: runtime.store.read(source).fields
-		},
-		plan: {
-			version: 1,
-			effects: [],
-			messages: [{
-				version: 1,
-				kind: "official-message",
-				id: "birth-delivery-message-0001",
-				platform: platform,
+	var journal = runtime.continuations.accept({
+		version: 2,
+		id: "birth-delivery-work-0001",
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: [{
+			id: "birth-delivery-message-0001",
+			event: {
+				kind: "delivery",
 				type: "order",
 				establishing: true,
-				source: {
-					title: source,
-					executor: "source"
-				},
 				recipient: {
 					title: target,
 					executor: "worker"
@@ -109,12 +100,11 @@ function fixture(tw, initialize) {
 						data: 42
 					}
 				}
-			}]
-		}
+			}
+		}]
 	});
 
-	runtime.flows.resume(journal);
-	runtime.flowScheduler.track(journal);
+	runtime.continuations.resume(journal);
 
 	f = {
 		wiki: wiki,
@@ -192,9 +182,24 @@ function testRejectedInitializationCreatesNothing(tw) {
 	var record = JSON.parse(journal.fields.text);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(record.errors.length === 1);
-	assert(record.pending.length === 0);
-	assert(record.active === null);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(record.diagnostics.length === 1);
+
+	var id = "birth-delivery-message-0001";
+
+	assert(Object.keys(record.events).length === 1);
+	assert(record.events[id].mode === "paused");
+	assert(record.events[id].event.establishing === true);
+	assert(
+		record.events[id].event.registry.contract.form === "contract"
+	);
+	assert(record.events[id].event.registry.note.data === 42);
+	assert(
+		record.diagnostics[0].error.message ===
+			"Initialization rejected"
+	);
 }
 
 function testInterruptedBirthDoesNotRepeatInitialization(tw) {
@@ -261,7 +266,7 @@ function testOccupiedAddressIsPreserved(tw) {
 	assert(report.remaining === 1);
 	assert(f.calls() === 0);
 	assert(f.wiki.getTiddlerText(f.target) === "intervention");
-	assert(f.runtime.flows.pending(f.journal).length === 1);
+	assert(f.runtime.continuations.pending(f.journal).length === 1);
 }
 
 exports.run = function (tw) {

@@ -13,6 +13,9 @@ var planned = require(
 var observation = require(
 	"$:/plugins/clerus/tests/protocol-observation.js"
 );
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -92,7 +95,13 @@ function testActivePlanProtectsOnlyItsOwner(tw) {
 		}
 	});
 
-	var journal = f.runtime.obligations.accept(proposal);
+	var journal = f.runtime.continuations.accept(
+		proposalWork.convert(
+			proposal,
+			f.runtime.newId(),
+			f.platform
+		)
+	);
 
 	f.wiki.addTiddler(new tw.Tiddler(
 		f.wiki.getTiddler(journal),
@@ -285,7 +294,25 @@ function testAcceptedBirthProtectsUnreferencedChild(tw) {
 	);
 	assert(initializations === 1);
 
-	var child = founded.pending[0].recipient.title;
+	var continuation = JSON.parse(
+		f.wiki.getTiddlerText(founded.obligation)
+	);
+
+	assert(continuation.work !== null);
+
+	var births = continuation.work.transitions.filter(
+		function (effect) {
+			return (
+				effect.before === null &&
+				effect.after !== null &&
+				effect.after["clerus-executor"] === "initializer"
+			);
+		}
+	);
+
+	assert(births.length === 1);
+
+	var child = births[0].title;
 
 	assert(f.wiki.getTiddler(child));
 

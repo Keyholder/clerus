@@ -166,7 +166,10 @@ function testNotificationFailureIsNotRecursive(tw) {
 	var incidents = [];
 
 	f.wiki.each(function (tiddler, title) {
-		if (tiddler.fields["clerus-wal-kind"] === "incident") {
+		if (
+			title.indexOf("$:/clerus/incidents/") === 0 &&
+			tiddler.fields["clerus-incident-kind"] === "executor-failure"
+		) {
 			incidents.push(title);
 		}
 	});

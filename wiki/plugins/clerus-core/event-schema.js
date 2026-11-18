@@ -140,7 +140,7 @@ function validate(value) {
 		event.recipient.executor.length === 0
 	) {
 		throw new Error(
-			"Event requires a delivery to a persistent job"
+			"Event requires a delivery to a job"
 		);
 	}
 

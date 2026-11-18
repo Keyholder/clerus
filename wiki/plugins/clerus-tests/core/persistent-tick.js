@@ -9,12 +9,12 @@ module-type: library
 var persistent = require(
 	"$:/plugins/clerus/core/persistent-reaction.js"
 );
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var Store = require("$:/plugins/clerus/core/store.js").Store;
-var legacyRoot = require(
-	"$:/plugins/clerus/tests/legacy-flow-root.js"
+var continuationRoot = require(
+	"$:/plugins/clerus/tests/continuation-root.js"
 );
 
 function assert(condition, message) {
@@ -54,22 +54,51 @@ function fixture(tw) {
 			String(sequence).padStart(12, "0");
 	}
 
-	function execute(handler, deferred) {
-		return persistent.execute({
+	function execute(handler, continuation) {
+		var options = {
 			store: store,
 			title: owner,
 			platform: platform,
 			event: { type: "test" },
 			handler: handler,
-			newId: newId,
-			deferred: deferred
-		});
+			newId: newId
+		};
+
+		if (continuation !== undefined) {
+			options.continuation = continuation;
+		}
+
+		return persistent.execute(options);
 	}
 
 	function pendingTicks() {
-		return store.snapshot().materialized.filter(function (fields) {
-			return fields["clerus-wal-kind"] === "deferred";
+		var manager = continuations.create({
+			store: store,
+			platform: platform,
+			newId: newId
 		});
+
+		var result = [];
+
+		store.snapshot().materialized.forEach(function (fields) {
+			if (
+				fields["clerus-wal-kind"] !== "continuation" ||
+				fields["clerus-custody"] !== platform
+			) {
+				return;
+			}
+
+			manager.pending(fields.title).forEach(function (entry) {
+				if (entry.event.kind === "activation") {
+					result.push({
+						title: fields.title,
+						eventId: entry.id
+					});
+				}
+			});
+		});
+
+		return result;
 	}
 
 	return {
@@ -81,7 +110,7 @@ function fixture(tw) {
 		pendingTicks: pendingTicks,
 
 		schedule: function () {
-			return legacyRoot.start({
+			return continuationRoot.start({
 				store: store,
 				title: owner,
 				platform: platform,
@@ -96,7 +125,7 @@ function fixture(tw) {
 		},
 
 		manager: function () {
-			return flows.create({
+			return continuations.create({
 				store: store,
 				platform: platform,
 				newId: newId
@@ -105,34 +134,28 @@ function fixture(tw) {
 	};
 }
 
-function address(fields) {
-	var body = JSON.parse(fields.text);
-
-	return {
-		title: fields.title,
-		id: body.effect.id
-	};
-}
-
-function testDeferCreatesIndependentObligation(tw) {
+function testDeferCreatesContinuationActivation(tw) {
 	var f = fixture(tw);
 	var scheduled = f.schedule();
 
 	assert(scheduled.status === "completed");
-	assert(!f.wiki.getTiddler(scheduled.obligation));
+	assert(f.wiki.tiddlerExists(scheduled.obligation));
 
 	var ticks = f.pendingTicks();
 
+	// Repeated defer() calls within one reaction coalesce.
 	assert(ticks.length === 1);
 
 	var calls = 0;
-	var tick = address(ticks[0]);
+	var tick = ticks[0];
+
+	assert(tick.title === scheduled.obligation);
 
 	var completed = f.execute(function (event, operational) {
 		calls++;
 
 		assert(event.type === "tick");
-		assert(event.id === tick.id);
+		assert(event.id === tick.eventId);
 
 		operational.get("charter").setStatus({
 			phase: "ticked"
@@ -150,7 +173,7 @@ function testFailedTickPreservesEvidence(tw) {
 
 	f.schedule();
 
-	var tick = address(f.pendingTicks()[0]);
+	var tick = f.pendingTicks()[0];
 	var before = f.wiki.getTiddler(f.owner).fields.text;
 
 	var failed = f.execute(function (event, operational) {
@@ -169,8 +192,14 @@ function testFailedTickPreservesEvidence(tw) {
 	var body = JSON.parse(journal.fields.text);
 
 	assert(journal.fields["clerus-custody"] === "user");
-	assert(body.errors[0].event.id === tick.id);
-	assert(body.errors[0].error.message === "Tick rejected");
+	assert(body.version === 2);
+	assert(body.kind === "continuation");
+	assert(body.work === null);
+	assert(body.events[tick.eventId].mode === "paused");
+	assert(body.events[tick.eventId].event.kind === "activation");
+	assert(body.diagnostics.length === 1);
+	assert(body.diagnostics[0].event === tick.eventId);
+	assert(body.diagnostics[0].error.message === "Tick rejected");
 }
 
 function testInterruptedTickDoesNotRepeatHandler(tw) {
@@ -178,7 +207,7 @@ function testInterruptedTickDoesNotRepeatHandler(tw) {
 
 	f.schedule();
 
-	var tick = address(f.pendingTicks()[0]);
+	var tick = f.pendingTicks()[0];
 	var originalApply = f.store.apply;
 	var injected = false;
 	var calls = 0;
@@ -238,7 +267,10 @@ function testRejectedReactionDoesNotScheduleTick(tw) {
 
 exports.run = function (tw) {
 	var cases = [
-		["persistent tick: deferral creates an independent obligation", testDeferCreatesIndependentObligation],
+		[
+			"persistent tick: deferral creates an activation in its continuation",
+			testDeferCreatesContinuationActivation
+		],
 		["persistent tick: failed reaction preserves event evidence", testFailedTickPreservesEvidence],
 		["persistent tick: recovery does not repeat handler", testInterruptedTickDoesNotRepeatHandler],
 		["persistent tick: rejected reaction schedules nothing", testRejectedReactionDoesNotScheduleTick]

@@ -152,16 +152,13 @@ function fixture(tw, handlers, staffedTransfer) {
 			);
 		},
 
-		flowTitles: function () {
+		continuationTitles: function () {
 			var result = [];
 
 			wiki.each(function (tiddler, title) {
 				var kind = tiddler.fields["clerus-wal-kind"];
 
-				if (
-					kind === "flow" ||
-					kind === "continuation"
-				) {
+				if (kind === "continuation") {
 					result.push(title);
 				}
 			});
@@ -177,7 +174,7 @@ function testUpwardAndDownwardCascade(tw) {
 	var f;
 
 	function observeFlow() {
-		var titles = f.flowTitles();
+		var titles = f.continuationTitles();
 
 		assert(titles.length === 1);
 		journals.push(titles[0]);
@@ -280,7 +277,7 @@ function testUpwardAndDownwardCascade(tw) {
 	assert(new Set(journals).size === 1);
 	assert(journals[0] === result.obligation);
 
-	assert(f.flowTitles().length === 0);
+	assert(f.continuationTitles().length === 0);
 	assert(f.registry("worker").received.data.value === 42);
 
 	assert(f.registry("director").mission);
@@ -503,7 +500,7 @@ function testInterruptedAssignmentReception(tw) {
 
 exports.run = function (tw) {
 	var cases = [
-		["persistent protocols: reports and orders share one flow", testUpwardAndDownwardCascade],
+		["persistent protocols: reports and orders share one continuation", testUpwardAndDownwardCascade],
 		["persistent protocols: staffed assignment returns without lower writes", testStaffedAssignmentRoundTrip],
 		["persistent protocols: interrupted reception resumes without handler replay", testInterruptedAssignmentReception]
 	];

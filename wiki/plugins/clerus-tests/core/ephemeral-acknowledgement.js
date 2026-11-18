@@ -6,8 +6,8 @@ module-type: library
 
 "use strict";
 
-var flows = require(
-	"$:/plugins/clerus/core/flow-obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
 var reactions = require(
 	"$:/plugins/clerus/core/reaction.js"
@@ -78,7 +78,7 @@ function fixture(tw) {
 	});
 
 	function service() {
-		return flows.create({
+		return continuations.create({
 			store: store,
 			platform: platform,
 			newId: function () {
@@ -90,15 +90,8 @@ function fixture(tw) {
 	var manager = service();
 
 	var message = {
-		version: 1,
-		kind: "official-message",
 		id: "ephemeral-ack-message-0001",
-		platform: platform,
 		type: "order",
-		source: {
-			title: source,
-			executor: "source"
-		},
 		recipient: {
 			title: target,
 			executor: "target"
@@ -108,18 +101,21 @@ function fixture(tw) {
 		}
 	};
 
-	var journal = manager.register({
-		version: 1,
-		owner: {
-			title: source,
-			executor: "source",
-			state: store.read(source).fields
-		},
-		plan: {
-			version: 1,
-			effects: [],
-			messages: [message]
-		}
+	var journal = manager.accept({
+		version: 2,
+		id: "ephemeral-ack-work-identity",
+		checks: [],
+		transitions: [],
+		blocks: [],
+		emits: [{
+			id: message.id,
+			event: {
+				kind: "delivery",
+				type: message.type,
+				recipient: message.recipient,
+				registry: message.registry
+			}
+		}]
 	});
 
 	manager.resume(journal);
@@ -137,7 +133,8 @@ function fixture(tw) {
 		calls: calls,
 
 		deliver: function (currentManager) {
-			var pending = currentManager.pending(journal)[0];
+			var entry = currentManager.pending(journal)[0];
+			var pending = entry.event;
 
 			reactions.execute({
 				store: store,
@@ -146,7 +143,7 @@ function fixture(tw) {
 
 				event: {
 					type: pending.type,
-					id: pending.id
+					id: entry.id
 				},
 
 				incoming: pending.registry,
@@ -184,8 +181,14 @@ function testCompletionIsExplicit(tw) {
 		f.message.recipient
 	);
 
-	assert(result.status === "completed");
-	assert(result.pending.length === 0);
+	assert(result === "completed");
+
+	// Acknowledgement and journal cleanup are separate writes.
+	assert(f.wiki.tiddlerExists(f.journal));
+	assert(f.manager.pending(f.journal).length === 0);
+
+	f.manager.resume(f.journal);
+
 	assert(!f.wiki.getTiddler(f.journal));
 }
 
@@ -202,7 +205,8 @@ function testInterruptionBeforeAcknowledgementMayRepeat(tw) {
 	*/
 	var restarted = f.service();
 
-	assert(restarted.resume(f.journal).length === 1);
+	restarted.resume(f.journal);
+	assert(restarted.pending(f.journal).length === 1);
 
 	f.deliver(restarted);
 
@@ -216,6 +220,7 @@ function testInterruptionBeforeAcknowledgementMayRepeat(tw) {
 		f.message.recipient
 	);
 
+	restarted.resume(f.journal);
 	assert(!f.wiki.getTiddler(f.journal));
 }
 
@@ -238,8 +243,8 @@ function testRecordedAcknowledgementPreventsRedispatch(tw) {
 			var record = JSON.parse(effect.after.text);
 
 			if (
-				record.active === null &&
-				record.pending.length === 0
+				record.work === null &&
+				Object.keys(record.events).length === 0
 			) {
 				injected = true;
 				throw new Error("Interrupted after acknowledgement write");
@@ -265,9 +270,11 @@ function testRecordedAcknowledgementPreventsRedispatch(tw) {
 	assert(f.counter() === 1);
 
 	var restarted = f.service();
-	var pending = restarted.resume(f.journal);
 
-	assert(pending.length === 0);
+	assert(restarted.pending(f.journal).length === 0);
+
+	restarted.resume(f.journal);
+
 	assert(f.calls.length === 1);
 	assert(!f.wiki.getTiddler(f.journal));
 }

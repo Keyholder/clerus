@@ -9,8 +9,11 @@ module-type: library
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
 );
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
+);
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
 );
 var stores = require("$:/plugins/clerus/core/store.js");
 
@@ -79,23 +82,34 @@ function fixture(tw, change) {
 
 	var sequence = 0;
 
-	var service = obligations.create({
+	function newId() {
+		sequence++;
+
+		return "acceptance-test-" +
+			String(sequence).padStart(8, "0");
+	}
+
+	var manager = continuations.create({
 		store: store,
 		platform: platform,
-
-		newId: function () {
-			sequence++;
-
-			return "acceptance-test-" +
-				String(sequence).padStart(8, "0");
-		}
+		newId: newId
 	});
+
+	function acceptProposal(value) {
+		var work = proposalWork.convert(
+			value,
+			newId(),
+			platform
+		);
+
+		return work === null ? null : manager.accept(work);
+	}
 
 	function journals() {
 		var result = [];
 
 		wiki.each(function (tiddler, candidate) {
-			if (tiddler.fields["clerus-wal-kind"] === "plan") {
+			if (tiddler.fields["clerus-wal-kind"] === "continuation") {
 				result.push(candidate);
 			}
 		});
@@ -109,7 +123,7 @@ function fixture(tw, change) {
 		title: title,
 		platform: platform,
 		proposal: proposal,
-		service: service,
+		acceptProposal: acceptProposal,
 		journals: journals
 	};
 }
@@ -118,7 +132,7 @@ function testAcceptedBeforeMaterialization(tw) {
 	var f = fixture(tw);
 	var before = f.wiki.getTiddler(f.title).fields.text;
 
-	var journal = f.service.accept(f.proposal);
+	var journal = f.acceptProposal(f.proposal);
 
 	assert(typeof journal === "string");
 	assert(f.journals().length === 1);
@@ -128,9 +142,12 @@ function testAcceptedBeforeMaterialization(tw) {
 		f.wiki.getTiddler(journal).fields.text
 	);
 
-	assert(record.kind === "plan");
-	assert(record.proposal.plan.effects.length === 1);
-	assert(record.proposal.owner.title === f.title);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(Number.isSafeInteger(record.retainUntil));
+	assert(record.work.transitions.length === 1);
+	assert(record.work.transitions[0].title === f.title);
+	assert(record.work.blocks.includes(f.title));
 }
 
 function testOwnerInterventionRejectsAcceptance(tw) {
@@ -142,8 +159,8 @@ function testOwnerInterventionRejectsAcceptance(tw) {
 	));
 
 	throws(function () {
-		f.service.accept(f.proposal);
-	}, "owner state has changed");
+		f.acceptProposal(f.proposal);
+	}, "conflict");
 
 	assert(f.journals().length === 0);
 }
@@ -175,7 +192,7 @@ function testTargetConflictRejectsWholeProposal(tw) {
 	var before = f.wiki.getTiddler(f.title).fields.text;
 
 	throws(function () {
-		f.service.accept(f.proposal);
+		f.acceptProposal(f.proposal);
 	}, "conflict");
 
 	assert(f.journals().length === 0);
@@ -189,7 +206,7 @@ function testRepeatedTargetsAreRejected(tw) {
 	f.proposal.plan.effects.push(f.proposal.plan.effects[0]);
 
 	throws(function () {
-		f.service.accept(f.proposal);
+		f.acceptProposal(f.proposal);
 	}, "Repeated proposal target");
 
 	assert(f.journals().length === 0);
@@ -201,7 +218,7 @@ function testUnknownPlanFieldsAreRejected(tw) {
 	f.proposal.plan.subscriptions = [];
 
 	throws(function () {
-		f.service.accept(f.proposal);
+		f.acceptProposal(f.proposal);
 	}, "Unsupported fields");
 
 	assert(f.journals().length === 0);
@@ -210,7 +227,7 @@ function testUnknownPlanFieldsAreRejected(tw) {
 function testEmptyProposalCreatesNoObligation(tw) {
 	var f = fixture(tw, false);
 
-	assert(f.service.accept(f.proposal) === null);
+	assert(f.acceptProposal(f.proposal) === null);
 	assert(f.journals().length === 0);
 }
 

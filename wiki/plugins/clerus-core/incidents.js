@@ -25,7 +25,7 @@ function create(options) {
 	}
 
 	var used = new Set();
-	var prefix = "$:/clerus/wal/" + options.platform + "/incident-";
+	var prefix = "$:/clerus/incidents/" + options.platform + "/";
 
 	function record(value) {
 		var incident = schemas.copyJSON(value);
@@ -75,7 +75,7 @@ function create(options) {
 			title: title,
 			type: "application/json",
 			"clerus-custody": "user",
-			"clerus-wal-kind": "incident",
+			"clerus-incident-kind": "executor-failure",
 			text: JSON.stringify(body)
 		}));
 

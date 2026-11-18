@@ -9,11 +9,12 @@ module-type: library
 var barriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
-
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
 );
-
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
+);
 var stores = require("$:/plugins/clerus/core/store.js");
 
 function assert(condition, message) {
@@ -91,17 +92,29 @@ function fixture(tw) {
 
 	var sequence = 0;
 
-	var service = obligations.create({
+	function newId() {
+		sequence++;
+
+		return "barrier-test-" +
+			String(sequence).padStart(12, "0");
+	}
+
+	var manager = continuations.create({
 		store: store,
 		platform: platform,
-
-		newId: function () {
-			sequence++;
-
-			return "barrier-test-" +
-				String(sequence).padStart(12, "0");
-		}
+		newId: newId
 	});
+
+	var service = {
+		accept: function (value) {
+			return manager.accept(proposalWork.convert(
+				value,
+				newId(),
+				platform
+			));
+		},
+		resume: manager.resume
+	};
 
 	return {
 		wiki: wiki,
@@ -117,7 +130,7 @@ function fixture(tw) {
 	};
 }
 
-function testAcceptedPlanBlocksOwner(tw) {
+function testAcceptedWorkBlocksOwner(tw) {
 	var f = fixture(tw);
 	var journal = f.service.accept(f.proposal);
 
@@ -196,10 +209,10 @@ function testIncidentDoesNotBlock(tw) {
 	var f = fixture(tw);
 
 	f.wiki.addTiddler(new tw.Tiddler({
-		title: "$:/clerus/wal/" + f.platform + "/incident-test",
+		title: "$:/clerus/incidents/" + f.platform + "/incident-test",
 		type: "application/json",
 		"clerus-custody": "user",
-		"clerus-wal-kind": "incident",
+		"clerus-incident-kind": "executor-failure",
 		text: JSON.stringify({
 			version: 1,
 			kind: "incident",
@@ -224,7 +237,7 @@ function testSecondAcceptanceIsRejected(tw) {
 
 	throws(function () {
 		f.service.accept(f.proposal);
-	}, "unfinished materialization");
+	}, "Accepted work conflict");
 
 	assert(f.collect().forJob(f.owner).length === 1);
 }
@@ -243,23 +256,21 @@ function testInspectionIsIsolated(tw) {
 	assert(barrier.forJob(f.owner).join(",") === journal);
 }
 
-function testExtendedIncidentIsUnknownKnowledge(tw) {
+function testLegacyIncidentIsUnknownKnowledge(tw) {
 	var f = fixture(tw);
 	var title =
-		"$:/clerus/wal/" + f.platform + "/extended-incident";
+		"$:/clerus/wal/" + f.platform + "/legacy-incident";
 
 	f.wiki.addTiddler(new tw.Tiddler({
 		title: title,
 		type: "application/json",
 		"clerus-custody": "user",
 		"clerus-wal-kind": "incident",
-
 		text: JSON.stringify({
 			version: 1,
 			kind: "incident",
 			platform: f.platform,
-			incident: {},
-			future: { obligation: true }
+			incident: {}
 		})
 	}));
 
@@ -271,14 +282,17 @@ function testExtendedIncidentIsUnknownKnowledge(tw) {
 
 exports.run = function (tw) {
 	var cases = [
-		["barrier: accepted plan blocks its owner", testAcceptedPlanBlocksOwner],
+		["barrier: accepted work blocks its owner", testAcceptedWorkBlocksOwner],
 		["barrier: user custody preserves the obligation", testUserCustodyPreservesBarrier],
 		["barrier: owner conflict does not erase the obligation", testOwnerConflictDoesNotEraseBarrier],
 		["barrier: unknown WAL prevents persistent authorization", testUnknownWalBlocksPersistentExecution],
 		["barrier: historical incident does not block", testIncidentDoesNotBlock],
 		["barrier: second acceptance is rejected", testSecondAcceptanceIsRejected],
 		["barrier: inspection does not expose internal references", testInspectionIsIsolated],
-		["barrier: extended incident envelope is unknown knowledge", testExtendedIncidentIsUnknownKnowledge]
+		[
+			"barrier: legacy incident WAL is unsupported knowledge",
+			testLegacyIncidentIsUnknownKnowledge
+		]
 	];
 
 	var results = cases.map(function (item) {

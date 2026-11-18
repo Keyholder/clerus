@@ -6,8 +6,11 @@ module-type: library
 
 "use strict";
 
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
+var continuations = require(
+	"$:/plugins/clerus/core/continuations.js"
+);
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
 );
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
@@ -99,21 +102,27 @@ function fixture(tw) {
 
 	var sequence = 0;
 
+	function newId() {
+		sequence++;
+
+		return "materialization-test-" +
+			String(sequence).padStart(8, "0");
+	}
+
 	function service() {
-		return obligations.create({
+		return continuations.create({
 			store: store,
 			platform: platform,
-
-			newId: function () {
-				sequence++;
-				return "materialization-test-" +
-					String(sequence).padStart(8, "0");
-			}
+			newId: newId
 		});
 	}
 
 	var manager = service();
-	var journal = manager.accept(proposal);
+	var journal = manager.accept(proposalWork.convert(
+		proposal,
+		newId(),
+		platform
+	));
 
 	return {
 		wiki: wiki,
@@ -246,7 +255,7 @@ function testOwnerInterventionPreventsWrites(tw) {
 
 	throws(function () {
 		f.manager.resume(f.journal);
-	}, "owner state has changed");
+	}, "conflict");
 
 	assert(f.wiki.getTiddlerText(f.target) === "initial");
 	assert(f.ownerPhase() === "initial");

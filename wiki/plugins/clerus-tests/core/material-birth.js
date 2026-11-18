@@ -8,8 +8,8 @@ module-type: library
 
 var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
 var stores = require("$:/plugins/clerus/core/store.js");
-var legacyRoot = require(
-	"$:/plugins/clerus/tests/legacy-flow-root.js"
+var continuationRoot = require(
+	"$:/plugins/clerus/tests/continuation-root.js"
 );
 
 function assert(condition, message) {
@@ -152,8 +152,8 @@ function fixture(tw) {
 		};
 	}
 
-	function establishV1() {
-		return legacyRoot.start({
+	function establishByReaction() {
+		return continuationRoot.start({
 			store: runtime.store,
 			title: founder,
 			platform: platform,
@@ -182,7 +182,7 @@ function fixture(tw) {
 		restart: createRuntime,
 		birth: birth,
 		establishingWork: establishingWork,
-		establishV1: establishV1,
+		establishByReaction: establishByReaction,
 
 		executorCalls: function () {
 			return executorCalls;
@@ -288,9 +288,9 @@ function testInterruptedBirthRetainsMaterializedJob(tw) {
 	assert(!f.wiki.tiddlerExists(title));
 }
 
-function testV1ReservationBlocksMaterialBirth(tw) {
+function testReactionEstablishmentBlocksMaterialBirth(tw) {
 	var f = fixture(tw);
-	var first = f.establishV1();
+	var first = f.establishByReaction();
 	var originalBody = f.wiki.getTiddlerText(first.obligation);
 
 	throws(function () {
@@ -304,7 +304,7 @@ function testV1ReservationBlocksMaterialBirth(tw) {
 	assert(f.executorCalls() === 0);
 }
 
-function testMaterialBirthBlocksV1Establishment(tw) {
+function testMaterialBirthBlocksReactionEstablishment(tw) {
 	var f = fixture(tw);
 	var title = f.runtime.continuations.accept(f.birth());
 
@@ -316,7 +316,7 @@ function testMaterialBirthBlocksV1Establishment(tw) {
 	var originalBody = f.wiki.getTiddlerText(title);
 
 	throws(function () {
-		f.establishV1();
+		f.establishByReaction();
 	}, "address is reserved");
 
 	assert(!f.wiki.tiddlerExists(f.target));
@@ -324,7 +324,7 @@ function testMaterialBirthBlocksV1Establishment(tw) {
 	assert(f.executorCalls() === 0);
 }
 
-function testV2EstablishmentBlocksMaterialBirth(tw) {
+function testPreparedEstablishmentBlocksMaterialBirth(tw) {
 	var f = fixture(tw);
 	var title = f.runtime.continuations.accept(
 		f.establishingWork()
@@ -394,9 +394,18 @@ exports.run = function (tw) {
 	var cases = [
 		["direct material birth invokes no executor", testDirectBirth],
 		["interrupted birth retains the materialized job", testInterruptedBirthRetainsMaterializedJob],
-		["v1 reservation blocks material birth", testV1ReservationBlocksMaterialBirth],
-		["material birth blocks v1 establishment under user custody", testMaterialBirthBlocksV1Establishment],
-		["v2 reservation survives publication and user custody", testV2EstablishmentBlocksMaterialBirth],
+		[
+			"reaction establishment reserves the material birth address",
+			testReactionEstablishmentBlocksMaterialBirth
+		],
+		[
+			"material birth blocks reaction establishment under user custody",
+			testMaterialBirthBlocksReactionEstablishment
+		],
+		[
+			"prepared establishment reservation survives publication and user custody",
+			testPreparedEstablishmentBlocksMaterialBirth
+		],
 		["completed direct birth does not retain itself", testDirectBirthBecomesCollectibleAfterCompletion]
 	];
 

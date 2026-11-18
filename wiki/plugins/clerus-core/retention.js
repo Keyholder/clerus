@@ -10,16 +10,6 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var jobTitles = require("$:/plugins/clerus/core/job-titles.js");
 var hierarchy = require("$:/plugins/clerus/core/hierarchy.js");
 var missions = require("$:/plugins/clerus/core/missions.js");
-var acceptedPlans = require(
-	"$:/plugins/clerus/core/accepted-plan-schema.js"
-);
-var flowSchema = require("$:/plugins/clerus/core/flow-schema.js");
-var deferredSchema = require(
-	"$:/plugins/clerus/core/deferred-schema.js"
-);
-var incidentSchema = require(
-	"$:/plugins/clerus/core/incident-schema.js"
-);
 var walEnvelope = require(
 	"$:/plugins/clerus/core/wal-envelope.js"
 );
@@ -89,76 +79,6 @@ function evaluate(options) {
 
 				add(document, detail);
 			}
-		});
-	}
-
-	function addMessage(message, wal) {
-		add(message.recipient.title, {
-			kind: message.establishing
-				? "pending-establishment"
-				: "pending-message",
-			wal: wal,
-			message: message.id
-		});
-
-		addRegistry(message.registry, {
-			kind: "transactional-reference",
-			wal: wal,
-			message: message.id
-		});
-	}
-
-	function addActive(proposal, wal, platform) {
-		/*
-			Validate accepted authority, not current authorization
-			or current before/after preconditions.
-		*/
-		acceptedPlans.validate({
-			version: 1,
-			kind: "plan",
-			platform: platform,
-
-			proposal: {
-				version: 1,
-				owner: proposal.owner,
-				plan: {
-					version: 1,
-					effects: proposal.plan.effects
-				}
-			}
-		}, platform, true);
-
-		add(proposal.owner.title, {
-			kind: proposal.owner.state === null
-				? "accepted-birth"
-				: "accepted-plan-owner",
-			wal: wal
-		});
-
-		var effect = proposal.plan.effects.find(function (candidate) {
-			return candidate.title === proposal.owner.title;
-		});
-
-		var finalState = effect
-			? effect.after
-			: proposal.owner.state;
-
-		if (finalState === null) {
-			throw new Error("Accepted owner has no final state");
-		}
-
-		addRegistry(JSON.parse(finalState.text), {
-			kind: "planned-operational-reference",
-			wal: wal,
-			owner: proposal.owner.title
-		});
-
-		(proposal.plan.deferred || []).forEach(function (event) {
-			add(event.recipient.title, {
-				kind: "planned-deferred-event",
-				wal: wal,
-				event: event.id
-			});
 		});
 	}
 
@@ -273,76 +193,6 @@ function evaluate(options) {
 					);
 				}
 
-				return;
-			}
-
-			if (kind === "incident") {
-				incidentSchema.validate(record, platform);
-
-				// Valid diagnostic history is not unfinished materialization.
-				return;
-			}
-
-			if (kind === "plan") {
-				var accepted = acceptedPlans.validate(record, platform);
-
-				addActive(
-					accepted.proposal,
-					fields.title,
-					platform
-				);
-
-				return;
-			}
-
-			if (kind === "deferred") {
-				var waiting = deferredSchema.validate(record, platform);
-
-				if (
-					fields.title !==
-						"$:/clerus/wal/" + platform +
-						"/deferred-" + waiting.effect.id ||
-					fields["clerus-deferred-effect"] !==
-						JSON.stringify(waiting.effect)
-				) {
-					throw new Error("Deferred identity mismatch");
-				}
-
-				add(waiting.effect.recipient.title, {
-					kind: "deferred-event",
-					wal: fields.title,
-					event: waiting.effect.id
-				});
-
-				return;
-			}
-
-			if (kind === "flow") {
-				var flow = flowSchema.validate(record, platform);
-
-				flow.pending.forEach(function (message) {
-					addMessage(message, fields.title);
-				});
-
-				if (flow.active !== null) {
-					addActive(
-						flow.active,
-						fields.title,
-						platform
-					);
-
-					flow.active.plan.messages.forEach(function (message) {
-						/*
-							Already registered identities are covered
-							by pending, or are completed history.
-						*/
-						if (!hasOwn(flow.seen, message.id)) {
-							addMessage(message, fields.title);
-						}
-					});
-				}
-
-				// seen and errors do not establish retention.
 				return;
 			}
 

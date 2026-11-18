@@ -759,7 +759,8 @@ function movingObserverFixture(tw) {
 				journal: journal,
 				work: workId,
 				from: sourcePlatform,
-				to: destinationPlatform
+				to: destinationPlatform,
+				retainUntil: 0
 			})
 		});
 
@@ -772,6 +773,7 @@ function movingObserverFixture(tw) {
 				version: 2,
 				kind: "continuation",
 				platform: sourcePlatform,
+				retainUntil: 0,
 				work: {
 					version: 2,
 					id: workId,
@@ -832,6 +834,7 @@ function movingObserverFixture(tw) {
 				version: 2,
 				kind: "continuation",
 				platform: sourcePlatform,
+				retainUntil: 0,
 				work: {
 					version: 2,
 					id: nextId(),

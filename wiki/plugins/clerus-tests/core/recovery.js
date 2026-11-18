@@ -6,13 +6,13 @@ module-type: library
 
 "use strict";
 
-var obligations = require(
-	"$:/plugins/clerus/core/obligations.js"
+var Runtime = require("$:/plugins/clerus/core/runtime.js").Runtime;
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
 );
 var plannedReactions = require(
 	"$:/plugins/clerus/core/planned-reaction.js"
 );
-var Store = require("$:/plugins/clerus/core/store.js").Store;
 
 function assert(condition, message) {
 	if (!condition) {
@@ -23,24 +23,42 @@ function assert(condition, message) {
 function fixture(tw) {
 	var wiki = new tw.Wiki();
 	var platform = tw.browser ? "browser" : "node";
-	var store = new Store({
-		wiki: wiki,
-		Tiddler: tw.Tiddler
-	});
-
 	var sequence = 0;
 
-	var manager = obligations.create({
-		store: store,
+	function newId() {
+		sequence++;
+
+		return "recovery-test-" +
+			String(sequence).padStart(12, "0");
+	}
+
+	var runtime = new Runtime({
+		wiki: wiki,
+		Tiddler: tw.Tiddler,
 		platform: platform,
+		newId: newId,
 
-		newId: function () {
-			sequence++;
-
-			return "recovery-test-" +
-				String(sequence).padStart(12, "0");
+		resolveExecutor: function () {
+			throw new Error(
+				"Material recovery must not resolve executors"
+			);
 		}
 	});
+
+	var store = runtime.store;
+
+	var manager = {
+		accept: function (proposal) {
+			return runtime.continuations.accept(
+				proposalWork.convert(
+					proposal,
+					newId(),
+					platform
+				)
+			);
+		},
+		recover: runtime.recover.bind(runtime)
+	};
 
 	function add(name) {
 		var title = "$:/clerus/jobs/recovery-" + name;
@@ -181,7 +199,11 @@ function testUnknownKindPreservesBody(tw) {
 	var f = fixture(tw);
 	var title =
 		"$:/clerus/wal/" + f.platform + "/unknown-work";
-	var body = '{"version":1,"kind":"future"}';
+	var body = JSON.stringify({
+		version: 2,
+		kind: "future",
+		platform: f.platform
+	});
 
 	f.wiki.addTiddler(new tw.Tiddler({
 		title: title,
@@ -202,10 +224,11 @@ function testUnknownKindPreservesBody(tw) {
 	assert(current.fields["clerus-wal-error"]);
 }
 
-function testIncidentsAreNotExecuted(tw) {
+function testIncidentsAreOutsideRecovery(tw) {
 	var f = fixture(tw);
 	var title =
-		"$:/clerus/wal/" + f.platform + "/incident-history";
+		"$:/clerus/incidents/" + f.platform + "/incident-history";
+
 	var body = JSON.stringify({
 		version: 1,
 		kind: "incident",
@@ -219,14 +242,61 @@ function testIncidentsAreNotExecuted(tw) {
 		title: title,
 		type: "application/json",
 		"clerus-custody": "user",
-		"clerus-wal-kind": "incident",
+		"clerus-incident-kind": "executor-failure",
 		text: body
 	}));
 
 	var report = f.manager.recover();
 
-	assert(report.entries[0].status === "historical");
-	assert(f.wiki.getTiddler(title).fields.text === body);
+	assert(report.entries.length === 0);
+	assert(f.wiki.getTiddlerText(title) === body);
+	assert(report.summary.complete);
+}
+
+function testLegacyWalIsPreserved(tw) {
+	var f = fixture(tw);
+
+	["plan", "flow", "deferred", "incident"].forEach(function (kind) {
+		var title =
+			"$:/clerus/wal/" + f.platform + "/legacy-" + kind;
+
+		var body = JSON.stringify({
+			version: 1,
+			kind: kind,
+			platform: f.platform
+		});
+
+		f.wiki.addTiddler(new tw.Tiddler({
+			title: title,
+			type: "application/json",
+			"clerus-custody": f.platform,
+			"clerus-wal-kind": kind,
+			text: body
+		}));
+
+		var report = f.manager.recover();
+		var entry = report.entries.find(function (candidate) {
+			return candidate.title === title;
+		});
+
+		assert(entry.status === "unsupported");
+		assert(!report.summary.complete);
+
+		var current = f.wiki.getTiddler(title);
+
+		assert(current.fields.text === body);
+		assert(current.fields["clerus-custody"] === "user");
+		assert(current.fields["clerus-wal-error"]);
+
+		var before = JSON.stringify(current.fields);
+
+		// Repeated recovery must not rewrite user-owned legacy WAL.
+		f.manager.recover();
+
+		assert(
+			JSON.stringify(f.wiki.getTiddler(title).fields) === before
+		);
+	});
 }
 
 function testIncidentMarkerDoesNotProveHistory(tw) {
@@ -343,7 +413,14 @@ exports.run = function (tw) {
 		["recovery: user journal waits for authorization", testUserJournalWaitsForAuthorization],
 		["recovery: user-prepared address is supported", testCustomUserAddress],
 		["recovery: unknown kind preserves its body", testUnknownKindPreservesBody],
-		["recovery: incidents remain historical", testIncidentsAreNotExecuted],
+		[
+			"recovery: incident diagnostics are outside WAL recovery",
+			testIncidentsAreOutsideRecovery
+		],
+		[
+			"recovery: legacy WAL is preserved without execution",
+			testLegacyWalIsPreserved
+		],
 		["recovery: incident marker alone does not prove history", testIncidentMarkerDoesNotProveHistory],
 		["recovery: delegation requires a matching envelope", testDelegationRequiresMatchingEnvelope],
 		["recovery: future delegated versions remain untouched under user custody", testFutureDelegationIsNotExecution]

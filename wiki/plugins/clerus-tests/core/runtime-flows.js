@@ -184,35 +184,26 @@ function testFailedRecipientIsSuspended(tw) {
 		f.wiki.getTiddler(result.obligation).fields.text
 	);
 
-	if (record.version === 1 && record.kind === "flow") {
-		assert(record.errors.length === 1);
-		assert(record.pending.length === 0);
+	assert(record.version === 2);
+	assert(record.kind === "continuation");
+	assert(record.work === null);
+	assert(record.diagnostics.length === 1);
 
-		assert(
-			result.flow.summary.waiting.deliveries.paused === 0
-		);
-	} else {
-		assert(record.version === 2);
-		assert(record.kind === "continuation");
-		assert(record.work === null);
-		assert(record.diagnostics.length === 1);
+	var ids = Object.keys(record.events);
 
-		var ids = Object.keys(record.events);
+	assert(ids.length === 1);
+	assert(record.events[ids[0]].mode === "paused");
+	assert(
+		record.events[ids[0]].event.recipient.title ===
+			f.titles.manager
+	);
+	assert(
+		record.events[ids[0]].event.registry.input.data === 42
+	);
 
-		assert(ids.length === 1);
-		assert(record.events[ids[0]].mode === "paused");
-		assert(
-			record.events[ids[0]].event.recipient.title ===
-				f.titles.manager
-		);
-		assert(
-			record.events[ids[0]].event.registry.input.data === 42
-		);
-
-		assert(
-			result.flow.summary.waiting.deliveries.paused === 1
-		);
-	}
+	assert(
+		result.flow.summary.waiting.deliveries.paused === 1
+	);
 }
 
 function testRecoveryQueuesWithoutCallingHandlers(tw) {
@@ -221,44 +212,27 @@ function testRecoveryQueuesWithoutCallingHandlers(tw) {
 	var injected = false;
 
 	f.runtime.store.apply = function (effect) {
-		if (!injected && effect.after) {
-			var kind = effect.after["clerus-wal-kind"];
-			var shouldInterrupt = false;
+		if (
+			!injected &&
+			effect.after &&
+			effect.after["clerus-wal-kind"] === "continuation"
+		) {
+			var continuation = JSON.parse(effect.after.text);
 
-			if (kind === "flow") {
-				var flow = JSON.parse(effect.after.text);
-
-				shouldInterrupt = (
-					flow.active === null &&
-					flow.pending.some(function (message) {
-						return (
-							message.recipient.title ===
-								f.titles.worker
-						);
-					})
-				);
-			} else if (kind === "continuation") {
-				var continuation = JSON.parse(effect.after.text);
-
-				shouldInterrupt = (
-					continuation.work === null &&
-					Object.keys(
-						continuation.events
-					).some(function (id) {
-						return (
-							continuation.events[id]
-								.event.recipient.title ===
-									f.titles.worker
-						);
-					})
-				);
-			}
+			var shouldInterrupt =
+				continuation.work === null &&
+				Object.keys(continuation.events).some(function (id) {
+					return (
+						continuation.events[id].event.recipient.title ===
+							f.titles.worker
+					);
+				});
 
 			if (shouldInterrupt) {
 				injected = true;
 
 				throw new Error(
-					"Interrupted before registering worker delivery"
+					"Interrupted before publishing worker delivery"
 				);
 			}
 		}

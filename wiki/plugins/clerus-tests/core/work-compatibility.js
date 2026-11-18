@@ -11,6 +11,9 @@ var stores = require("$:/plugins/clerus/core/store.js");
 var compatibility = require(
 	"$:/plugins/clerus/core/work-compatibility.js"
 );
+var proposalWork = require(
+	"$:/plugins/clerus/core/proposal-work.js"
+);
 
 function assert(condition, message) {
 	if (!condition) {
@@ -131,6 +134,7 @@ function fixture(tw) {
 				version: 2,
 				kind: "continuation",
 				platform: platform,
+				retainUntil: 0,
 				work: value,
 				events: {},
 				evidence: {
@@ -152,17 +156,26 @@ function fixture(tw) {
 		independent: independent,
 		proposal: proposal,
 		work: work,
-		publish: publish
+		publish: publish,
+		acceptProposal: function (value) {
+			return runtime.continuations.accept(
+				proposalWork.convert(
+					value,
+					runtime.newId(),
+					platform
+				)
+			);
+		}
 	};
 }
 
-function testV1AcceptanceSeesV2(tw) {
+function testProposalConsequencesSeeAcceptedWork(tw) {
 	var f = fixture(tw);
 
 	f.publish(f.work(f.shared));
 
 	throws(function () {
-		f.runtime.obligations.accept(
+		f.acceptProposal(
 			f.proposal(f.shared)
 		);
 	}, "Accepted work conflict");
@@ -172,17 +185,17 @@ function testV1AcceptanceSeesV2(tw) {
 	);
 }
 
-function testRecoveryHasNoVersionWinner(tw) {
+function testConflictingRecoveryHasNoWinner(tw) {
 	var f = fixture(tw);
 
-	var oldTitle = f.runtime.obligations.accept(
+	var proposalTitle = f.acceptProposal(
 		f.proposal(f.shared)
 	);
-	var newTitle = f.publish(f.work(f.shared));
+	var preparedTitle = f.publish(f.work(f.shared));
 
 	var report = f.runtime.recover();
 
-	[oldTitle, newTitle].forEach(function (title) {
+	[proposalTitle, preparedTitle].forEach(function (title) {
 		assert(report.entries.some(function (entry) {
 			return (
 				entry.title === title &&
@@ -201,17 +214,17 @@ function testRecoveryHasNoVersionWinner(tw) {
 	);
 }
 
-function testUnrelatedVersionsComplete(tw) {
+function testUnrelatedWorksComplete(tw) {
 	var f = fixture(tw);
 
-	var oldTitle = f.runtime.obligations.accept(
+	var proposalTitle = f.acceptProposal(
 		f.proposal(f.shared)
 	);
-	var newTitle = f.publish(f.work(f.independent));
+	var preparedTitle = f.publish(f.work(f.independent));
 
 	var report = f.runtime.recover();
 
-	[oldTitle, newTitle].forEach(function (title) {
+	[proposalTitle, preparedTitle].forEach(function (title) {
 		assert(report.entries.some(function (entry) {
 			return (
 				entry.title === title &&
@@ -234,7 +247,7 @@ function testUnrelatedVersionsComplete(tw) {
 function testOwnerBaselineIsDependency(tw) {
 	var f = fixture(tw);
 
-	f.runtime.obligations.accept(
+	f.acceptProposal(
 		f.proposal(f.shared)
 	);
 
@@ -248,7 +261,7 @@ function testOwnerBaselineIsDependency(tw) {
 	}, "Accepted work conflict");
 }
 
-function testControlSnapshotConflictsWithV1Write(tw) {
+function testControlSnapshotConflictsWithWrite(tw) {
 	var f = fixture(tw);
 	var work = f.work(f.independent);
 
@@ -260,7 +273,7 @@ function testControlSnapshotConflictsWithV1Write(tw) {
 	f.publish(work);
 
 	throws(function () {
-		f.runtime.obligations.accept(
+		f.acceptProposal(
 			f.proposal(f.shared)
 		);
 	}, "Accepted work conflict");
@@ -276,7 +289,7 @@ function testPausedJournalStillConflicts(tw) {
 	));
 
 	throws(function () {
-		f.runtime.obligations.accept(
+		f.acceptProposal(
 			f.proposal(f.shared)
 		);
 	}, "Accepted work conflict");
@@ -284,12 +297,30 @@ function testPausedJournalStillConflicts(tw) {
 
 exports.run = function (tw) {
 	var cases = [
-		["v1 acceptance sees v2 work", testV1AcceptanceSeesV2],
-		["recovery has no version winner", testRecoveryHasNoVersionWinner],
-		["unrelated versions complete", testUnrelatedVersionsComplete],
-		["owner baseline is a dependency", testOwnerBaselineIsDependency],
-		["control snapshot conflicts with v1 write", testControlSnapshotConflictsWithV1Write],
-		["paused journal still conflicts", testPausedJournalStillConflicts]
+		[
+			"proposal consequences conflict with accepted work",
+			testProposalConsequencesSeeAcceptedWork
+		],
+		[
+			"conflicting recovery has no automatic winner",
+			testConflictingRecoveryHasNoWinner
+		],
+		[
+			"unrelated accepted works complete",
+			testUnrelatedWorksComplete
+		],
+		[
+			"owner baseline is a dependency",
+			testOwnerBaselineIsDependency
+		],
+		[
+			"control snapshot conflicts with a write",
+			testControlSnapshotConflictsWithWrite
+		],
+		[
+			"user custody does not remove work conflicts",
+			testPausedJournalStillConflicts
+		]
 	];
 
 	var results = cases.map(function (item) {

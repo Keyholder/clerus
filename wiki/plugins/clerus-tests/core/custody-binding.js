@@ -71,7 +71,8 @@ function fixture(tw) {
 		journal: journal,
 		work: workId,
 		from: platform,
-		to: destination
+		to: destination,
+		retainUntil: 0
 	};
 
 	var after = Object.assign({}, before, {
@@ -83,6 +84,7 @@ function fixture(tw) {
 		version: 2,
 		kind: "continuation",
 		platform: platform,
+		retainUntil: 0,
 		work: {
 			version: 2,
 			id: workId,
@@ -284,9 +286,15 @@ function testValidBinding(tw) {
 
 function testMissingTransferDeadline(tw) {
 	assertRejected(tw, function (record) {
-		record.retainUntil = Date.now() + 150000;
+		mutateMarker(record, function (marker) {
+			delete marker.retainUntil;
+		});
+	});
+}
 
-		// The transfer marker deliberately has no deadline.
+function testMissingContinuationDeadline(tw) {
+	assertRejected(tw, function (record) {
+		delete record.retainUntil;
 	});
 }
 
@@ -347,7 +355,14 @@ exports.run = function (tw) {
 		["birth cannot smuggle a transfer marker", testBirthCannotSmuggleTransferMarker],
 		["invalid journal cannot grant source ownership", testInvalidJournalCannotGrantSourceOwnership],
 		["valid binding materializes without executor invocation", testValidBinding],
-		["timed continuation requires a transfer deadline", testMissingTransferDeadline],
+		[
+			"accepted transfer requires a matching marker deadline",
+			testMissingTransferDeadline
+		],
+		[
+			"continuation requires its own retention deadline",
+			testMissingContinuationDeadline
+		],
 		["transfer deadline must match its continuation", testDifferentTransferDeadline],
 		["timed binding materializes before the deletion deadline", testTimedBindingMaterializesImmediately]
 	];
