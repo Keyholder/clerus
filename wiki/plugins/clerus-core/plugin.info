@@ -3,7 +3,7 @@
   "name": "Clerus Core",
   "description": "Persistent actor runtime for TiddlyWiki",
   "author": "Clerus",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "core-version": ">=5.3.0",
   "plugin-type": "plugin",
   "list": "management protocol"
