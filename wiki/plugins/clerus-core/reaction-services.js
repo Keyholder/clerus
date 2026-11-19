@@ -95,6 +95,11 @@ function create(options) {
 			? project.authorizeWarrantBinding
 			: undefined,
 
+		readWarrantSelection:
+			typeof options.store.discoverWarrant === "function"
+				? options.store.discoverWarrant.bind(options.store)
+				: undefined,
+
 		readMission: project
 			? project.readMission
 			: undefined,

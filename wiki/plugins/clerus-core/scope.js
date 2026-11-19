@@ -92,6 +92,7 @@ function open(options) {
 		"readTiddler",
 		"readWarrantBinding",
 		"authorizeWarrantBinding",
+		"readWarrantSelection",
 		"readMission",
 		"readMissionParts",
 		"prepareMissionPart",
@@ -619,6 +620,117 @@ function open(options) {
 			active: result.active,
 			reason: result.reason
 		};
+	}
+
+	function selectWarrant(node, name) {
+		assertPresent(node);
+
+		if (node.form !== "warrant") {
+			throw new Error("Document is not a warrant");
+		}
+
+		if (typeof name !== "string" || name.length === 0) {
+			throw new Error("Invalid warrant permission name");
+		}
+
+		var document = warrantSchema.validate(node.value);
+
+		var permission = document.discover.find(function (entry) {
+			return entry.name === name;
+		});
+
+		if (!permission) {
+			throw new Error(
+				"Unknown warrant discovery permission: " + name
+			);
+		}
+
+		var authority = inspectWarrant(node);
+
+		if (!authority.active) {
+			throw new Error(authority.reason);
+		}
+
+		if (typeof options.readWarrantSelection !== "function") {
+			throw new Error("Warrant discovery is unavailable");
+		}
+
+		var result = schemas.copyJSON(
+			options.readWarrantSelection(
+				permission.filters.slice()
+			)
+		);
+
+		if (
+			!Array.isArray(result) ||
+			!result.every(schemas.isOrdinaryTitle) ||
+			new Set(result).size !== result.length
+		) {
+			throw new Error("Invalid warrant discovery result");
+		}
+
+		return result;
+	}
+
+	function captureWarrant(node, name, title, destination, key) {
+		assertPresent(node);
+
+		var destinationId = resolveDestination(destination);
+
+		run(function (candidate) {
+			assertPresent(node);
+			schemas.assertKey(key);
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error("Document key already exists: " + key);
+			}
+
+			if (!schemas.isOrdinaryTitle(title)) {
+				throw new Error(
+					"Warrant capture requires an ordinary title"
+				);
+			}
+
+			/*
+			Recompute both authority and membership. A string returned
+			by an earlier select() is not an enduring permission.
+			*/
+			if (selectWarrant(node, name).indexOf(title) === -1) {
+				throw new Error(
+					"Title is outside warrant discovery permission"
+				);
+			}
+
+			if (typeof options.readTiddler !== "function") {
+				throw new Error("Tiddler reading is unavailable");
+			}
+
+			var view = validateTiddlerView(
+				options.readTiddler(title),
+				title
+			);
+
+			if (view.kind !== "materialized") {
+				throw new Error(
+					"Warrant capture requires a materialized tiddler"
+				);
+			}
+
+			target.entries.set(
+				key,
+				nodeFor(candidate, title)
+			);
+		});
+
+		return registryView(destinationId).get(key);
 	}
 
 	function narrowWarrant(node, specification, destination, key) {
@@ -1384,6 +1496,20 @@ function open(options) {
 
 				inspectWarrant: function () {
 					return inspectWarrant(node);
+				},
+
+				selectWarrant: function (name) {
+					return selectWarrant(node, name);
+				},
+
+				captureWarrant: function (name, title, destination, key) {
+					return captureWarrant(
+						node,
+						name,
+						title,
+						destination,
+						key
+					);
 				},
 
 				narrowWarrant: function (specification, destination, key) {

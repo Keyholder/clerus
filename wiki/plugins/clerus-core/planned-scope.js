@@ -96,7 +96,16 @@ function open(options) {
 
 		snapshot: function () {
 			return activePlan.snapshot();
-		}
+		},
+
+		discoverWarrant: typeof options.filterWarrantSnapshot === "function"
+			? function (filters) {
+				return options.filterWarrantSnapshot(
+					activePlan.snapshot(),
+					filters
+				);
+			}
+			: undefined
 	};
 
 	var custody = localCustody.create({

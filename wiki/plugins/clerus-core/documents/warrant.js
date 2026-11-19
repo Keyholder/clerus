@@ -22,6 +22,19 @@ exports.create = function (access) {
 				destination,
 				key
 			);
+		},
+
+		select: function (name) {
+			return access.selectWarrant(name);
+		},
+
+		capture: function (name, title, destination, key) {
+			return access.captureWarrant(
+				name,
+				title,
+				destination,
+				key
+			);
 		}
 	});
 };

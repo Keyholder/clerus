@@ -142,7 +142,13 @@ function run(options, establishing) {
 			eventType: event.type,
 			incoming: incoming,
 			newId: options.newId,
-			establishing: establishing
+			establishing: establishing,
+			filterWarrantSnapshot:
+				typeof options.store.filterWarrantSnapshot === "function"
+					? options.store.filterWarrantSnapshot.bind(
+						options.store
+					)
+					: undefined
 		});
 
 		executionContract.invoke({

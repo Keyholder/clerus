@@ -211,6 +211,21 @@ Store.prototype.snapshot = function () {
 	};
 };
 
+Store.prototype.filterWarrantSnapshot = function (snapshot, filters) {
+	return require("$:/plugins/clerus/core/warrant-discovery.js")
+		.evaluate(snapshot, filters, {
+			Wiki: $tw.Wiki,
+			Tiddler: this.Tiddler
+		});
+};
+
+Store.prototype.discoverWarrant = function (filters) {
+	return this.filterWarrantSnapshot(
+		this.snapshot(),
+		filters
+	);
+};
+
 exports.Store = Store;
 exports.capture = capture;
 exports.transition = transition;
