@@ -40,6 +40,7 @@ var SUITES = Object.freeze([
 	"reports",
 	"scheduler",
 	"mission-delivery",
+	"warrant-delegation",
 	"mission-delivery-boundaries",
 	"lifecycle",
 	"scheduler-lifecycle",
