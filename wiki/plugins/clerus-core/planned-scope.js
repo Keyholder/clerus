@@ -92,6 +92,10 @@ function open(options) {
 
 		apply: function (effect) {
 			return activePlan.apply(effect);
+		},
+
+		snapshot: function () {
+			return activePlan.snapshot();
 		}
 	};
 

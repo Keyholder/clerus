@@ -55,6 +55,7 @@ var SUITES = Object.freeze([
 
 	// Virtual planning and proposal conversion
 	"plan",
+	"plan-snapshot",
 	"plan-operations",
 	"planned-scope",
 	"planned-reaction",

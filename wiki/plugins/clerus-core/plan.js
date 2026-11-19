@@ -403,6 +403,28 @@ Plan.prototype.abort = function () {
 	this.deferred.clear();
 };
 
+/*
+Return the current virtual store state, not the baseline and not
+the compiled difference.
+
+Keep materialized and shadow records separate. A materialized
+override and its underlying shadow may legitimately share a title.
+*/
+Plan.prototype.snapshot = function () {
+	this.assertOpen();
+
+	function records(source) {
+		return Array.from(source.keys()).sort().map(function (title) {
+			return schemas.copyJSON(source.get(title));
+		});
+	}
+
+	return {
+		materialized: records(this.current),
+		shadows: records(this.shadows)
+	};
+};
+
 Plan.prototype.each = function (callback) {
 	this.assertOpen();
 
