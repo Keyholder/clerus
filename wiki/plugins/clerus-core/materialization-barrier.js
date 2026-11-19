@@ -29,7 +29,16 @@ function collect(options) {
 	}
 
 	var blocked = new Map();
+	var protectedWrites = new Map();
 	var unreadable = [];
+
+	function protectWrite(title, journal) {
+		if (!protectedWrites.has(title)) {
+			protectedWrites.set(title, []);
+		}
+
+		protectedWrites.get(title).push(journal);
+	}
 
 	options.store.snapshot().materialized.forEach(function (fields) {
 		var platform = walEnvelope.platformOf(fields.title);
@@ -54,6 +63,10 @@ function collect(options) {
 			}
 
 			var view = workPerspective.evaluate(record.work);
+
+			view.writes.concat(view.reads).forEach(function (title) {
+				protectWrite(title, fields.title);
+			});
 
 			view.blocks.forEach(function (title) {
 				if (!blocked.has(title)) {
@@ -80,6 +93,10 @@ function collect(options) {
 		titles.sort();
 	});
 
+	protectedWrites.forEach(function (titles) {
+		titles.sort();
+	});
+
 	return Object.freeze({
 		forJob: function (title) {
 			var space = jobTitles.classify(title);
@@ -91,6 +108,20 @@ function collect(options) {
 			var result = unreadable.map(function (entry) {
 				return entry.title;
 			}).concat(blocked.get(title) || []);
+
+			return Array.from(new Set(result)).sort();
+		},
+
+		forWrite: function (title) {
+			if (!schemas.isOrdinaryTitle(title)) {
+				throw new Error(
+					"Write barrier requires an ordinary tiddler title"
+				);
+			}
+
+			var result = unreadable.map(function (entry) {
+				return entry.title;
+			}).concat(protectedWrites.get(title) || []);
 
 			return Array.from(new Set(result)).sort();
 		},

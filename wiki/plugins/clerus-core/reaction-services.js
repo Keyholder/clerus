@@ -27,6 +27,9 @@ var warrantGeneration = require(
 var storeTransitions = require(
 	"$:/plugins/clerus/core/store.js"
 );
+var materializationBarriers = require(
+	"$:/plugins/clerus/core/materialization-barrier.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -86,6 +89,31 @@ function create(options) {
 		})
 		: null;
 
+	function assertWarrantWrite(title) {
+		if (!schemas.isOrdinaryTitle(title)) {
+			throw new Error(
+				"Warrant write requires an ordinary tiddler title"
+			);
+		}
+
+		/*
+		No journal exemption is accepted here.
+
+		This is preparation of new instrumental work, not replay
+		of effects already authorized by an accepted continuation.
+		*/
+		var blockers = materializationBarriers.collect({
+			store: options.store
+		}).forWrite(title);
+
+		if (blockers.length !== 0) {
+			throw new Error(
+				"Warrant write is blocked by accepted work: " +
+				blockers.join(", ")
+			);
+		}
+	}
+
 	return Object.freeze({
 		readTiddler: options.store.read.bind(options.store),
 
@@ -136,6 +164,8 @@ function create(options) {
 						throw new Error("Generated title is occupied");
 					}
 
+					assertWarrantWrite(title);
+
 					return storeTransitions.transition(
 						title,
 						null,
@@ -151,7 +181,17 @@ function create(options) {
 
 		applyWarrantTransition:
 			typeof options.store.apply === "function"
-				? options.store.apply.bind(options.store)
+				? function (value) {
+					var effect = storeTransitions.transition(
+						value.title,
+						value.before,
+						value.after
+					);
+
+					assertWarrantWrite(effect.title);
+
+					return options.store.apply(effect);
+				}
 				: undefined,
 
 		readMission: project
