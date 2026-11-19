@@ -30,6 +30,7 @@ var SUITES = Object.freeze([
 	"project-perspective",
 	"mission-reaction",
 	"mission-mutations",
+	"warrant-bindings",
 	"mission-transactions",
 	"task-mutations",
 
