@@ -23,6 +23,9 @@ var establishmentInput = require(
 );
 var transitions = require("$:/plugins/clerus/core/store.js");
 var roles = require("$:/plugins/clerus/core/roles.js");
+var warrantSchema = require(
+	"$:/plugins/clerus/core/warrant-schema.js"
+);
 
 function define(record, key, value) {
 	Object.defineProperty(record, key, {
@@ -540,6 +543,42 @@ function open(options) {
 				form: "memo",
 				data: data
 			});
+
+			target.entries.set(key, newNode(document));
+		});
+
+		return registryView(destinationId).get(key);
+	}
+
+	function narrowWarrant(node, specification, destination, key) {
+		assertPresent(node);
+
+		if (node.form !== "warrant") {
+			throw new Error("Document is not a warrant");
+		}
+
+		var destinationId = resolveDestination(destination);
+
+		run(function (candidate) {
+			assertPresent(node);
+			schemas.assertKey(key);
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error("Document key already exists: " + key);
+			}
+
+			var document = warrantSchema.narrow(
+				node.value,
+				specification
+			);
 
 			target.entries.set(key, newNode(document));
 		});
@@ -1205,6 +1244,15 @@ function open(options) {
 
 				removeMissionPart: function (segment) {
 					changeMissionPart(node, "remove", segment);
+				},
+
+				narrowWarrant: function (specification, destination, key) {
+					return narrowWarrant(
+						node,
+						specification,
+						destination,
+						key
+					);
 				}
 			})
 		);

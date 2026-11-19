@@ -203,6 +203,13 @@ function formOf(document) {
 		return "contract";
 	}
 
+	if (document.form === "warrant") {
+		require("$:/plugins/clerus/core/warrant-schema.js")
+			.validate(document);
+
+		return "warrant";
+	}
+
 	throw new Error("Unsupported document form");
 }
 

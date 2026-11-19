@@ -16,6 +16,7 @@ var SUITES = Object.freeze([
 	"scope",
 	"operations",
 	"document-updates",
+	"warrants",
 	"reaction",
 	"integration",
 
