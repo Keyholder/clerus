@@ -38,6 +38,10 @@ exports.create = function (access) {
 			);
 		},
 
+		apply: function (name, target, change) {
+			access.editWarrant(name, target, change);
+		},
+
 		narrow: function (specification, destination, key) {
 			return access.narrowWarrant(
 				specification,

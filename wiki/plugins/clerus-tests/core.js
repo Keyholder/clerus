@@ -60,6 +60,7 @@ var SUITES = Object.freeze([
 	"planned-scope",
 	"warrant-discovery",
 	"warrant-generation",
+	"warrant-editing",
 	"planned-reaction",
 	"planned-messages",
 	"planned-sending",

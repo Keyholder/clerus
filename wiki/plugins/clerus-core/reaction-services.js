@@ -30,6 +30,12 @@ var storeTransitions = require(
 var materializationBarriers = require(
 	"$:/plugins/clerus/core/materialization-barrier.js"
 );
+var warrantEditing = require(
+	"$:/plugins/clerus/core/warrant-editing.js"
+);
+var localCustody = require(
+	"$:/plugins/clerus/core/local-custody.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -194,6 +200,45 @@ function create(options) {
 				}
 				: undefined,
 
+		prepareWarrantEdit: function (permission, title, change) {
+			if (!schemas.isOrdinaryTitle(title)) {
+				throw new Error(
+					"Warrant editing requires an ordinary title"
+				);
+			}
+
+			assertWarrantWrite(title);
+
+			var current = options.store.read(title);
+
+			if (current.kind !== "materialized") {
+				throw new Error(
+					"Warrant editing requires a materialized tiddler"
+				);
+			}
+
+			var custody = localCustody.create({
+				platform: options.platform,
+				store: options.store
+			});
+
+			if (!custody.owns(current.fields)) {
+				throw new Error(
+					"Editing target is not owned by this platform"
+				);
+			}
+
+			return storeTransitions.transition(
+				title,
+				current.fields,
+				warrantEditing.transform(
+					permission,
+					current.fields,
+					change
+				)
+			);
+		},
+				
 		readMission: project
 			? project.readMission
 			: undefined,

@@ -95,6 +95,7 @@ function open(options) {
 		"readWarrantSelection",
 		"prepareWarrantGeneration",
 		"applyWarrantTransition",
+		"prepareWarrantEdit",
 		"readMission",
 		"readMissionParts",
 		"prepareMissionPart",
@@ -136,6 +137,7 @@ function open(options) {
 
 	var views = new Map();
 	var viewIds = new WeakMap();
+	var instrumentNodes = new WeakMap();
 
 	function assertActive() {
 		if (!active) {
@@ -825,6 +827,89 @@ function open(options) {
 		});
 
 		return registryView(destinationId).get(key);
+	}
+
+	function editWarrant(node, name, targetInstrument, change) {
+		run(function (candidate) {
+			assertPresent(node);
+
+			if (node.form !== "warrant") {
+				throw new Error("Document is not a warrant");
+			}
+
+			if (
+				targetInstrument === null ||
+				typeof targetInstrument !== "object" ||
+				!instrumentNodes.has(targetInstrument)
+			) {
+				throw new Error(
+					"Editing target must be a title instrument from this scope"
+				);
+			}
+
+			var targetNode = instrumentNodes.get(targetInstrument);
+
+			assertPresent(targetNode);
+
+			if (targetNode.form !== "tiddler-title") {
+				throw new Error(
+					"Editing target must be an ordinary title instrument"
+				);
+			}
+
+			var document = warrantSchema.validate(node.value);
+
+			var permission = document.edit.find(function (entry) {
+				return entry.name === name;
+			});
+
+			if (!permission) {
+				throw new Error(
+					"Unknown warrant editing permission: " + name
+				);
+			}
+
+			var authority = inspectWarrant(node);
+
+			if (!authority.active) {
+				throw new Error(authority.reason);
+			}
+
+			if (
+				typeof options.prepareWarrantEdit !== "function" ||
+				typeof options.applyWarrantTransition !== "function"
+			) {
+				throw new Error("Warrant editing is unavailable");
+			}
+
+			var prepared = options.prepareWarrantEdit(
+				schemas.copyJSON(permission),
+				targetNode.value,
+				schemas.copyJSON(change)
+			);
+
+			var effect = transitions.transition(
+				prepared.title,
+				prepared.before,
+				prepared.after
+			);
+
+			if (
+				prepared.version !== 1 ||
+				effect.title !== targetNode.value ||
+				effect.before === null ||
+				effect.after === null
+			) {
+				throw new Error("Invalid prepared warrant edit");
+			}
+
+			if (
+				JSON.stringify(effect.before) !==
+				JSON.stringify(effect.after)
+			) {
+				candidate.warrantEffects.push(effect);
+			}
+		});
 	}
 
 	function narrowWarrant(node, specification, destination, key) {
@@ -1616,6 +1701,10 @@ function open(options) {
 					);
 				},
 
+				editWarrant: function (name, target, change) {
+					editWarrant(node, name, target, change);
+				},
+
 				narrowWarrant: function (specification, destination, key) {
 					return narrowWarrant(
 						node,
@@ -1626,6 +1715,8 @@ function open(options) {
 				}
 			})
 		);
+
+		instrumentNodes.set(node.instance, node);
 
 		return node.instance;
 	}

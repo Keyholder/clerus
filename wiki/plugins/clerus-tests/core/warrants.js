@@ -118,7 +118,7 @@ function testSchema() {
 
 	throws(function () {
 		warrants.validate(invalid);
-	}, "not supported yet");
+	}, "warrant editing target must be a record");
 
 	invalid = warrant();
 	invalid.discover[0].filters = [];

@@ -13,6 +13,9 @@ var missionSchema = require(
 var generation = require(
 	"$:/plugins/clerus/core/warrant-generation.js"
 );
+var editing = require(
+	"$:/plugins/clerus/core/warrant-editing.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -133,11 +136,7 @@ function validate(value) {
 		throw new Error("Warrant edit must be an array");
 	}
 
-	if (document.edit.length !== 0) {
-		throw new Error(
-			"Warrant edit permissions are not supported yet"
-		);
-	}
+	document.edit = editing.validateList(document.edit);
 
 	return document;
 }
@@ -157,7 +156,7 @@ function narrow(value, specification) {
 
 	assertFields(
 		restriction,
-		["discover", "generate"],
+		["discover", "generate", "edit"],
 		"warrant restriction"
 	);
 
@@ -165,6 +164,13 @@ function narrow(value, specification) {
 		document.generate = generation.narrow(
 			document.generate,
 			restriction.generate
+		);
+	}
+
+	if (hasOwn(restriction, "edit")) {
+		document.edit = editing.narrow(
+			document.edit,
+			restriction.edit
 		);
 	}
 
