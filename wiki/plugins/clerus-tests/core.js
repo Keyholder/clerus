@@ -75,6 +75,7 @@ var SUITES = Object.freeze([
 	"material-work",
 	"materialization",
 	"warrant-generation-recovery",
+	"warrant-editing-protocols",
 	"materialization-barrier",
 	"warrant-write-barrier",
 	"work-compatibility",
