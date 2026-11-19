@@ -73,6 +73,7 @@ var SUITES = Object.freeze([
 	// Accepted work, publication and recovery
 	"material-work",
 	"materialization",
+	"warrant-generation-recovery",
 	"materialization-barrier",
 	"work-compatibility",
 	"continuations",
