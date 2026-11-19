@@ -101,6 +101,7 @@ var SUITES = Object.freeze([
 	"assigned-persistent-founding",
 	"establishment-effects",
 	"persistent-protocols",
+	"warrant-persistence",
 	"ephemeral-acknowledgement",
 
 	// Runtime dispatch, lifecycle and reliability boundaries
