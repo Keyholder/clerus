@@ -111,7 +111,7 @@ function testSchema() {
 
 	throws(function () {
 		warrants.validate(invalid);
-	}, "not supported yet");
+	}, "ordinary title prefix");
 
 	invalid = warrant();
 	invalid.edit.push({ name: "unsupported" });

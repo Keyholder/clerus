@@ -21,6 +21,12 @@ var messageServices = require(
 var titleIssuers = require(
 	"$:/plugins/clerus/core/title-issuer.js"
 );
+var warrantGeneration = require(
+	"$:/plugins/clerus/core/warrant-generation.js"
+);
+var storeTransitions = require(
+	"$:/plugins/clerus/core/store.js"
+);
 
 function create(options) {
 	schemas.assertPlatform(options.platform);
@@ -98,6 +104,54 @@ function create(options) {
 		readWarrantSelection:
 			typeof options.store.discoverWarrant === "function"
 				? options.store.discoverWarrant.bind(options.store)
+				: undefined,
+
+		prepareWarrantGeneration:
+			typeof options.newId === "function"
+				? function (template, input) {
+					var normalized = warrantGeneration.validate(template);
+
+					/*
+					Validate parameters before allocating an identity.
+					The provisional title is never published.
+					*/
+					warrantGeneration.instantiate(
+						normalized,
+						input,
+						normalized.titlePrefix + "validation",
+						options.platform
+					);
+
+					var id = options.newId();
+
+					if (typeof id !== "string" || id.length === 0) {
+						throw new Error(
+							"Generator requires a non-empty identity"
+						);
+					}
+
+					var title = normalized.titlePrefix + id;
+
+					if (options.store.read(title).kind !== "absent") {
+						throw new Error("Generated title is occupied");
+					}
+
+					return storeTransitions.transition(
+						title,
+						null,
+						warrantGeneration.instantiate(
+							normalized,
+							input,
+							title,
+							options.platform
+						)
+					);
+				}
+				: undefined,
+
+		applyWarrantTransition:
+			typeof options.store.apply === "function"
+				? options.store.apply.bind(options.store)
 				: undefined,
 
 		readMission: project

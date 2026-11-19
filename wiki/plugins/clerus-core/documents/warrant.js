@@ -16,14 +16,6 @@ exports.create = function (access) {
 			return access.inspectWarrant();
 		},
 
-		narrow: function (specification, destination, key) {
-			return access.narrowWarrant(
-				specification,
-				destination,
-				key
-			);
-		},
-
 		select: function (name) {
 			return access.selectWarrant(name);
 		},
@@ -32,6 +24,23 @@ exports.create = function (access) {
 			return access.captureWarrant(
 				name,
 				title,
+				destination,
+				key
+			);
+		},
+
+		generate: function (name, input, destination, key) {
+			return access.generateWarrant(
+				name,
+				input,
+				destination,
+				key
+			);
+		},
+
+		narrow: function (specification, destination, key) {
+			return access.narrowWarrant(
+				specification,
 				destination,
 				key
 			);

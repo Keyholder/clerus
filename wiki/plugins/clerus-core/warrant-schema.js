@@ -10,6 +10,9 @@ var schemas = require("$:/plugins/clerus/core/schemas.js");
 var missionSchema = require(
 	"$:/plugins/clerus/core/mission-schema.js"
 );
+var generation = require(
+	"$:/plugins/clerus/core/warrant-generation.js"
+);
 
 var hasOwn = Function.call.bind(
 	Object.prototype.hasOwnProperty
@@ -124,17 +127,17 @@ function validate(value) {
 		validateFilters(permission.filters);
 	});
 
-	["generate", "edit"].forEach(function (facet) {
-		if (!Array.isArray(document[facet])) {
-			throw new Error("Warrant " + facet + " must be an array");
-		}
+	document.generate = generation.validateList(document.generate);
 
-		if (document[facet].length !== 0) {
-			throw new Error(
-				"Warrant " + facet + " permissions are not supported yet"
-			);
-		}
-	});
+	if (!Array.isArray(document.edit)) {
+		throw new Error("Warrant edit must be an array");
+	}
+
+	if (document.edit.length !== 0) {
+		throw new Error(
+			"Warrant edit permissions are not supported yet"
+		);
+	}
 
 	return document;
 }
@@ -154,9 +157,16 @@ function narrow(value, specification) {
 
 	assertFields(
 		restriction,
-		["discover"],
+		["discover", "generate"],
 		"warrant restriction"
 	);
+
+	if (hasOwn(restriction, "generate")) {
+		document.generate = generation.narrow(
+			document.generate,
+			restriction.generate
+		);
+	}
 
 	if (!hasOwn(restriction, "discover")) {
 		return document;

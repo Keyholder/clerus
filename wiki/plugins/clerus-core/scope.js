@@ -93,6 +93,8 @@ function open(options) {
 		"readWarrantBinding",
 		"authorizeWarrantBinding",
 		"readWarrantSelection",
+		"prepareWarrantGeneration",
+		"applyWarrantTransition",
 		"readMission",
 		"readMissionParts",
 		"prepareMissionPart",
@@ -128,7 +130,8 @@ function open(options) {
 		updates: new Map(),
 		messages: [],
 		deferred: false,
-		projectEffects: []
+		projectEffects: [],
+		warrantEffects: []
 	};
 
 	var views = new Map();
@@ -297,7 +300,8 @@ function open(options) {
 			updates: new Map(),
 			messages: state.messages.slice(),
 			deferred: state.deferred,
-			projectEffects: state.projectEffects.slice()
+			projectEffects: state.projectEffects.slice(),
+			warrantEffects: state.warrantEffects.slice()
 		};
 
 		state.registries.forEach(function (registry, id) {
@@ -378,6 +382,16 @@ function open(options) {
 			) {
 				options.applyProjectTransition(
 					candidate.projectEffects[projectIndex]
+				);
+			}
+
+			for (
+				var warrantIndex = state.warrantEffects.length;
+				warrantIndex < candidate.warrantEffects.length;
+				warrantIndex++
+			) {
+				options.applyWarrantTransition(
+					candidate.warrantEffects[warrantIndex]
 				);
 			}
 
@@ -727,6 +741,86 @@ function open(options) {
 			target.entries.set(
 				key,
 				nodeFor(candidate, title)
+			);
+		});
+
+		return registryView(destinationId).get(key);
+	}
+
+	function generateWarrant(node, name, input, destination, key) {
+		assertPresent(node);
+
+		var destinationId = resolveDestination(destination);
+
+		run(function (candidate) {
+			assertPresent(node);
+			schemas.assertKey(key);
+
+			if (node.form !== "warrant") {
+				throw new Error("Document is not a warrant");
+			}
+
+			var target = getRegistry(candidate, destinationId);
+
+			if (target.kind === "incoming") {
+				throw new Error(
+					"Cannot insert documents into incoming registry"
+				);
+			}
+
+			if (target.entries.has(key)) {
+				throw new Error("Document key already exists: " + key);
+			}
+
+			var document = warrantSchema.validate(node.value);
+
+			var template = document.generate.find(function (entry) {
+				return entry.name === name;
+			});
+
+			if (!template) {
+				throw new Error("Unknown warrant generator: " + name);
+			}
+
+			var authority = inspectWarrant(node);
+
+			if (!authority.active) {
+				throw new Error(authority.reason);
+			}
+
+			if (
+				typeof options.prepareWarrantGeneration !== "function" ||
+				typeof options.applyWarrantTransition !== "function"
+			) {
+				throw new Error("Warrant generation is unavailable");
+			}
+
+			var prepared = options.prepareWarrantGeneration(
+				schemas.copyJSON(template),
+				schemas.copyJSON(input)
+			);
+
+			var effect = transitions.transition(
+				prepared.title,
+				prepared.before,
+				prepared.after
+			);
+
+			if (
+				prepared.version !== 1 ||
+				effect.before !== null ||
+				effect.after === null ||
+				!schemas.isOrdinaryTitle(effect.title) ||
+				effect.title.indexOf(template.titlePrefix) !== 0
+			) {
+				throw new Error("Invalid prepared warrant generation");
+			}
+
+			candidate.warrantEffects.push(effect);
+
+			target.entries.set(
+				key,
+				nodeFor(candidate, effect.title)
 			);
 		});
 
@@ -1507,6 +1601,16 @@ function open(options) {
 						node,
 						name,
 						title,
+						destination,
+						key
+					);
+				},
+
+				generateWarrant: function (name, input, destination, key) {
+					return generateWarrant(
+						node,
+						name,
+						input,
 						destination,
 						key
 					);
