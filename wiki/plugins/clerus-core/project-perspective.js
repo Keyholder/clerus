@@ -234,6 +234,154 @@ function create(options) {
 		};
 	}
 
+	function sameBinding(left, right) {
+		return left.project === right.project &&
+			left.link === right.link &&
+			JSON.stringify(left.role) ===
+				JSON.stringify(right.role);
+	}
+
+	function validateWarrantBinding(value) {
+		return require("$:/plugins/clerus/core/warrant-schema.js")
+			.validateBinding(value);
+	}
+
+	function bindingEvaluation(scope) {
+		var context = readScope(scope);
+
+		if (context.operational === null) {
+			return {
+				evaluation: null,
+				reason: "Warrant holder is not established in this scope"
+			};
+		}
+
+		var evaluation = evaluateContext(context);
+
+		if (evaluation === null) {
+			return {
+				evaluation: null,
+				reason: "Warrant holder is not materialized"
+			};
+		}
+
+		/*
+		Unknown mission or hierarchy data cannot establish authority.
+
+		Do not require evaluation.valid: a fully understood inactive
+		or conflicting assignment elsewhere need not invalidate an
+		independent active assignment.
+		*/
+		if (!evaluation.complete) {
+			return {
+				evaluation: null,
+				reason: "Incomplete mission perspective"
+			};
+		}
+
+		return {
+			evaluation: evaluation,
+			reason: null
+		};
+	}
+
+	function inspectBindingIn(value, perspective) {
+		if (perspective.evaluation === null) {
+			return {
+				active: false,
+				reason: perspective.reason
+			};
+		}
+
+		var evaluation = perspective.evaluation;
+
+		var active = evaluation.active.some(function (entry) {
+			return sameBinding(entry, value);
+		});
+
+		if (active) {
+			return {
+				active: true,
+				reason: null
+			};
+		}
+
+		var recorded = evaluation.entries.find(function (entry) {
+			return sameBinding(entry, value);
+		});
+
+		return {
+			active: false,
+			reason: recorded && recorded.reason
+				? recorded.reason
+				: "Inactive warrant binding"
+		};
+	}
+
+	function readWarrantBinding(value, scope) {
+		var binding = validateWarrantBinding(value);
+
+		return inspectBindingIn(
+			binding,
+			bindingEvaluation(scope)
+		);
+	}
+
+	function authorizeWarrantBinding(source, target, scope) {
+		var before = source === null
+			? null
+			: validateWarrantBinding(source);
+
+		var after = validateWarrantBinding(target);
+
+		/*
+		An unchanged binding is not a new exercise of the authority.
+		Scope normally handles this case without calling the service.
+		*/
+		if (before !== null && sameBinding(before, after)) {
+			return;
+		}
+
+		if (before !== null) {
+			var descendant = before.project === after.project &&
+				after.role.length > before.role.length &&
+				before.role.every(function (segment, index) {
+					return after.role[index] === segment;
+				});
+
+			if (!descendant) {
+				throw new Error(
+					"Warrant binding must narrow to a descendant mission"
+				);
+			}
+		}
+
+		var perspective = bindingEvaluation(scope);
+
+		if (before !== null) {
+			var original = inspectBindingIn(before, perspective);
+
+			if (!original.active) {
+				throw new Error(original.reason);
+			}
+		}
+
+		var destination = inspectBindingIn(after, perspective);
+
+		if (!destination.active) {
+			throw new Error(destination.reason);
+		}
+
+		/*
+		Both bindings belong to the same evaluation. Its active
+		assignments have already been selected through the complete
+		parent-generation chain, including subordination checks.
+
+		Thus an active strict descendant of this active ancestor
+		is a descendant of its exact generation, not just its role.
+		*/
+	}
+
 	function readMission(value, scope) {
 		var assignment = inspectAssignment(value, scope);
 
@@ -525,6 +673,8 @@ function create(options) {
 	}
 
 	return Object.freeze({
+		readWarrantBinding: readWarrantBinding,
+		authorizeWarrantBinding: authorizeWarrantBinding,
 		readMission: readMission,
 		readParts: readParts,
 		preparePart: preparePart,

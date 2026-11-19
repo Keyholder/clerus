@@ -400,6 +400,223 @@ function testClosedAccess() {
 	throws(function () {
 		form.narrow({}, outgoing, "restricted");
 	}, "closed");
+
+	throws(function () {
+		form.inspect();
+	}, "closed");
+}
+
+function testBindingInspection() {
+	var calls = 0;
+	var current = true;
+
+	var scope = scopes.open({
+		operational: {
+			charter: {
+				form: "charter",
+				status: {}
+			}
+		},
+		incoming: {
+			warrant: warrant()
+		},
+
+		readWarrantBinding: function (binding, snapshot) {
+			calls++;
+
+			assert(binding.project === "Research");
+			assert(binding.link === "1");
+			assert(snapshot.incoming.warrant.form === "warrant");
+
+			/*
+			Returned and received values must not expose the node.
+			*/
+			binding.project = "local mutation";
+
+			return {
+				active: current,
+				reason: current ? null : "revoked"
+			};
+		}
+	});
+
+	try {
+		var form = scope.incoming.get("warrant");
+
+		assert(form.inspect().active === true);
+
+		current = false;
+
+		assert(form.inspect().active === false);
+		assert(form.inspect().reason === "revoked");
+		assert(calls === 3);
+
+		assert(form.declaration().binding.project === "Research");
+	} finally {
+		scope.close();
+	}
+}
+
+function testUnavailableBindingInspection() {
+	var scope = open();
+
+	try {
+		var view = scope.incoming.get("warrant").inspect();
+
+		assert(view.active === false);
+		assert(view.reason.indexOf("unavailable") !== -1);
+	} finally {
+		scope.close();
+	}
+}
+
+function testUnboundInspection() {
+	var document = warrant();
+	delete document.binding;
+
+	var scope = scopes.open({
+		operational: {
+			charter: {
+				form: "charter",
+				status: {}
+			}
+		},
+		incoming: {
+			warrant: document
+		}
+	});
+
+	try {
+		var view = scope.incoming.get("warrant").inspect();
+
+		assert(view.active === true);
+		assert(view.reason === null);
+	} finally {
+		scope.close();
+	}
+}
+
+function testContextualBindingNarrowing() {
+	var calls = 0;
+
+	var scope = scopes.open({
+		operational: {
+			charter: {
+				form: "charter",
+				status: {}
+			}
+		},
+		incoming: {
+			warrant: warrant()
+		},
+
+		authorizeWarrantBinding: function (source, target, snapshot) {
+			calls++;
+
+			assert(source.link === "1");
+			assert(source.role.length === 0);
+			assert(target.link === "1/1");
+			assert(target.role.join("/") === "sources");
+			assert(snapshot.incoming.warrant.binding.link === "1");
+
+			source.project = "local mutation";
+			target.project = "local mutation";
+		}
+	});
+
+	try {
+		var form = scope.incoming.get("warrant");
+		var outgoing = scope.incoming.outgoing();
+
+		var narrowed = form.narrow({
+			binding: {
+				project: "Research",
+				role: ["sources"],
+				link: "1/1"
+			}
+		}, outgoing, "child");
+
+		assert(calls === 1);
+		assert(narrowed.declaration().binding.project === "Research");
+		assert(narrowed.declaration().binding.link === "1/1");
+		assert(form.declaration().binding.link === "1");
+	} finally {
+		scope.close();
+	}
+}
+
+function testBindingRejectionIsAtomic() {
+	var scope = scopes.open({
+		operational: {
+			charter: {
+				form: "charter",
+				status: {}
+			}
+		},
+		incoming: {
+			warrant: warrant()
+		},
+
+		authorizeWarrantBinding: function () {
+			throw new Error("Binding denied");
+		}
+	});
+
+	try {
+		var form = scope.incoming.get("warrant");
+		var outgoing = scope.incoming.outgoing();
+		var before = JSON.stringify(scope.snapshot());
+
+		throws(function () {
+			form.narrow({
+				binding: {
+					project: "Research",
+					role: ["sources"],
+					link: "1/1"
+				},
+				discover: []
+			}, outgoing, "denied");
+		}, "Binding denied");
+
+		assert(JSON.stringify(scope.snapshot()) === before);
+
+		throws(function () {
+			form.narrow({
+				binding: null
+			}, outgoing, "unbound");
+		});
+
+		assert(JSON.stringify(scope.snapshot()) === before);
+	} finally {
+		scope.close();
+	}
+}
+
+function testUnchangedBindingNeedsNoAuthorization() {
+	var scope = open();
+
+	try {
+		var form = scope.incoming.get("warrant");
+		var outgoing = scope.incoming.outgoing();
+
+		/*
+		No binding service is installed. The original binding
+		is nevertheless preserved, including when explicit.
+		*/
+		var narrowed = form.narrow({
+			binding: {
+				project: "Research",
+				role: [],
+				link: "1"
+			},
+			discover: []
+		}, outgoing, "same");
+
+		assert(narrowed.declaration().binding.link === "1");
+		assert(narrowed.declaration().discover.length === 0);
+	} finally {
+		scope.close();
+	}
 }
 
 exports.run = function () {
@@ -411,7 +628,13 @@ exports.run = function () {
 		["warrants: rejected calls are atomic", testRejectedCallsAreAtomic],
 		["warrants: operational placement is committed", testOperationalPlacement],
 		["warrants: foreign destinations are rejected", testForeignDestination],
-		["warrants: closed instruments provide no access", testClosedAccess]
+		["warrants: closed instruments provide no access", testClosedAccess],
+		["warrants: binding inspection is live and isolated", testBindingInspection],
+		["warrants: unavailable binding perspective denies authority", testUnavailableBindingInspection],
+		["warrants: unbound authority needs no mission perspective", testUnboundInspection],
+		["warrants: changed binding requires contextual authorization", testContextualBindingNarrowing],
+		["warrants: rejected binding changes are atomic", testBindingRejectionIsAtomic],
+		["warrants: unchanged binding needs no authorization", testUnchangedBindingNeedsNoAuthorization]
 	];
 
 	var results = cases.map(function (item) {

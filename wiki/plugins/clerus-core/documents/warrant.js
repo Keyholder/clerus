@@ -8,11 +8,12 @@ module-type: library
 
 exports.create = function (access) {
 	return Object.freeze({
-		/*
-		Returns an isolated declaration, not an authorization verdict.
-		*/
 		declaration: function () {
 			return access.read();
+		},
+
+		inspect: function () {
+			return access.inspectWarrant();
 		},
 
 		narrow: function (specification, destination, key) {

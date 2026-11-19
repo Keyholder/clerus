@@ -90,6 +90,8 @@ function open(options) {
 	[
 		"readJob",
 		"readTiddler",
+		"readWarrantBinding",
+		"authorizeWarrantBinding",
 		"readMission",
 		"readMissionParts",
 		"prepareMissionPart",
@@ -550,6 +552,75 @@ function open(options) {
 		return registryView(destinationId).get(key);
 	}
 
+	function sameWarrantBinding(left, right) {
+		return left.project === right.project &&
+			left.link === right.link &&
+			JSON.stringify(left.role) ===
+				JSON.stringify(right.role);
+	}
+
+	function inspectWarrant(node) {
+		assertPresent(node);
+
+		if (node.form !== "warrant") {
+			throw new Error("Document is not a warrant");
+		}
+
+		var document = warrantSchema.validate(node.value);
+
+		if (
+			!Object.prototype.hasOwnProperty.call(
+				document,
+				"binding"
+			)
+		) {
+			return {
+				active: true,
+				reason: null
+			};
+		}
+
+		if (typeof options.readWarrantBinding !== "function") {
+			return {
+				active: false,
+				reason: "Warrant binding inspection is unavailable"
+			};
+		}
+
+		var result = schemas.copyJSON(
+			options.readWarrantBinding(
+				document.binding,
+				registrySnapshot()
+			)
+		);
+
+		if (
+			!schemas.isRecord(result) ||
+			typeof result.active !== "boolean" ||
+			(
+				result.reason !== null &&
+				typeof result.reason !== "string"
+			) ||
+			(result.active && result.reason !== null) ||
+			(
+				!result.active &&
+				(
+					typeof result.reason !== "string" ||
+					result.reason.length === 0
+				)
+			)
+		) {
+			throw new Error(
+				"Invalid warrant binding inspection result"
+			);
+		}
+
+		return {
+			active: result.active,
+			reason: result.reason
+		};
+	}
+
 	function narrowWarrant(node, specification, destination, key) {
 		assertPresent(node);
 
@@ -575,12 +646,77 @@ function open(options) {
 				throw new Error("Document key already exists: " + key);
 			}
 
-			var document = warrantSchema.narrow(
-				node.value,
-				specification
+			var restriction = schemas.copyJSON(specification);
+
+			if (!schemas.isRecord(restriction)) {
+				throw new Error(
+					"Warrant restriction must be a record"
+				);
+			}
+
+			var hasBinding = Object.prototype.hasOwnProperty.call(
+				restriction,
+				"binding"
 			);
 
-			target.entries.set(key, newNode(document));
+			var binding = null;
+
+			if (hasBinding) {
+				/*
+				null is not an instruction to remove the binding.
+				An explicit binding must always be a valid identity.
+				*/
+				binding = warrantSchema.validateBinding(
+					restriction.binding
+				);
+
+				delete restriction.binding;
+			}
+
+			/*
+			The structural schema still accepts discovery restrictions
+			only. Binding changes require the contextual service below.
+			*/
+			var document = warrantSchema.narrow(
+				node.value,
+				restriction
+			);
+
+			if (hasBinding) {
+				var original = Object.prototype.hasOwnProperty.call(
+					document,
+					"binding"
+				)
+					? document.binding
+					: null;
+
+				var unchanged = original !== null &&
+					sameWarrantBinding(original, binding);
+
+				if (!unchanged) {
+					if (
+						typeof options.authorizeWarrantBinding !==
+							"function"
+					) {
+						throw new Error(
+							"Warrant binding authorization is unavailable"
+						);
+					}
+
+					options.authorizeWarrantBinding(
+						schemas.copyJSON(original),
+						schemas.copyJSON(binding),
+						registrySnapshot()
+					);
+				}
+
+				document.binding = binding;
+			}
+
+			target.entries.set(
+				key,
+				newNode(warrantSchema.validate(document))
+			);
 		});
 
 		return registryView(destinationId).get(key);
@@ -1244,6 +1380,10 @@ function open(options) {
 
 				removeMissionPart: function (segment) {
 					changeMissionPart(node, "remove", segment);
+				},
+
+				inspectWarrant: function () {
+					return inspectWarrant(node);
 				},
 
 				narrowWarrant: function (specification, destination, key) {

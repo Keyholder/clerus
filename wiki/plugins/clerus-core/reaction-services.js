@@ -87,6 +87,14 @@ function create(options) {
 			return jobViews.read(options.store, title);
 		},
 
+		readWarrantBinding: project
+			? project.readWarrantBinding
+			: undefined,
+
+		authorizeWarrantBinding: project
+			? project.authorizeWarrantBinding
+			: undefined,
+
 		readMission: project
 			? project.readMission
 			: undefined,
